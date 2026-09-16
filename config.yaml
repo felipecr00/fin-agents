@@ -1,0 +1,29 @@
+# Parámetros del sistema. Ningún número mágico vive fuera de este archivo.
+portafolio:
+  activos: [VOOG, BNS, IBIT, VB]
+  valor_usd: 9739.94
+  pesos_actuales: {VOOG: 0.7944, BNS: 0.0892, IBIT: 0.0676, VB: 0.0488}
+
+optimizacion:
+  aversion_riesgo_delta: 2.5
+  tau: 0.05
+  tasa_libre_riesgo: 0.04
+  peso_min: 0.02
+  peso_max: 0.70
+  permitir_cortos: false
+
+datos:
+  proveedor: csv
+  ruta_csv: data/precios.csv
+  ventana_covarianza_meses: 60
+
+validacion:
+  sharpe_oos_minimo: 0.20
+  max_drawdown_tolerado: 0.35
+  turnover_maximo_anual: 1.0
+  costo_transaccion_bps: 10
+  rebalanceo: mensual
+  max_iteraciones_constructor: 2
+
+reproducibilidad:
+  semilla: 42
