@@ -58,17 +58,18 @@ logs-dev:
 	gcloud run services logs read $(SERVICIO_DEV) --project $(PROYECTO) --region $(REGION) --limit 100
 
 deploy-prod:    ## Agent Engine (prod): mismas versiones que uv.lock, sesiones administradas
+# El grupo `deploy` trae el SDK de Vertex que usa `adk deploy`; también fija su versión en prod.
 	@test -n "$(PROYECTO)" || { echo "Falta PROYECTO"; exit 1; }
 	rm -rf $(STAGING_PROD) && mkdir -p $(STAGING_PROD)/pipeline
 	cp apps/pipeline/__init__.py apps/pipeline/agent.py $(STAGING_PROD)/pipeline/
-	$(UV) export --locked --no-dev --no-emit-project --no-hashes -q \
+	$(UV) export --locked --no-dev --group deploy --no-emit-project --no-hashes -q \
 		-o $(STAGING_PROD)/pipeline/requirements.txt
-	$(UV) run adk deploy agent_engine \
+	$(UV) run --group deploy adk deploy agent_engine \
 		--project $(PROYECTO) --region $(REGION) \
 		--display_name $(NOMBRE_PROD) \
 		$(if $(AGENT_ENGINE_ID),--agent_engine_id $(AGENT_ENGINE_ID),) \
 		--extra_packages src/investmentsys --extra_packages config.yaml --extra_packages data \
-		--temp_folder $(STAGING_PROD)/tmp \
+		--temp_folder $(CURDIR)/$(STAGING_PROD)/tmp \
 		$(STAGING_PROD)/pipeline
 
 corrida-prod:   ## corrida real contra Agent Engine (sesiones administradas) + replay local
