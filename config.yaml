@@ -64,3 +64,6 @@ corridas:
 
 reproducibilidad:
   semilla: 42
+  # ADR-009: diferencia absoluta máxima admitida al repetir en local una corrida remota
+  # (macOS/arm64 vs. linux/x86-64 no garantizan igualdad bit a bit entre BLAS distintos).
+  tolerancia_replay: 1.0e-8

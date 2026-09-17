@@ -5,8 +5,8 @@
 - Los pasos deterministas (quant, validador) son nodos-función que llaman a los mismos
   FunctionTools que usan los agentes; los que deciden o redactan son agentes LLM.
 - El bucle lo corta el veredicto APROBADA o ``validacion.max_iteraciones_constructor``.
-- ``cerrar`` arma ``RunState`` (revalidando todos los contratos), renderiza el informe y
-  escribe ``runs/<run_id>/``.
+- ``cerrar`` arma ``RunState`` (revalidando todos los contratos), renderiza el informe, lo deja
+  en el estado de sesión (ADR-009) y escribe ``runs/<run_id>/`` si el disco lo permite.
 """
 
 from __future__ import annotations
@@ -34,6 +34,7 @@ from investmentsys.orchestrator.corrida import (
     CLAVE_NOTAS,
     CLAVE_REPORTE,
     CLAVE_RUN_ID,
+    CLAVE_RUN_STATE,
     armar_run_state,
     nuevo_run_id,
     persistir,
@@ -124,8 +125,13 @@ def crear_pipeline(
                 borrador.avanzar(errores=errores), narrativa, nombre_modelo, notas
             ),
         )
-        carpeta = persistir(final, destino)
         ctx.state[CLAVE_REPORTE] = final.reporte_markdown
+        ctx.state[CLAVE_RUN_STATE] = final.model_dump(mode="json")
+        try:
+            carpeta = persistir(final, destino)
+        except OSError as exc:  # disco de solo lectura o efímero (contenedor): no es un fallo
+            ctx.state[CLAVE_NOTAS] = [*notas, f"RunState solo en la sesión: {exc}"]
+            return f"{final.reporte_markdown}\n\n_RunState en el estado de sesión._"
         ctx.state[CLAVE_DIRECTORIO] = str(carpeta)
         return f"{final.reporte_markdown}\n\n_Guardado en `{carpeta}`._"
 

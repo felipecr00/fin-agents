@@ -25,6 +25,7 @@ CLAVE_NOTAS = "notas_corrida"
 CLAVE_NARRATIVA = "reporte_narrativa"
 CLAVE_REPORTE = "reporte_markdown"
 CLAVE_DIRECTORIO = "directorio_corrida"
+CLAVE_RUN_STATE = "run_state_json"  # ADR-009: el RunState final viaja también en la sesión
 
 ARCHIVO_RUN_STATE = "run_state.json"
 ARCHIVO_REPORTE = "reporte.md"

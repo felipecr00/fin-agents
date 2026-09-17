@@ -1,0 +1,21 @@
+# Lo que NO se sube a Cloud Build con `gcloud run deploy --source .` (sustituye a .gitignore).
+.git/
+.github/
+.claude/
+.venv/
+.env
+.env.*
+!.env.example
+.adk/
+**/.adk/
+runs/
+build/
+docs/
+tests/
+scripts/
+__pycache__/
+**/__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/

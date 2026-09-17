@@ -2,7 +2,7 @@
 
 - Fecha: 2026-09-17
 - Sprint: S4
-- Estado: propuesta
+- Estado: aceptada (aprobada por el usuario el 2026-09-17)
 
 ## Contexto
 `cerrar` escribe `runs/<run_id>/run_state.json` en `RAIZ_PROYECTO/runs`. En un contenedor ese
@@ -50,6 +50,12 @@ corrida no mide nada.
   sesiones administradas ya guardan. Se puede añadir después sin cambiar esta decisión.
 
 ## Consecuencias
+- `RunState` solo guarda las restricciones vigentes al final, no las de cada ronda: el replay
+  repite la **optimización de la última ronda** y la **validación de todas**; las rondas
+  anteriores se informan como "no repetibles". Guardarlas por ronda es un cambio de contrato
+  (ADR aparte) que hoy no se justifica.
+- Medido en local (tres corridas reales de S3/S4 y los tests con LLM falso): 110-140 valores
+  comparados por corrida, desviación máxima 0.0 en la misma máquina.
 - No cambia ningún contrato: `RunState` se serializa tal cual en una clave nueva del estado.
 - El estado de sesión crece (~decenas de KB por corrida); irrelevante al volumen del proyecto.
 - La garantía que se verifica es la que CLAUDE.md promete: misma entrada = misma salida **en

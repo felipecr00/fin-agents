@@ -1,0 +1,13 @@
+# Todo fuera salvo lo que el Dockerfile copia.
+*
+!pyproject.toml
+!uv.lock
+!CLAUDE.md
+!config.yaml
+!data
+!src
+!apps
+**/__pycache__/
+**/*.pyc
+**/.env
+**/.adk/
