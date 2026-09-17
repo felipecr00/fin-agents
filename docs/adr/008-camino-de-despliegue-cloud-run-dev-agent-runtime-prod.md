@@ -106,6 +106,9 @@ Nuestro agente (`apps/pipeline`) no es autocontenido: importa `investmentsys` (`
   `config.yaml` y `agents/modelo.py`, que entrega un `Gemini(client_kwargs={"location": …})`
   —el patrón que documenta ADK— solo cuando el cliente va a Vertex con proyecto. Las sesiones
   administradas siguen en la región del recurso.
+- Agent Engine mantiene por defecto 1 instancia encendida (`min_instances` = 1, máx. 100):
+  `apps/pipeline/.agent_engine_config.json` fija 0-1 instancias de 1 vCPU / 2 GiB. Prod escala a
+  cero como dev; se paga con un arranque en frío.
 - `adk deploy agent_engine` importa `vertexai` y ADK 2.9.1 no lo declara: el grupo de
   dependencias `deploy` lo instala para `make deploy-prod` y fija `google-cloud-aiplatform`
   en el `requirements.txt` de prod (sin él, ADK añade la línea sin versión).

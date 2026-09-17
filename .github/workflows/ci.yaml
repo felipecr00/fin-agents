@@ -1,13 +1,12 @@
 name: ci
 on:
   pull_request:
-  push:
-    branches: [main]
+  workflow_call:   # en main lo invoca deploy.yaml: nada se despliega sin make check verde
 jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.1.0
         with:
           enable-cache: true

@@ -61,7 +61,8 @@ deploy-prod:    ## Agent Engine (prod): mismas versiones que uv.lock, sesiones a
 # El grupo `deploy` trae el SDK de Vertex que usa `adk deploy`; también fija su versión en prod.
 	@test -n "$(PROYECTO)" || { echo "Falta PROYECTO"; exit 1; }
 	rm -rf $(STAGING_PROD) && mkdir -p $(STAGING_PROD)/pipeline
-	cp apps/pipeline/__init__.py apps/pipeline/agent.py $(STAGING_PROD)/pipeline/
+	cp apps/pipeline/__init__.py apps/pipeline/agent.py apps/pipeline/.agent_engine_config.json \
+		$(STAGING_PROD)/pipeline/
 	$(UV) export --locked --no-dev --group deploy --no-emit-project --no-hashes -q \
 		-o $(STAGING_PROD)/pipeline/requirements.txt
 	$(UV) run --group deploy adk deploy agent_engine \

@@ -1,0 +1,66 @@
+# ADR-008. Merge a main → dev (Cloud Run). Prod (Agent Engine) solo a mano: Actions → deploy →
+# Run workflow → destino=prod. Autenticación por Workload Identity Federation: no hay ninguna
+# llave de cuenta de servicio, ni en el repo ni en GitHub Secrets. Los valores de abajo son
+# *variables* del repositorio (Settings → Secrets and variables → Actions → Variables):
+#   GCP_PROJECT_ID, GCP_REGION, GCP_WIF_PROVIDER, GCP_DEPLOY_SA, AGENT_ENGINE_ID
+# Cómo se crean el pool, el provider y la cuenta desplegadora: docs/operacion.md.
+name: deploy
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      destino:
+        description: "dev = Cloud Run · prod = Vertex AI Agent Engine"
+        type: choice
+        options: [dev, prod]
+        default: dev
+
+# Un despliegue a la vez por destino; uno en curso nunca se cancela a medias.
+concurrency:
+  group: deploy-${{ inputs.destino || 'dev' }}
+  cancel-in-progress: false
+
+jobs:
+  check:
+    uses: ./.github/workflows/ci.yaml
+
+  dev:
+    if: github.event_name == 'push' || inputs.destino == 'dev'
+    needs: check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write   # token OIDC de GitHub que WIF canjea por credenciales de corta vida
+    steps:
+      - uses: actions/checkout@v7
+      - uses: google-github-actions/auth@v3
+        with:
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SA }}
+      - uses: google-github-actions/setup-gcloud@v3
+      - run: make deploy-dev PROYECTO=${{ vars.GCP_PROJECT_ID }} REGION=${{ vars.GCP_REGION }}
+
+  prod:
+    # El provider de WIF solo admite refs/heads/main; esta condición lo hace explícito.
+    if: github.event_name == 'workflow_dispatch' && inputs.destino == 'prod' && github.ref == 'refs/heads/main'
+    needs: check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.1.0
+        with:
+          enable-cache: true
+      - run: uv python install
+      - uses: google-github-actions/auth@v3
+        with:
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SA }}
+      - run: >
+          make deploy-prod PROYECTO=${{ vars.GCP_PROJECT_ID }} REGION=${{ vars.GCP_REGION }}
+          AGENT_ENGINE_ID=${{ vars.AGENT_ENGINE_ID }}
