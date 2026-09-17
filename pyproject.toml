@@ -6,7 +6,7 @@ readme = "CLAUDE.md"
 requires-python = ">=3.11"
 license = { text = "Proprietary" }
 dependencies = [
-    "google-adk>=2.9,<3",
+    "google-adk==2.9.1",  # ADR-005: subir de versión es un cambio deliberado
     "pydantic>=2.12,<3",
     "pandas>=2.2.3",
     "numpy>=2.0",

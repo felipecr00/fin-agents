@@ -50,5 +50,17 @@ validacion:
     - {nombre: tasas_2022, desde: 2022-01-31, hasta: 2022-12-31}
     - {nombre: cripto_2025_26, desde: 2025-08-31, hasta: 2026-06-30}
 
+agentes:
+  # ADR-005: id fijo, nunca un alias -latest. Las credenciales van por variables de entorno.
+  modelo: gemini-3.5-flash
+  temperatura: 0.2
+  # Intentos del analista hasta que su salida valide contra MarketViews (incluye el primero).
+  max_intentos_analista: 3
+  horizonte_views_meses: 12
+
+corridas:
+  # RunState y reporte de cada corrida: <directorio>/<run_id>/ (relativo a la raíz del repo).
+  directorio: runs
+
 reproducibilidad:
   semilla: 42
