@@ -16,6 +16,7 @@ def test_carga_el_config_del_repo() -> None:
     assert cfg.optimizacion.metodo_omega is MetodoOmega.HE_LITTERMAN
     assert cfg.datos.ruta_csv == Path("data/precios.csv")
     assert cfg.reproducibilidad.semilla == 42
+    assert 0.0 < cfg.estimacion.nivel_confianza < 1.0
     assert set(cfg.prior_equilibrio.capitalizacion_usd_billones) == set(cfg.portafolio.activos)
 
 

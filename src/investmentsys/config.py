@@ -63,6 +63,10 @@ class PriorEquilibrioConfig(_Seccion):
         return self
 
 
+class EstimacionConfig(_Seccion):
+    nivel_confianza: float = Field(gt=0.0, lt=1.0)
+
+
 class DatosConfig(_Seccion):
     proveedor: Literal["csv"]
     ruta_csv: Path
@@ -86,6 +90,7 @@ class Config(_Seccion):
     portafolio: PortafolioConfig
     optimizacion: OptimizacionConfig
     prior_equilibrio: PriorEquilibrioConfig
+    estimacion: EstimacionConfig
     datos: DatosConfig
     validacion: ValidacionConfig
     reproducibilidad: ReproducibilidadConfig

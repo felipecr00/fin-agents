@@ -1,14 +1,43 @@
-"""Black-Litterman. Código puro: sin ADK, sin LLM. Implementación en S1."""
+"""Black-Litterman. Código puro: sin ADK, sin LLM (ADR-003).
+
+Reproduce ``docs/referencia_black_litterman.py`` (golden test):
+
+1. Σ = covarianza de ``estimates`` según ``optimizacion.metodo_covarianza``.
+2. Prior de equilibrio π = δ·Σ·w_mkt, en exceso de la tasa libre de riesgo, con w_mkt
+   proporcional a las capitalizaciones de ``prior``.
+3. Q en exceso de rf para views absolutas (``q_anual`` es retorno total); tal cual para
+   relativas. Ω = diag(P·τΣ·Pᵀ) (He-Litterman).
+4. Posterior μ_BL = M·[(τΣ)⁻¹π + PᵀΩ⁻¹Q], M = [(τΣ)⁻¹ + PᵀΩ⁻¹P]⁻¹, Σ_BL = Σ + M.
+5. max wᵀμ_BL − ½·δ·wᵀΣ_BL·w sujeto a Σw = 1 y límites (SLSQP).
+
+Sin views, el posterior es el equilibrio (μ_BL = π, M = τΣ). ``retornos_esperados``
+se devuelven como retornos totales (μ_BL + rf) y la volatilidad ex ante se calcula con Σ.
+"""
 
 from __future__ import annotations
 
-from investmentsys.config import OptimizacionConfig, PriorEquilibrioConfig
+import numpy as np
+
+from investmentsys.config import MetodoOmega, OptimizacionConfig, PriorEquilibrioConfig
 from investmentsys.contracts import (
     CandidatePortfolio,
     MarketViews,
     PortfolioConstraints,
     QuantEstimates,
+    TecnicaOptimizacion,
+    TipoView,
 )
+from investmentsys.portfolio._comun import (
+    Matriz,
+    Vector,
+    matriz,
+    metricas_ex_ante,
+    pesos_a_dict,
+    resolver_qp,
+    verificar_universo,
+)
+
+NOMBRE_CANDIDATO = "black_litterman"
 
 
 def optimizar_black_litterman(
@@ -18,17 +47,88 @@ def optimizar_black_litterman(
     optimizacion: OptimizacionConfig,
     prior: PriorEquilibrioConfig,
 ) -> CandidatePortfolio:
-    """Cartera óptima según Black-Litterman con límites por activo.
+    """Cartera óptima según Black-Litterman con límites por activo (ver módulo)."""
+    verificar_universo(estimates, restricciones)
+    if views.activos != estimates.activos:
+        raise ValueError("las views y las estimaciones deben compartir el orden canónico")
+    if views.fecha_decision != estimates.fecha_decision:
+        raise ValueError("views y estimaciones con fecha de decisión distinta")
 
-    Contrato esperado por el golden test (``docs/referencia_black_litterman.py``):
-    1. Σ = ``estimates.covarianzas[optimizacion.metodo_covarianza]``.
-    2. Prior de equilibrio π = δ·Σ·w_mkt, con w_mkt proporcional a ``prior``.
-    3. Q: en views absolutas se resta la tasa libre de riesgo (``q_anual`` es retorno
-       total); en relativas se usa tal cual. Ω según ``optimizacion.metodo_omega``.
-    4. Posterior μ_BL y Σ_BL = Σ + M (He-Litterman).
-    5. max  wᵀμ_BL − ½·δ·wᵀΣ_BL·w  sujeto a Σw = 1 y límites de ``restricciones``.
+    activos = estimates.activos
+    delta, tau, rf = (
+        optimizacion.aversion_riesgo_delta,
+        optimizacion.tau,
+        optimizacion.tasa_libre_riesgo,
+    )
+    sigma = matriz(estimates, optimizacion.metodo_covarianza)
+    pi = prior_equilibrio(sigma, pesos_mercado(prior, activos), delta)
+    p = np.array(views.matriz_p(), dtype=float).reshape(len(views.views), len(activos))
+    q = vector_q_en_exceso(views, rf)
+    omega = matriz_omega(p, sigma, tau, optimizacion.metodo_omega)
+    mu_bl, m = posterior(pi, sigma, tau, p, q, omega)
+    sigma_bl = sigma + m
 
-    Devuelve ``retornos_esperados`` como retornos TOTALES (μ_BL + rf) y métricas ex ante
-    con volatilidad calculada sobre Σ (no Σ_BL).
-    """
-    raise NotImplementedError("S1: optimizar_black_litterman pendiente de implementación")
+    w = resolver_qp(
+        lambda w: float(-(w @ mu_bl - 0.5 * delta * w @ sigma_bl @ w)),
+        lambda w: np.asarray(-(mu_bl - delta * sigma_bl @ w), dtype=float),
+        restricciones,
+    )
+    retornos_totales = mu_bl + rf
+    return CandidatePortfolio(
+        nombre=NOMBRE_CANDIDATO,
+        tecnica=TecnicaOptimizacion.BLACK_LITTERMAN,
+        pesos=pesos_a_dict(activos, w),
+        metricas=metricas_ex_ante(w, retornos_totales, sigma, rf),
+        retornos_esperados=pesos_a_dict(activos, retornos_totales),
+        parametros={
+            "delta": delta,
+            "tau": tau,
+            "tasa_libre_riesgo": rf,
+            "metodo_omega": str(optimizacion.metodo_omega),
+            "metodo_covarianza": str(optimizacion.metodo_covarianza),
+            "prior": prior.metodo,
+            "n_views": len(views.views),
+        },
+    )
+
+
+def pesos_mercado(prior: PriorEquilibrioConfig, activos: tuple[str, ...]) -> Vector:
+    caps = np.array([prior.capitalizacion_usd_billones[a] for a in activos], dtype=float)
+    return np.asarray(caps / caps.sum(), dtype=float)
+
+
+def prior_equilibrio(sigma: Matriz, w_mkt: Vector, delta: float) -> Vector:
+    """π = δ·Σ·w_mkt (retorno en exceso de la tasa libre de riesgo)."""
+    return np.asarray(delta * sigma @ w_mkt, dtype=float)
+
+
+def vector_q_en_exceso(views: MarketViews, tasa_libre_riesgo: float) -> Vector:
+    return np.array(
+        [
+            v.q_anual - tasa_libre_riesgo if v.tipo is TipoView.ABSOLUTA else v.q_anual
+            for v in views.views
+        ],
+        dtype=float,
+    )
+
+
+def matriz_omega(p: Matriz, sigma: Matriz, tau: float, metodo: MetodoOmega) -> Matriz:
+    if metodo is MetodoOmega.HE_LITTERMAN:
+        return np.asarray(np.diag(np.diag(p @ (tau * sigma) @ p.T)), dtype=float)
+    raise NotImplementedError(
+        f"metodo_omega={metodo}: solo he_litterman está implementado (ADR-003); "
+        "idzorek se implementa cuando un sprint lo necesite"
+    )
+
+
+def posterior(
+    pi: Vector, sigma: Matriz, tau: float, p: Matriz, q: Vector, omega: Matriz
+) -> tuple[Vector, Matriz]:
+    """(μ_BL, M) con M la covarianza del estimador del retorno medio (He-Litterman)."""
+    inv_tau_sigma = np.linalg.inv(tau * sigma)
+    if p.shape[0] == 0:
+        return np.asarray(pi, dtype=float), np.asarray(tau * sigma, dtype=float)
+    inv_omega = np.linalg.inv(omega)
+    m = np.linalg.inv(inv_tau_sigma + p.T @ inv_omega @ p)
+    mu = m @ (inv_tau_sigma @ pi + p.T @ inv_omega @ q)
+    return np.asarray(mu, dtype=float), np.asarray((m + m.T) / 2.0, dtype=float)
