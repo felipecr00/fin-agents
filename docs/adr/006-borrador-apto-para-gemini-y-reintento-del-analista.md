@@ -2,7 +2,7 @@
 
 - Fecha: 2026-09-17
 - Sprint: S3
-- Estado: propuesta (a revisar por el usuario en el checkpoint del hito 2)
+- Estado: aceptada (hito 2 dado por completo por el usuario el 2026-09-17, tras la corrida real)
 
 ## Contexto
 El spec de S3 pide `market_analyst` como `LlmAgent` con `output_schema=MarketViews` y
