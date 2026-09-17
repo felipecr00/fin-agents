@@ -23,6 +23,7 @@ from investmentsys.contracts import MarketViews
 from investmentsys.data import CSVPriceProvider
 from investmentsys.tools import CLAVE_MARKET_VIEWS
 
+APP = "market_analyst"  # ADK espera el nombre del paquete del agente raíz
 VARIABLES = (
     "GOOGLE_API_KEY",
     "GEMINI_API_KEY",
@@ -35,8 +36,8 @@ async def correr(mensaje: str) -> MarketViews:
     config = cargar_config()
     agente = crear_market_analyst(config, CSVPriceProvider(config.datos.ruta_csv))
     sesiones = InMemorySessionService()
-    runner = Runner(agent=agente, app_name="probar_analista", session_service=sesiones)
-    sesion = await sesiones.create_session(app_name="probar_analista", user_id="local")
+    runner = Runner(agent=agente, app_name=APP, session_service=sesiones)
+    sesion = await sesiones.create_session(app_name=APP, user_id="local")
     contenido = types.Content(role="user", parts=[types.Part(text=mensaje)])
     async for evento in runner.run_async(
         user_id="local", session_id=sesion.id, new_message=contenido
@@ -44,9 +45,7 @@ async def correr(mensaje: str) -> MarketViews:
         for parte in evento.content.parts if evento.content and evento.content.parts else []:
             if parte.text:
                 print(f"\n[{evento.author}]\n{parte.text}")
-    final = await sesiones.get_session(
-        app_name="probar_analista", user_id="local", session_id=sesion.id
-    )
+    final = await sesiones.get_session(app_name=APP, user_id="local", session_id=sesion.id)
     assert final is not None
     return MarketViews.model_validate(final.state[CLAVE_MARKET_VIEWS])
 

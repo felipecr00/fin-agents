@@ -13,6 +13,9 @@ reintento si la salida no valida. Medido sin red con google-adk 2.9.1 / google-g
   `horizonte_meses` y `confianza`) y `patternProperties` (`coeficientes: dict[Ticker, float]`)
   no están permitidos, ni con API key ni con Vertex. El test
   `test_gemini_acepta_el_esquema_del_borrador_pero_no_el_contrato` lo fija.
+- Corrida real (2026-09-17, `gemini-3.5-flash`, API key): la Gemini API además devuelve
+  `400 INVALID_ARGUMENT` ante `additional_properties`, que el conversor local sí acepta; lo
+  genera `extra="forbid"`. El borrador no lo usa y el mismo test lo vigila.
 - Si el JSON del modelo no valida contra `output_schema`, `LlmAgent` lanza
   `pydantic.ValidationError` y la invocación muere: ADK no reintenta. `RetryConfig` reintenta
   a ciegas (sin decirle al modelo qué falló) y solo dentro de un `Workflow`.
@@ -30,7 +33,9 @@ reintento si la salida no valida. Medido sin red con google-adk 2.9.1 / google-g
    cuya instrucción incluye ese error. Máximo `agentes.max_intentos_analista`; agotados,
    lanza `ViewsInvalidasError`. Errores del modelo (credenciales, cuota, red) no se
    reintentan aquí: se propagan.
-4. Sin herramientas de búsqueda, la instrucción prohíbe inventar URLs en `fuente`.
+4. Sin herramientas de búsqueda, la instrucción prohíbe inventar URLs en `fuente` y exige
+   `fecha_fuente` nula salvo documento con fecha conocida (en la primera corrida real el
+   modelo inventó fechas, dos de ellas posteriores al día de la corrida).
 
 ## Alternativas descartadas
 - **Relajar `MarketViews`** (quitar `gt`, cambiar el `dict`): debilita un contrato aprobado

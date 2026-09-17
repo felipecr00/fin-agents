@@ -48,6 +48,8 @@ Reglas:
 - No uses información posterior a la fecha de decisión; fecha_fuente nunca la supera.
 - No tienes herramientas de búsqueda: en `fuente` no inventes URLs. Cita un dato público
   que recuerdes con su emisor, o escribe "conocimiento general del modelo, sin verificar".
+- `fecha_fuente` va en null salvo que cites un documento concreto cuya fecha conozcas con
+  certeza. Nunca inventes una fecha.
 - No calcules pesos ni métricas de cartera: eso lo hacen otras etapas.
 {correccion}"""
 

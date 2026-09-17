@@ -19,7 +19,10 @@ CONFIANZA_MINIMA = 0.01  # el contrato exige confianza > 0; Gemini no admite cot
 
 
 class _Borrador(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    # Sin extra="forbid": genera `additionalProperties`, que la Gemini API rechaza con un 400
+    # aunque el conversor local de google-genai lo acepte. Un campo de más se ignora; lo que
+    # importa se valida al construir el contrato.
+    model_config = ConfigDict(frozen=True)
 
 
 class CoeficienteBorrador(_Borrador):
@@ -50,7 +53,8 @@ class ViewBorrador(_Borrador):
         description="Referencia verificable. Nunca inventes una URL: si no tienes una, dilo.",
     )
     fecha_fuente: date | None = Field(
-        default=None, description="Fecha de la fuente (AAAA-MM-DD); nunca posterior a la decisión."
+        default=None,
+        description="null salvo que la fuente sea un documento con fecha conocida (AAAA-MM-DD).",
     )
 
 

@@ -65,7 +65,9 @@ def test_gemini_acepta_el_esquema_del_borrador_pero_no_el_contrato(
         if "vertexai" in variante
         else (genai.Client(**variante))
     )
-    _transformers.t_schema(cliente._api_client, MarketViewsBorrador)
+    esquema = _transformers.t_schema(cliente._api_client, MarketViewsBorrador)
+    # La API real devuelve 400 ante `additional_properties` aunque el conversor lo acepte.
+    assert "additional_properties" not in esquema.model_dump_json(exclude_none=True)
     with pytest.raises(ValueError, match=r"exclusiveMinimum|patternProperties"):
         _transformers.t_schema(cliente._api_client, MarketViews)
 
