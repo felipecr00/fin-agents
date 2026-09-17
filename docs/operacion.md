@@ -45,7 +45,9 @@ desviación máxima 8.9e-16; prod 140 valores, 1.3e-15; tolerancia 1e-8.
   o cambia de rama; no es un fallo numérico.
 - `DIFERENCIA …`: el núcleo dio otro número en la nube. Es un hallazgo: no subas la tolerancia.
 - HTTP 403 en dev: a tu usuario le falta `roles/run.invoker` sobre el servicio.
-- HTTP 500: error dentro de la corrida; mira los logs. Un 429/503 de Gemini es transitorio.
+- HTTP 500: error dentro de la corrida; mira los logs. Los 429/503 de Gemini se reintentan
+  solos (`agentes.reintentos_modelo`: 6 intentos, ≈ 1 min de espera en total); si aun así
+  llega uno, la cuota está agotada de verdad: espera unos minutos.
 
 ## Logs
 
