@@ -3,10 +3,8 @@
 Codifica ``docs/referencia_black_litterman.py`` contra ``data/precios.csv``. Si este test se
 rompe, el núcleo está mal: no se ajusta el test para que pase.
 
-En S0 los módulos ``quant/`` y ``portfolio/`` son stubs que lanzan ``NotImplementedError``;
-por eso cada test lleva ``xfail(raises=NotImplementedError, strict=True)``: falla por la
-razón correcta (no por imports) y, en cuanto S1 implemente el núcleo, el marcador hará
-fallar la suite hasta que se retire.
+Los valores esperados (pesos, volatilidades, correlaciones, posterior y métricas) son el
+oráculo del test, no parámetros del sistema: por eso viven aquí y no en ``config.yaml``.
 """
 
 from __future__ import annotations
@@ -52,12 +50,6 @@ TOLERANCIA_ESTIMACION = 0.005
 RETORNOS_POSTERIOR_ESPERADOS = {"VOOG": 0.1190, "BNS": 0.1022, "IBIT": 0.1105, "VB": 0.0950}
 METRICAS_ESPERADAS = {"retorno_esperado_anual": 0.1126, "volatilidad_anual": 0.1837}
 TOLERANCIA_METRICAS = 0.0025
-
-pendiente_s1 = pytest.mark.xfail(
-    raises=NotImplementedError,
-    strict=True,
-    reason="S1 pendiente: quant/ y portfolio/ son stubs que lanzan NotImplementedError",
-)
 
 
 @pytest.fixture(scope="module")
@@ -107,6 +99,7 @@ def _estimates(
         periodos_por_anio=provider.periodos_por_anio,
         ventana_meses=config.datos.ventana_covarianza_meses,
         metodos=(MetodoCovarianza.HISTORICA,),
+        nivel_confianza=config.estimacion.nivel_confianza,
     )
 
 
@@ -129,7 +122,7 @@ def _optimizar(
 def test_el_ejercicio_esta_bien_parametrizado(
     config: Config, views_golden: MarketViews, restricciones: PortfolioConstraints
 ) -> None:
-    """Sin xfail: comprueba que los inputs del ejercicio están en config y en el contrato."""
+    """Comprueba que los inputs del ejercicio están en config y en el contrato."""
     assert config.optimizacion.aversion_riesgo_delta == 2.5
     assert config.optimizacion.tau == 0.05
     assert config.optimizacion.tasa_libre_riesgo == 0.04
@@ -143,7 +136,6 @@ def test_el_ejercicio_esta_bien_parametrizado(
 
 
 @pytest.mark.golden
-@pendiente_s1
 def test_covarianza_historica_reproduce_la_referencia(
     config: Config, provider: CSVPriceProvider, activos: tuple[str, ...]
 ) -> None:
@@ -159,7 +151,6 @@ def test_covarianza_historica_reproduce_la_referencia(
 
 
 @pytest.mark.golden
-@pendiente_s1
 def test_black_litterman_reproduce_los_pesos_del_ejercicio(
     config: Config,
     provider: CSVPriceProvider,
@@ -175,7 +166,6 @@ def test_black_litterman_reproduce_los_pesos_del_ejercicio(
 
 
 @pytest.mark.golden
-@pendiente_s1
 def test_black_litterman_posterior_y_metricas(
     config: Config,
     provider: CSVPriceProvider,
