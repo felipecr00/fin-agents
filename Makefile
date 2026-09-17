@@ -14,7 +14,7 @@ AGENT_ENGINE_ID ?=
 NOMBRE_PROD ?= fin-agents-prod
 STAGING_PROD := build/prod
 
-.PHONY: install lint type test check run-local eval clean deploy-dev url-dev corrida-dev logs-dev deploy-prod
+.PHONY: install lint type test check run-local eval clean deploy-dev url-dev corrida-dev logs-dev deploy-prod corrida-prod
 
 install:        ## dependencias con uv
 	$(UV) sync
@@ -70,6 +70,11 @@ deploy-prod:    ## Agent Engine (prod): mismas versiones que uv.lock, sesiones a
 		--extra_packages src/investmentsys --extra_packages config.yaml --extra_packages data \
 		--temp_folder $(STAGING_PROD)/tmp \
 		$(STAGING_PROD)/pipeline
+
+corrida-prod:   ## corrida real contra Agent Engine (sesiones administradas) + replay local
+	@test -n "$(AGENT_ENGINE_ID)" || { echo "Falta AGENT_ENGINE_ID"; exit 1; }
+	$(UV) run python scripts/corrida_remota.py \
+		projects/$(PROYECTO)/locations/$(REGION)/reasoningEngines/$(AGENT_ENGINE_ID)
 
 clean:
 	rm -rf .pytest_cache .mypy_cache .ruff_cache

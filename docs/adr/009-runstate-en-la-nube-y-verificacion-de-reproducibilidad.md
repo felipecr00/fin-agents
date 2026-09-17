@@ -56,6 +56,9 @@ corrida no mide nada.
   (ADR aparte) que hoy no se justifica.
 - Medido en local (tres corridas reales de S3/S4 y los tests con LLM falso): 110-140 valores
   comparados por corrida, desviación máxima 0.0 en la misma máquina.
+- Medido contra dev en Cloud Run (corrida `20260917T150434_222970Z`, linux/x86-64 vs.
+  macOS/arm64): 110 valores, desviación máxima **8.9e-16**. La tolerancia de 1e-8 deja siete
+  órdenes de margen; una desviación que se le acerque es señal de problema, no ruido.
 - No cambia ningún contrato: `RunState` se serializa tal cual en una clave nueva del estado.
 - El estado de sesión crece (~decenas de KB por corrida); irrelevante al volumen del proyecto.
 - La garantía que se verifica es la que CLAUDE.md promete: misma entrada = misma salida **en
