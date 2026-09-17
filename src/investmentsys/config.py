@@ -120,6 +120,10 @@ class AgentesConfig(_Seccion):
         return v
 
 
+class CorridasConfig(_Seccion):
+    directorio: Path
+
+
 class ReproducibilidadConfig(_Seccion):
     semilla: int
 
@@ -132,6 +136,7 @@ class Config(_Seccion):
     datos: DatosConfig
     validacion: ValidacionConfig
     agentes: AgentesConfig
+    corridas: CorridasConfig
     reproducibilidad: ReproducibilidadConfig
 
     @model_validator(mode="after")

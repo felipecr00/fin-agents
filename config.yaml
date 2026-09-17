@@ -58,5 +58,9 @@ agentes:
   max_intentos_analista: 3
   horizonte_views_meses: 12
 
+corridas:
+  # RunState y reporte de cada corrida: <directorio>/<run_id>/ (relativo a la raíz del repo).
+  directorio: runs
+
 reproducibilidad:
   semilla: 42

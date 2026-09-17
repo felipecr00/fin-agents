@@ -6,7 +6,7 @@ import asyncio
 import json
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, ClassVar
 
 import pytest
 from google.adk.agents.base_agent import BaseAgent
@@ -16,6 +16,7 @@ from google.adk.models.llm_request import LlmRequest
 from google.adk.models.llm_response import LlmResponse
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
+from google.adk.workflow import BaseNode
 from google.genai import types
 from pydantic import PrivateAttr
 
@@ -53,6 +54,54 @@ class LlmGuionado(BaseLlm):
         yield LlmResponse(content=types.Content(role="model", parts=[types.Part(text=texto)]))
 
 
+class Llamada(dict[str, Any]):
+    """Respuesta del guion que es una llamada a un tool: ``Llamada("tool", arg=...)``."""
+
+    def __init__(self, nombre: str, **args: Any) -> None:
+        super().__init__(args)
+        self.nombre = nombre
+
+
+class LlmPorAgente(BaseLlm):
+    """Un guion por agente, elegido por una frase distintiva de su instrucción de sistema."""
+
+    model: str = "llm-por-agente"
+    _guiones: dict[str, list[Any]] = PrivateAttr(default_factory=dict)
+    _instrucciones: dict[str, list[str]] = PrivateAttr(default_factory=dict)
+
+    def __init__(self, **guiones: list[Any]) -> None:
+        super().__init__()
+        self._guiones = {k: list(v) for k, v in guiones.items()}
+        self._instrucciones = {k: [] for k in guiones}
+
+    MARCAS: ClassVar[dict[str, str]] = {
+        "analista": "Eres el Analista de Mercados",
+        "constructor": "Eres el Constructor de Portafolios",
+        "reporter": "Eres el redactor del informe",
+    }
+
+    def instrucciones(self, agente: str) -> list[str]:
+        return self._instrucciones[agente]
+
+    def pendientes(self) -> dict[str, int]:
+        return {k: len(v) for k, v in self._guiones.items() if v}
+
+    async def generate_content_async(
+        self, llm_request: LlmRequest, stream: bool = False
+    ) -> AsyncGenerator[LlmResponse, None]:
+        sistema = str(llm_request.config.system_instruction)
+        (agente,) = [a for a, marca in self.MARCAS.items() if marca in sistema]
+        self._instrucciones[agente].append(sistema)
+        if not self._guiones.get(agente):
+            raise AssertionError(f"{agente}: llamada al LLM no prevista en el guion")
+        paso = self._guiones[agente].pop(0)
+        if isinstance(paso, Llamada):
+            parte = types.Part(function_call=types.FunctionCall(name=paso.nombre, args=dict(paso)))
+        else:
+            parte = types.Part(text=paso if isinstance(paso, str) else json.dumps(paso))
+        yield LlmResponse(content=types.Content(role="model", parts=[parte]))
+
+
 @dataclass
 class Corrida:
     eventos: list[Event] = field(default_factory=list)
@@ -69,11 +118,14 @@ class Corrida:
 
 
 def ejecutar(
-    agente: BaseAgent, mensaje: str = "adelante", estado: dict[str, Any] | None = None
+    agente: BaseAgent | BaseNode, mensaje: str = "adelante", estado: dict[str, Any] | None = None
 ) -> Corrida:
     async def _correr() -> Corrida:
         sesiones = InMemorySessionService()
-        runner = Runner(agent=agente, app_name="tests", session_service=sesiones)
+        if isinstance(agente, BaseAgent):
+            runner = Runner(agent=agente, app_name="tests", session_service=sesiones)
+        else:
+            runner = Runner(node=agente, app_name="tests", session_service=sesiones)
         sesion = await sesiones.create_session(app_name="tests", user_id="u", state=estado or {})
         corrida = Corrida()
         contenido = types.Content(role="user", parts=[types.Part(text=mensaje)])

@@ -22,10 +22,14 @@ CLAVE_VALIDACIONES = "validaciones"
 M = TypeVar("M", bound=BaseModel)
 
 
-class Estado(Protocol):
-    """Lo mínimo que comparten ``dict`` y ``google.adk.sessions.State``."""
+class EstadoLegible(Protocol):
+    """Lectura: ``dict``, ``State`` de ADK o el ``MappingProxyType`` de un contexto de lectura."""
 
-    def get(self, key: str, default: Any = None) -> Any: ...
+    def get(self, key: str, default: Any = None, /) -> Any: ...
+
+
+class Estado(EstadoLegible, Protocol):
+    """Lo mínimo que comparten ``dict`` y ``google.adk.sessions.State``."""
 
     def __setitem__(self, key: str, value: Any) -> None: ...
 
