@@ -11,7 +11,7 @@ optimizacion:
   peso_min: 0.02
   peso_max: 0.70
   permitir_cortos: false
-  metodo_covarianza: historica   # historica | ledoit_wolf (implementación en S1)
+  metodo_covarianza: historica   # historica | ledoit_wolf
   # he_litterman: Ω = diag(P·τΣ·Pᵀ), como en el ejercicio de referencia.
   # idzorek: Ω derivada de View.confianza. Se decide en S1; el golden test usa he_litterman.
   metodo_omega: he_litterman
@@ -21,6 +21,12 @@ prior_equilibrio:
   # Proxies de capitalización en US$ billones (10^12): large growth US, BNS, BTC, small caps US.
   # Valores del ejercicio de referencia (docs/referencia_black_litterman.py).
   capitalizacion_usd_billones: {VOOG: 28.0, BNS: 0.116, IBIT: 1.9, VB: 2.5}
+
+estimacion:
+  # Nivel del intervalo t de Student de los retornos históricos anualizados (QuantEstimates).
+  nivel_confianza: 0.95
+  # Ledoit-Wolf (ADR-003): objetivo de correlación constante; la intensidad se estima sobre
+  # la ventana común de todos los activos y se aplica a la matriz histórica híbrida.
 
 datos:
   proveedor: csv
