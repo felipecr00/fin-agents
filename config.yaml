@@ -57,6 +57,9 @@ agentes:
   # Intentos del analista hasta que su salida valide contra MarketViews (incluye el primero).
   max_intentos_analista: 3
   horizonte_views_meses: 12
+  # ADR-008: en Vertex AI con proyecto (prod) el modelo se pide al endpoint global; la región
+  # del despliegue (us-central1) no sirve los Gemini 3.x. Con API key no se usa.
+  ubicacion_vertex: global
 
 corridas:
   # RunState y reporte de cada corrida: <directorio>/<run_id>/ (relativo a la raíz del repo).
@@ -64,3 +67,6 @@ corridas:
 
 reproducibilidad:
   semilla: 42
+  # ADR-009: diferencia absoluta máxima admitida al repetir en local una corrida remota
+  # (macOS/arm64 vs. linux/x86-64 no garantizan igualdad bit a bit entre BLAS distintos).
+  tolerancia_replay: 1.0e-8

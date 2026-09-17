@@ -14,8 +14,23 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from investmentsys.contracts import Fraccion, MetodoCovarianza, Ticker
 from investmentsys.contracts.common import validar_mismo_universo, validar_suma
 
-RAIZ_PROYECTO = Path(__file__).resolve().parents[2]
-RUTA_CONFIG = RAIZ_PROYECTO / "config.yaml"
+NOMBRE_CONFIG = "config.yaml"
+
+
+def _localizar_raiz(desde: Path) -> Path:
+    """Primer ancestro de ``desde`` con ``config.yaml`` (ADR-008).
+
+    En el repo es la raíz (``src/investmentsys`` → ``src`` → raíz); en los contenedores de
+    Cloud Run y Agent Engine es ``/app``, donde el paquete no cuelga de ``src/``.
+    """
+    for carpeta in desde.resolve().parents:
+        if (carpeta / NOMBRE_CONFIG).is_file():
+            return carpeta
+    raise FileNotFoundError(f"ningún directorio por encima de {desde} contiene {NOMBRE_CONFIG}")
+
+
+RAIZ_PROYECTO = _localizar_raiz(Path(__file__))
+RUTA_CONFIG = RAIZ_PROYECTO / NOMBRE_CONFIG
 
 
 class MetodoOmega(StrEnum):
@@ -111,6 +126,9 @@ class AgentesConfig(_Seccion):
     temperatura: float = Field(ge=0.0, le=2.0)
     max_intentos_analista: int = Field(ge=1)
     horizonte_views_meses: int = Field(gt=0)
+    ubicacion_vertex: str | None = Field(
+        default=None, description="Ubicación del modelo en Vertex AI; None = la del entorno."
+    )
 
     @field_validator("modelo")
     @classmethod
@@ -126,6 +144,7 @@ class CorridasConfig(_Seccion):
 
 class ReproducibilidadConfig(_Seccion):
     semilla: int
+    tolerancia_replay: float = Field(gt=0.0)
 
 
 class Config(_Seccion):
