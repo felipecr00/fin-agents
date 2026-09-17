@@ -11,6 +11,16 @@ optimizacion:
   peso_min: 0.02
   peso_max: 0.70
   permitir_cortos: false
+  metodo_covarianza: historica   # historica | ledoit_wolf (implementación en S1)
+  # he_litterman: Ω = diag(P·τΣ·Pᵀ), como en el ejercicio de referencia.
+  # idzorek: Ω derivada de View.confianza. Se decide en S1; el golden test usa he_litterman.
+  metodo_omega: he_litterman
+
+prior_equilibrio:
+  metodo: capitalizacion
+  # Proxies de capitalización en US$ billones (10^12): large growth US, BNS, BTC, small caps US.
+  # Valores del ejercicio de referencia (docs/referencia_black_litterman.py).
+  capitalizacion_usd_billones: {VOOG: 28.0, BNS: 0.116, IBIT: 1.9, VB: 2.5}
 
 datos:
   proveedor: csv
