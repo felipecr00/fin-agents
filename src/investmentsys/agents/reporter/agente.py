@@ -10,6 +10,7 @@ from google.adk.agents.readonly_context import ReadonlyContext
 from google.adk.models.base_llm import BaseLlm
 from google.genai import types
 
+from investmentsys.agents.modelo import resolver_modelo
 from investmentsys.config import Config
 from investmentsys.contracts import RunState
 
@@ -47,7 +48,7 @@ def crear_reporter(
     return LlmAgent(
         name=NOMBRE,
         description="Redacta la narrativa del informe final desde RunState.",
-        model=modelo if modelo is not None else config.agentes.modelo,
+        model=resolver_modelo(config.agentes, modelo),
         instruction=instruccion,
         output_key=clave_salida,
         generate_content_config=types.GenerateContentConfig(

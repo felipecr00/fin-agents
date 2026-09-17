@@ -23,6 +23,7 @@ from google.genai import types
 from pydantic import ValidationError
 
 from investmentsys.agents.market_analyst.borrador import MarketViewsBorrador
+from investmentsys.agents.modelo import resolver_modelo
 from investmentsys.config import Config
 from investmentsys.contracts import DISCLAIMER, MarketViews
 from investmentsys.data import PriceProvider
@@ -170,7 +171,7 @@ def crear_market_analyst(
     llm = LlmAgent(
         name=f"{NOMBRE}_llm",
         description="Redacta views de mercado en formato Black-Litterman.",
-        model=modelo if modelo is not None else config.agentes.modelo,
+        model=resolver_modelo(config.agentes, modelo),
         instruction=instruccion,
         output_schema=MarketViewsBorrador,
         output_key=CLAVE_BORRADOR,

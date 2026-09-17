@@ -10,6 +10,7 @@ from google.adk.models.base_llm import BaseLlm
 from google.adk.tools.function_tool import FunctionTool
 from google.genai import types
 
+from investmentsys.agents.modelo import resolver_modelo
 from investmentsys.config import Config
 from investmentsys.tools import CLAVE_CANDIDATOS, CLAVE_VALIDACIONES, NucleoTools
 
@@ -70,7 +71,7 @@ def crear_constructor(
     return LlmAgent(
         name=NOMBRE,
         description="Decide técnica y límites; la herramienta calcula los candidatos.",
-        model=modelo if modelo is not None else config.agentes.modelo,
+        model=resolver_modelo(config.agentes, modelo),
         instruction=instruccion,
         tools=[FunctionTool(tools.construir_candidatos)],
         generate_content_config=types.GenerateContentConfig(

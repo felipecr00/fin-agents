@@ -126,6 +126,9 @@ class AgentesConfig(_Seccion):
     temperatura: float = Field(ge=0.0, le=2.0)
     max_intentos_analista: int = Field(ge=1)
     horizonte_views_meses: int = Field(gt=0)
+    ubicacion_vertex: str | None = Field(
+        default=None, description="Ubicación del modelo en Vertex AI; None = la del entorno."
+    )
 
     @field_validator("modelo")
     @classmethod

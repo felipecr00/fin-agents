@@ -97,10 +97,18 @@ Nuestro agente (`apps/pipeline`) no es autocontenido: importa `investmentsys` (`
   versiones bloqueadas**; la comparación de resultados de ADR-009 es la red que detecta si
   divergen.
 - Dev y prod usan el mismo backend (Vertex AI); solo cambia la credencial (llave express en
-  dev, identidad del servicio en prod). En prod el id fijo `gemini-3.5-flash` debe servirse
-  en la región del despliegue: `southamerica-west1` respondió 403 "denied or may not exist"
-  el 2026-09-17, así que **dev y prod van en `us-central1`** (decisión del usuario), la región
-  de los ejemplos de la guía, donde el modelo y Agent Engine están disponibles.
+  dev, identidad del servicio en prod). **Dev y prod van en `us-central1`** (decisión del
+  usuario; `southamerica-west1` no sirve el modelo).
+- Los Gemini 3.x solo se sirven en el endpoint `global` de Vertex. Medido el 2026-09-17: el
+  primer despliegue a Agent Engine sirvió el `Workflow` raíz (cierra el riesgo de ADR-005) y
+  el quant calculó, pero el analista recibió 404 porque la plantilla de ADK fija
+  `GOOGLE_CLOUD_LOCATION=us-central1`. Solución: `agentes.ubicacion_vertex: global` en
+  `config.yaml` y `agents/modelo.py`, que entrega un `Gemini(client_kwargs={"location": …})`
+  —el patrón que documenta ADK— solo cuando el cliente va a Vertex con proyecto. Las sesiones
+  administradas siguen en la región del recurso.
+- `adk deploy agent_engine` importa `vertexai` y ADK 2.9.1 no lo declara: el grupo de
+  dependencias `deploy` lo instala para `make deploy-prod` y fija `google-cloud-aiplatform`
+  en el `requirements.txt` de prod (sin él, ADK añade la línea sin versión).
 - `adk deploy agent_engine` escribe un `Dockerfile` en una carpeta temporal del directorio de
   trabajo; se usa `--temp_folder` bajo `build/` (gitignored) para no pisar el nuestro.
 - La plantilla de ADK fija `python:3.11-slim`, igual que `.python-version`. Subir de Python
