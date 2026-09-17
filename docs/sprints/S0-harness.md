@@ -48,7 +48,7 @@ Cerrado el 2026-09-16 (rama `sprint/S0-harness`, PR contra `main`).
   `xfail(raises=NotImplementedError, strict=True)`. Sin marcador falla por
   `NotImplementedError` (verificado). ADR-002.
 - `make check` verde en local: 85 tests pasan, 3 xfail. CI actualizado
-  (`setup-uv@v10`, `uv sync --locked`).
+  (`setup-uv@v10.1.0`, `uv sync --locked`).
 
 ### Pendiente
 - Proteger `main` en GitHub (merge solo vía PR con CI verde): lo configura el usuario.
