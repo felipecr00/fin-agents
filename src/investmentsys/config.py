@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+from datetime import date
 from enum import StrEnum
 from pathlib import Path
 from typing import Any, Literal
@@ -73,13 +74,36 @@ class DatosConfig(_Seccion):
     ventana_covarianza_meses: int = Field(gt=0)
 
 
+class EscenarioStressConfig(_Seccion):
+    """Ventana histórica de stress: se incluyen los retornos de los meses en [desde, hasta]."""
+
+    nombre: str = Field(min_length=1)
+    desde: date
+    hasta: date
+
+    @model_validator(mode="after")
+    def _ordenado(self) -> EscenarioStressConfig:
+        if self.desde > self.hasta:
+            raise ValueError(f"{self.nombre}: 'desde' posterior a 'hasta'")
+        return self
+
+
 class ValidacionConfig(_Seccion):
     sharpe_oos_minimo: float
     max_drawdown_tolerado: Fraccion
     turnover_maximo_anual: float = Field(ge=0.0)
+    concentracion_hhi_maxima: Fraccion
     costo_transaccion_bps: float = Field(ge=0.0)
     rebalanceo: Literal["mensual"]
     max_iteraciones_constructor: int = Field(ge=1)
+    escenarios_stress: tuple[EscenarioStressConfig, ...] = ()
+
+    @model_validator(mode="after")
+    def _escenarios_unicos(self) -> ValidacionConfig:
+        nombres = [e.nombre for e in self.escenarios_stress]
+        if len(set(nombres)) != len(nombres):
+            raise ValueError("escenarios_stress: nombres repetidos")
+        return self
 
 
 class ReproducibilidadConfig(_Seccion):
