@@ -45,3 +45,24 @@ def test_rechaza_pesos_actuales_que_no_suman_uno() -> None:
     crudo["portafolio"]["pesos_actuales"]["VOOG"] = 0.5
     with pytest.raises(ValidationError, match="suman"):
         Config.model_validate(crudo)
+
+
+def test_escenarios_stress_del_repo() -> None:
+    escenarios = cargar_config().validacion.escenarios_stress
+    assert [e.nombre for e in escenarios] == ["tasas_2022", "cripto_2025_26"]
+    assert all(e.desde <= e.hasta for e in escenarios)
+    assert 0.0 < cargar_config().validacion.concentracion_hhi_maxima <= 1.0
+
+
+def test_rechaza_escenarios_repetidos_o_invertidos() -> None:
+    crudo = cargar_config().model_dump()
+    escenarios = list(crudo["validacion"]["escenarios_stress"])
+    crudo["validacion"]["escenarios_stress"] = [*escenarios, dict(escenarios[0])]
+    with pytest.raises(ValidationError, match="repetidos"):
+        Config.model_validate(crudo)
+    crudo = cargar_config().model_dump()
+    primero = dict(escenarios[0])
+    primero["hasta"] = primero["desde"].replace(year=2020)
+    crudo["validacion"]["escenarios_stress"] = [primero, *escenarios[1:]]
+    with pytest.raises(ValidationError, match="posterior a 'hasta'"):
+        Config.model_validate(crudo)

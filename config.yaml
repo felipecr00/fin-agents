@@ -37,9 +37,18 @@ validacion:
   sharpe_oos_minimo: 0.20
   max_drawdown_tolerado: 0.35
   turnover_maximo_anual: 1.0
+  # Herfindahl máximo de los pesos aplicados (Σw²). 0.55 ≈ 1.8 activos efectivos; el
+  # portafolio de referencia (70/7/2/21) queda en 0.539.
+  concentracion_hhi_maxima: 0.55
+  # Costo por unidad de turnover (Σ|Δw|), cobrado en CADA rebalanceo.
   costo_transaccion_bps: 10
   rebalanceo: mensual
   max_iteraciones_constructor: 2
+  # Stress tests históricos: se incluyen los retornos de los meses en [desde, hasta].
+  # No hay escenario 2020 (covid): data/precios.csv comienza en 2021-09.
+  escenarios_stress:
+    - {nombre: tasas_2022, desde: 2022-01-31, hasta: 2022-12-31}
+    - {nombre: cripto_2025_26, desde: 2025-08-31, hasta: 2026-06-30}
 
 reproducibilidad:
   semilla: 42
