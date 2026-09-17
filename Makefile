@@ -38,6 +38,7 @@ deploy-dev:     ## Cloud Run (dev): Cloud Build construye el Dockerfile y despli
 		--project $(PROYECTO) --region $(REGION) \
 		--service-account $(SA_EJECUCION) \
 		--set-secrets GOOGLE_API_KEY=$(SECRETO_GEMINI):$(VERSION_SECRETO) \
+		--set-env-vars GOOGLE_GENAI_USE_ENTERPRISE=True \
 		--no-allow-unauthenticated \
 		--min-instances 0 --max-instances 1 \
 		--memory 1Gi --cpu 1 --timeout 300 --quiet

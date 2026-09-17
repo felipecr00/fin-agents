@@ -42,9 +42,15 @@ Nuestro agente (`apps/pipeline`) no es autocontenido: importa `investmentsys` (`
    - `--no-allow-unauthenticated`; se invoca con identity token.
    - Sesiones `memory://` y `--max-instances=1` (con sesiones en memoria, dos instancias
      romperían "crear sesión → correr"). Dev es desechable; la durabilidad es de prod.
-   - Gemini por **API key desde Secret Manager** (`--set-secrets GOOGLE_API_KEY=gemini-api-key:<versión>`, versión fija),
-     leída por una cuenta de servicio de ejecución propia cuyo único permiso es
-     `secretAccessor` sobre ese secreto.
+   - Gemini por **API key desde Secret Manager**
+     (`--set-secrets GOOGLE_API_KEY=gemini-api-key:<versión>`, versión fija), leída por una
+     cuenta de servicio de ejecución propia cuyo único permiso es `secretAccessor` sobre ese
+     secreto. La llave es de **Vertex AI en modo express** (API key de GCP restringida a
+     `aiplatform.googleapis.com`) con `GOOGLE_GENAI_USE_ENTERPRISE=True` y **sin**
+     `GOOGLE_CLOUD_PROJECT`/`GOOGLE_CLOUD_LOCATION` en el entorno. Medido el 2026-09-17: con
+     proyecto y región definidos el SDK ignora la llave y usa ADC; sin el flag la manda a
+     `generativelanguage` y recibe 403 `API_KEY_SERVICE_BLOCKED`. La llave free tier de la
+     Gemini API usada en S3 tiene 20 peticiones/día por modelo (~4 corridas): inservible.
 2. **Prod = `adk deploy agent_engine`** (camino "standard deployment" de la guía) con
    `--extra_packages src/investmentsys config.yaml data`, `requirements.txt` generado con
    `uv export --locked --no-dev` (mismas versiones que dev y local) y `--agent_engine_id`
@@ -69,9 +75,9 @@ Nuestro agente (`apps/pipeline`) no es autocontenido: importa `investmentsys` (`
   de `apps/pipeline/`. Además instala dependencias sin lock.
 - **Dev también con Vertex AI en lugar de API key**: eliminaría el único secreto y haría que
   dev y prod usen el mismo backend de Gemini (S3 ya enseñó que los backends difieren: el 400
-  por `additionalProperties`). Se descarta porque el sprint pide ejercitar Secret Manager y
-  porque dev reproduce así la configuración local (`.env`). **Es la alternativa donde el
-  criterio del usuario cambiaría el diseño**: pasar dev a Vertex es cambiar dos flags.
+  por `additionalProperties`). Resuelto a medias por la llave que consiguió el usuario: es de
+  Vertex AI (modo express), así que dev ya usa el backend de prod y sigue ejercitando Secret
+  Manager. Pasar dev a la identidad del servicio (sin llave) sigue siendo cambiar dos flags.
 - **SDK de Python (`client.agent_engines.create(agent=AdkApp(...))`)**: el CLI ya no va por
   ahí, y obligaría a que el `Workflow` sea serializable con cloudpickle, que es justo el
   riesgo de ADR-005.
@@ -90,9 +96,10 @@ Nuestro agente (`apps/pipeline`) no es autocontenido: importa `investmentsys` (`
 - Dos empaquetados (Dockerfile propio en dev, plantilla de ADK en prod) con las **mismas
   versiones bloqueadas**; la comparación de resultados de ADR-009 es la red que detecta si
   divergen.
-- Dev (Gemini API) y prod (Vertex AI) usan backends distintos del mismo modelo. El id fijo
-  `gemini-3.5-flash` debe existir en la región de Vertex elegida; se comprueba en el hito 2
-  (plan B: `GOOGLE_CLOUD_LOCATION=global` solo para el modelo).
+- Dev y prod usan el mismo backend (Vertex AI); solo cambia la credencial (llave express en
+  dev, identidad del servicio en prod). En prod el id fijo `gemini-3.5-flash` debe servirse
+  en la ubicación configurada: `southamerica-west1` respondió 403 "denied or may not exist"
+  el 2026-09-17; se resuelve en el hito 2 (`GOOGLE_CLOUD_LOCATION=global` para el modelo).
 - `adk deploy agent_engine` escribe un `Dockerfile` en una carpeta temporal del directorio de
   trabajo; se usa `--temp_folder` bajo `build/` (gitignored) para no pisar el nuestro.
 - La plantilla de ADK fija `python:3.11-slim`, igual que `.python-version`. Subir de Python
