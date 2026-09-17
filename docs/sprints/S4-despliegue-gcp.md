@@ -56,7 +56,21 @@ Cerrado el 2026-09-17 (rama `sprint/S4-despliegue-gcp`, PR contra `main`). Proye
   6 llamadas, 7.751 + 5.498 tokens ≈ US$0,06) y la puesta en marcha de WIF paso a paso.
 - `make check` verde: 236 tests (16 nuevos).
 
+### Añadido tras el cierre (rama `sprint/S4-reintentos-gemini`)
+- Reintentos del modelo: la llave de Vertex AI en modo express devolvió 429 en 3 de ~10
+  corridas del 2026-09-17 (cuota por minuto) y cada uno tumbaba la corrida. `resolver_modelo`
+  entrega siempre un `Gemini` con `HttpRetryOptions` desde `agentes.reintentos_modelo`
+  (6 intentos; esperas 2-4-8-16-32 s). Verificado con una API local falsa (dos 429 → respuesta
+  correcta en 3 peticiones; sin reintentos, `_ResourceExhaustedError`) y con corrida real.
+
+- Primer despliegue automático (merge de #5): WIF autenticó y `make check` pasó, pero el build
+  falló: a `fin-agents-deployer` le faltaba `iam.serviceAccountUser` sobre la cuenta de cómputo
+  por defecto (identidad del build). Corregido en IAM y en `docs/operacion.md`. El PR #6 se
+  mergeó contra la rama de S4 y no contra `main`; este PR lo lleva a `main`.
+
 ### Pendiente
+- Cuenta de build propia (`--build-service-account`) con solo `run.builder`: la de cómputo por
+  defecto tiene `roles/editor` y el desplegador puede actuar como ella.
 - **Verificar tras el merge** que el job `dev` de `deploy` se autentica por WIF y despliega: el
   provider solo admite `main`, así que no se puede probar desde el PR. Dev quedó con la imagen
   anterior a `ubicacion_vertex` (otro `config_hash`); ese primer despliegue lo pone al día.
@@ -65,8 +79,8 @@ Cerrado el 2026-09-17 (rama `sprint/S4-despliegue-gcp`, PR contra `main`). Proye
 - Política de limpieza de imágenes en `cloud-run-source-deploy` (Artifact Registry).
 - `RunState` no guarda las restricciones de cada ronda: el replay repite la optimización de la
   última y la validación de todas. Guardarlas es un cambio de contrato (ADR aparte).
-- Sigue abierto de S3: persistir corridas que fallan por excepción (hoy un 429/503 de Gemini
-  es un HTTP 500 sin `RunState`); reintentos con `retry_options` del modelo: S5.
+- Sigue abierto de S3: persistir corridas que fallan por excepción (un error del modelo que
+  agote los reintentos sigue siendo un HTTP 500 sin `RunState`): S5.
 
 ### Aprendizajes
 - De nuevo, el paquete instalado manda sobre la web: `adk deploy agent_engine` ya no serializa
