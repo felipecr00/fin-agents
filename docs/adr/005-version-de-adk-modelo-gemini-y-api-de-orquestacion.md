@@ -2,7 +2,7 @@
 
 - Fecha: 2026-09-17
 - Sprint: S3
-- Estado: propuesta (pendiente de aprobación del usuario en el checkpoint del hito 1)
+- Estado: aceptada (aprobada por el usuario el 2026-09-17, checkpoint del hito 1)
 
 ## Contexto
 S3 introduce ADK. El release es semanal y la API cambia, así que se verificó el 2026-09-17

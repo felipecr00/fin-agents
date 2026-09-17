@@ -66,3 +66,12 @@ def test_rechaza_escenarios_repetidos_o_invertidos() -> None:
     crudo["validacion"]["escenarios_stress"] = [primero, *escenarios[1:]]
     with pytest.raises(ValidationError, match="posterior a 'hasta'"):
         Config.model_validate(crudo)
+
+
+def test_agentes_modelo_fijo_y_sin_alias_latest() -> None:
+    cfg = cargar_config()
+    assert cfg.agentes.modelo == "gemini-3.5-flash"
+    assert cfg.agentes.max_intentos_analista >= 1
+    crudo = cfg.agentes.model_dump() | {"modelo": "gemini-flash-latest"}
+    with pytest.raises(ValidationError, match="-latest"):
+        type(cfg.agentes).model_validate(crudo)

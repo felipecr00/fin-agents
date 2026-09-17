@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from investmentsys.contracts import Fraccion, MetodoCovarianza, Ticker
 from investmentsys.contracts.common import validar_mismo_universo, validar_suma
@@ -106,6 +106,20 @@ class ValidacionConfig(_Seccion):
         return self
 
 
+class AgentesConfig(_Seccion):
+    modelo: str = Field(min_length=1, description="Id fijo de Gemini (ADR-005).")
+    temperatura: float = Field(ge=0.0, le=2.0)
+    max_intentos_analista: int = Field(ge=1)
+    horizonte_views_meses: int = Field(gt=0)
+
+    @field_validator("modelo")
+    @classmethod
+    def _id_fijo(cls, v: str) -> str:
+        if v.endswith("-latest"):
+            raise ValueError("usa un id de modelo fijo, no un alias -latest (ADR-005)")
+        return v
+
+
 class ReproducibilidadConfig(_Seccion):
     semilla: int
 
@@ -117,6 +131,7 @@ class Config(_Seccion):
     estimacion: EstimacionConfig
     datos: DatosConfig
     validacion: ValidacionConfig
+    agentes: AgentesConfig
     reproducibilidad: ReproducibilidadConfig
 
     @model_validator(mode="after")
