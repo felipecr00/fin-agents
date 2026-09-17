@@ -98,8 +98,9 @@ Nuestro agente (`apps/pipeline`) no es autocontenido: importa `investmentsys` (`
   divergen.
 - Dev y prod usan el mismo backend (Vertex AI); solo cambia la credencial (llave express en
   dev, identidad del servicio en prod). En prod el id fijo `gemini-3.5-flash` debe servirse
-  en la ubicación configurada: `southamerica-west1` respondió 403 "denied or may not exist"
-  el 2026-09-17; se resuelve en el hito 2 (`GOOGLE_CLOUD_LOCATION=global` para el modelo).
+  en la región del despliegue: `southamerica-west1` respondió 403 "denied or may not exist"
+  el 2026-09-17, así que **dev y prod van en `us-central1`** (decisión del usuario), la región
+  de los ejemplos de la guía, donde el modelo y Agent Engine están disponibles.
 - `adk deploy agent_engine` escribe un `Dockerfile` en una carpeta temporal del directorio de
   trabajo; se usa `--temp_folder` bajo `build/` (gitignored) para no pisar el nuestro.
 - La plantilla de ADK fija `python:3.11-slim`, igual que `.python-version`. Subir de Python
