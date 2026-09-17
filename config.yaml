@@ -60,6 +60,15 @@ agentes:
   # ADR-008: en Vertex AI con proyecto (prod) el modelo se pide al endpoint global; la región
   # del despliegue (us-central1) no sirve los Gemini 3.x. Con API key no se usa.
   ubicacion_vertex: global
+  # Un 429/503 de Gemini es transitorio (cuota por minuto, picos de demanda) y sin reintentos
+  # tumba la corrida entera. Esperas: 2, 4, 8, 16, 32 s (≈ 1 min en total, más jitter): cubre la
+  # ventana de cuota por minuto y cabe en el timeout de 300 s de Cloud Run.
+  reintentos_modelo:
+    intentos: 6
+    espera_inicial_s: 2.0
+    espera_maxima_s: 60.0
+    base_exponencial: 2.0
+    codigos_http: [408, 429, 500, 502, 503, 504]
 
 corridas:
   # RunState y reporte de cada corrida: <directorio>/<run_id>/ (relativo a la raíz del repo).
