@@ -121,6 +121,16 @@ class ValidacionConfig(_Seccion):
         return self
 
 
+class ReintentosModeloConfig(_Seccion):
+    """Reintentos HTTP del cliente de Gemini ante errores transitorios (espera exponencial)."""
+
+    intentos: int = Field(ge=1, description="Incluye la petición original; 1 = sin reintentos.")
+    espera_inicial_s: float = Field(gt=0.0)
+    espera_maxima_s: float = Field(gt=0.0)
+    base_exponencial: float = Field(ge=1.0)
+    codigos_http: tuple[int, ...] = Field(min_length=1)
+
+
 class AgentesConfig(_Seccion):
     modelo: str = Field(min_length=1, description="Id fijo de Gemini (ADR-005).")
     temperatura: float = Field(ge=0.0, le=2.0)
@@ -129,6 +139,7 @@ class AgentesConfig(_Seccion):
     ubicacion_vertex: str | None = Field(
         default=None, description="Ubicación del modelo en Vertex AI; None = la del entorno."
     )
+    reintentos_modelo: ReintentosModeloConfig
 
     @field_validator("modelo")
     @classmethod
