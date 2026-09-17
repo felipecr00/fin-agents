@@ -91,7 +91,10 @@ Nuestro agente (`apps/pipeline`) no es autocontenido: importa `investmentsys` (`
 
 ## Consecuencias
 - Cloud Build corre con la cuenta de cómputo por defecto (`roles/run.builder`): es una
-  identidad más con permisos en el proyecto, el precio de la sencillez. `.gcloudignore`
+  identidad más con permisos en el proyecto, el precio de la sencillez. El desplegador necesita
+  además `iam.serviceAccountUser` sobre ella (el build corre *como* esa cuenta); la doc de Cloud
+  Run no lo lista y el primer despliegue desde GitHub falló por eso (2026-09-17). Como esa
+  cuenta trae `roles/editor` de fábrica, una cuenta de build propia sería el endurecimiento. `.gcloudignore`
   decide qué se sube al build (nunca `.env`, `runs/` ni `.venv/`).
 - Dos empaquetados (Dockerfile propio en dev, plantilla de ADK en prod) con las **mismas
   versiones bloqueadas**; la comparación de resultados de ADR-009 es la red que detecta si

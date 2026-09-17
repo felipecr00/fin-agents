@@ -63,7 +63,14 @@ Cerrado el 2026-09-17 (rama `sprint/S4-despliegue-gcp`, PR contra `main`). Proye
   (6 intentos; esperas 2-4-8-16-32 s). Verificado con una API local falsa (dos 429 → respuesta
   correcta en 3 peticiones; sin reintentos, `_ResourceExhaustedError`) y con corrida real.
 
+- Primer despliegue automático (merge de #5): WIF autenticó y `make check` pasó, pero el build
+  falló: a `fin-agents-deployer` le faltaba `iam.serviceAccountUser` sobre la cuenta de cómputo
+  por defecto (identidad del build). Corregido en IAM y en `docs/operacion.md`. El PR #6 se
+  mergeó contra la rama de S4 y no contra `main`; este PR lo lleva a `main`.
+
 ### Pendiente
+- Cuenta de build propia (`--build-service-account`) con solo `run.builder`: la de cómputo por
+  defecto tiene `roles/editor` y el desplegador puede actuar como ella.
 - **Verificar tras el merge** que el job `dev` de `deploy` se autentica por WIF y despliega: el
   provider solo admite `main`, así que no se puede probar desde el PR. Dev quedó con la imagen
   anterior a `ubicacion_vertex` (otro `config_hash`); ese primer despliegue lo pone al día.

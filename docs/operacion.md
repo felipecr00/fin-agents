@@ -84,7 +84,7 @@ o desde la consola.
 |---|---|---|
 | `fin-agents-run@…` | cuenta con la que corre el contenedor de dev | `secretmanager.secretAccessor` solo sobre `gemini-api-key` |
 | `<nº>-compute@developer…` | la usa Cloud Build para construir | `run.builder` |
-| `fin-agents-deployer@…` | la suplanta GitHub Actions vía WIF | `run.sourceDeveloper`, `serviceusage.serviceUsageConsumer`, `aiplatform.user` (proyecto); `iam.serviceAccountUser` solo sobre `fin-agents-run` |
+| `fin-agents-deployer@…` | la suplanta GitHub Actions vía WIF | `run.sourceDeveloper`, `serviceusage.serviceUsageConsumer`, `aiplatform.user` (proyecto); `iam.serviceAccountUser` solo sobre `fin-agents-run` (identidad del servicio) y sobre `<nº>-compute@developer…` (identidad del build) |
 | Agente de servicio de Agent Engine | corre prod y llama a Gemini | lo gestiona Google |
 
 ## Workload Identity Federation: puesta en marcha (una sola vez)
@@ -121,8 +121,12 @@ credenciales de **una hora** de la cuenta desplegadora. No existe ninguna llave 
          --display-name "fin-agents: despliegue desde GitHub Actions" --project $PROYECTO
 
 5. Permisos mínimos de esa cuenta. Los tres primeros son a nivel de proyecto: desplegar a
-   Cloud Run desde código fuente, usar las APIs del proyecto y gestionar Agent Engine. El
-   cuarto es solo sobre `fin-agents-run`: poder asignarla como identidad del servicio.
+   Cloud Run desde código fuente, usar las APIs del proyecto y gestionar Agent Engine. Los
+   otros dos son `serviceAccountUser` sobre cuentas concretas: `fin-agents-run`, para poder
+   asignarla como identidad del servicio, y la cuenta de cómputo por defecto, porque Cloud
+   Build ejecuta el build *como* ella y quien lo lanza debe poder "actuar como" esa cuenta.
+   La doc de Cloud Run no lista este último y un Owner no lo nota; sin él el primer despliegue
+   desde GitHub falló con `caller does not have permission to act as service account`.
 
        for ROL in roles/run.sourceDeveloper roles/serviceusage.serviceUsageConsumer roles/aiplatform.user; do
          gcloud projects add-iam-policy-binding $PROYECTO --condition None \
@@ -131,6 +135,14 @@ credenciales de **una hora** de la cuenta desplegadora. No existe ninguna llave 
        gcloud iam service-accounts add-iam-policy-binding fin-agents-run@$PROYECTO.iam.gserviceaccount.com \
          --member "serviceAccount:fin-agents-deployer@$PROYECTO.iam.gserviceaccount.com" \
          --role roles/iam.serviceAccountUser --project $PROYECTO
+       gcloud iam service-accounts add-iam-policy-binding $NUM-compute@developer.gserviceaccount.com \
+         --member "serviceAccount:fin-agents-deployer@$PROYECTO.iam.gserviceaccount.com" \
+         --role roles/iam.serviceAccountUser --project $PROYECTO
+
+   Ojo: en este proyecto la cuenta de cómputo por defecto tiene `roles/editor` (valor de
+   fábrica de GCP), así que poder actuar como ella es, de hecho, un permiso amplio. Endurecerlo
+   = cuenta de build propia (`gcloud run deploy --build-service-account`) con solo
+   `run.builder`; queda como pendiente.
 
 6. El enlace: las identidades del pool cuyo atributo `repository` sea este repo pueden
    **suplantar** a la cuenta desplegadora (`workloadIdentityUser`). Es lo que sustituye a la llave.
