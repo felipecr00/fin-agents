@@ -21,12 +21,14 @@ from investmentsys.contracts import (
     PortfolioConstraints,
     RunState,
     TipoView,
+    Universe,
     View,
 )
 from investmentsys.data import CSVPriceProvider
-from investmentsys.portfolio import optimizar_black_litterman
+from investmentsys.portfolio import optimizar_black_litterman, resolver_prior
 from investmentsys.quant import estimar
 from investmentsys.risk import validar
+from tests.almacen import sesion_de, universo_de, universo_referencia
 from tests.conftest import ACTIVOS, CSV_REFERENCIA, FECHA
 
 FECHA_ANTERIOR = date(2026, 6, 30)
@@ -51,9 +53,11 @@ def _corrida(
     views: tuple[View, ...],
     run_id: str,
     peso_max: float | None = None,
+    universo: Universe | None = None,
 ) -> RunState:
     provider = CSVPriceProvider(CSV_REFERENCIA)
     opt = config.optimizacion
+    universo = universo or universo_referencia()
     estimates = estimar(
         provider.retornos_log(ACTIVOS, hasta=fecha),
         fecha_decision=fecha,
@@ -61,6 +65,7 @@ def _corrida(
         ventana_meses=config.datos.ventana_covarianza_meses,
         metodos=(opt.metodo_covarianza,),
         nivel_confianza=config.estimacion.nivel_confianza,
+        universe_version=universo.version,
     )
     market_views = MarketViews(
         fecha_decision=fecha, activos=ACTIVOS, horizonte_meses=12, resumen="Prueba.", views=views
@@ -68,9 +73,8 @@ def _corrida(
     restricciones = PortfolioConstraints(
         activos=ACTIVOS, peso_min=opt.peso_min, peso_max=peso_max or opt.peso_max
     )
-    candidato = optimizar_black_litterman(
-        estimates, market_views, restricciones, opt, config.prior_equilibrio
-    )
+    prior = resolver_prior(universo, estimates, opt, config.prior_equilibrio)
+    candidato = optimizar_black_litterman(estimates, market_views, restricciones, opt, prior)
     reporte = validar(
         candidato,
         provider.precios(ACTIVOS, hasta=fecha),
@@ -80,6 +84,7 @@ def _corrida(
         optimizacion=opt,
         periodos_por_anio=provider.periodos_por_anio,
         semilla=config.reproducibilidad.semilla,
+        universe_version=universo.version,
     )
     return RunState(
         run_id=run_id,
@@ -88,6 +93,9 @@ def _corrida(
         semilla=config.reproducibilidad.semilla,
         config_hash=hash_config(),
         activos=ACTIVOS,
+        universo=universo,
+        restricciones_sesion=sesion_de(universo),
+        prior=prior,
         etapa=EtapaCorrida.VALIDACION,
         restricciones=restricciones,
         market_views=market_views,
@@ -99,6 +107,7 @@ def _corrida(
                 iteracion=1,
                 candidatos=(candidato,),
                 recomendado=candidato.nombre,
+                universe_version=universo.version,
             ),
         ),
         validaciones=(reporte,),
@@ -212,6 +221,8 @@ def test_corrida_sin_cartera_ni_validacion(junio: RunState) -> None:
         semilla=junio.semilla,
         config_hash=OTRO_HASH,
         activos=ACTIVOS,
+        universo=junio.universo,
+        restricciones_sesion=junio.restricciones_sesion,
     )
     diff = comparar_corridas(vacia, junio, TOLERANCIA)
     assert diff.rotacion_pp is None
@@ -229,6 +240,8 @@ def test_universos_distintos_no_se_comparan(junio: RunState) -> None:
         semilla=1,
         config_hash=OTRO_HASH,
         activos=("VOOG", "BNS"),
+        universo=universo_de(("VOOG", "BNS")),
+        restricciones_sesion=sesion_de(universo_de(("VOOG", "BNS"))),
     )
     with pytest.raises(CorridasIncomparablesError):
         comparar_corridas(junio, otra, TOLERANCIA)
@@ -242,3 +255,23 @@ def test_informe_markdown(junio: RunState, septiembre: RunState) -> None:
     assert "| fecha_decision ⚠ | 2026-06-30 | 2026-09-30 |" in informe
     assert "-0.0 p.p." not in informe
     assert informe.rstrip().endswith(DISCLAIMER)
+
+
+def test_un_refrescar_cap_aparece_en_el_diff(config: Config, septiembre: RunState) -> None:
+    """Cambiar una cap congelada es un cambio de INPUT: otra versión del universo, otra π."""
+    base = universo_referencia()
+    bns = base.diagnostico("BNS").model_copy(update={"prior_cap": 1.16})
+    refrescado = Universe.crear(
+        [bns if d.ticker == "BNS" else d for d in base.diagnosticos], base.origenes
+    )
+    views = septiembre.market_views.views if septiembre.market_views else ()
+    despues = _corrida(config, septiembre.fecha_decision, views, "cap_nueva", universo=refrescado)
+    diff = comparar_corridas(septiembre, despues, TOLERANCIA)
+    assert diff.metadato("universe_version").cambia
+    assert any("cambio de INPUT" in a for a in diff.advertencias)
+    caps = {c.nombre: c for c in diff.prior_caps}
+    assert (caps["BNS"].antes, caps["BNS"].despues) == (0.116, 1.16)
+    assert not caps["VOOG"].cambia(TOLERANCIA)
+    assert any(c.cambia(TOLERANCIA) for c in diff.prior_pi_total)
+    informe = diff_markdown(diff, TOLERANCIA)
+    assert "| BNS ⚠ | 0.116 | 1.160 | usuario | usuario |" in informe

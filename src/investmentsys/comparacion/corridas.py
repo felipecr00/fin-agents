@@ -130,6 +130,10 @@ class DiffCorridas:
     correlaciones: tuple[Cambio, ...]
     retornos_historicos: tuple[Cambio, ...]
     peso_maximo: tuple[Cambio, ...]
+    prior_caps: tuple[Cambio, ...]
+    """Capitalizaciones congeladas del universo (US$ billones): un ``refrescar_cap`` sale aquí."""
+    prior_procedencias: tuple[CambioTexto, ...]
+    prior_pi_total: tuple[Cambio, ...]
     pesos: tuple[Cambio, ...]
     rotacion_pp: float | None
     """½·Σ|Δw| en p.p. entre las dos carteras; ``None`` si alguna corrida no tiene cartera."""
@@ -229,6 +233,25 @@ CAMPOS_OOS = (
 )
 
 
+def _caps(corrida: RunState) -> dict[str, float]:
+    return {d.ticker: d.prior_cap for d in corrida.universo.diagnosticos if d.prior_cap is not None}
+
+
+def _procedencias(corrida: RunState) -> dict[str, str]:
+    """Procedencia EFECTIVA de cada peso del prior; sin prior, la de la cap congelada."""
+    if corrida.prior is not None:
+        return {a: p.value for a, p in corrida.prior.procedencias.items()}
+    return {
+        d.ticker: d.prior_provenance.value
+        for d in corrida.universo.diagnosticos
+        if d.prior_provenance is not None
+    }
+
+
+def _pi_total(corrida: RunState) -> dict[str, float]:
+    return {a.activo: a.pi_total for a in corrida.prior.activos} if corrida.prior else {}
+
+
 def _texto(valor: object | None) -> str | None:
     return None if valor is None else str(valor)
 
@@ -256,10 +279,17 @@ def comparar_corridas(a: RunState, b: RunState, tolerancia: float) -> DiffCorrid
                 b.quant_estimates and b.quant_estimates.regimen.value,
             ),
             ("config_hash", a.config_hash, b.config_hash),
+            ("universe_version", a.universo.version, b.universo.version),
+            ("prior", a.prior and a.prior.metodo.value, b.prior and b.prior.metodo.value),
             ("semilla", a.semilla, b.semilla),
         )
     )
     advertencias = []
+    if a.universo.version != b.universo.version:
+        advertencias.append(
+            "universo distinto entre las corridas (datos, capitalizaciones congeladas o "
+            "aceptación del prior neutral): es un cambio de INPUT, no de views."
+        )
     if a.config_hash != b.config_hash:
         advertencias.append(
             "config.yaml distinto entre las corridas: parte de las diferencias puede venir de "
@@ -291,7 +321,14 @@ def comparar_corridas(a: RunState, b: RunState, tolerancia: float) -> DiffCorrid
         )
         for n in [*criterios_a, *(n for n in criterios_b if n not in criterios_a)]
     )
+    procedencias_a, procedencias_b = _procedencias(a), _procedencias(b)
     return DiffCorridas(
+        prior_caps=_cambios(_caps(a), _caps(b)),
+        prior_procedencias=tuple(
+            CambioTexto(activo, procedencias_a.get(activo), procedencias_b.get(activo))
+            for activo in a.activos
+        ),
+        prior_pi_total=_cambios(_pi_total(a), _pi_total(b)),
         metadatos=metadatos,
         advertencias=tuple(advertencias),
         views=_diff_views(a.market_views, b.market_views, a.activos, tolerancia),

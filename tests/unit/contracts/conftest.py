@@ -6,6 +6,7 @@ from datetime import date, datetime
 
 import pytest
 
+from investmentsys.config import cargar_config
 from investmentsys.contracts import (
     CandidatePortfolio,
     CandidatePortfolios,
@@ -15,6 +16,7 @@ from investmentsys.contracts import (
     MetricasExAnte,
     MetricasOOS,
     PortfolioConstraints,
+    PriorSnapshot,
     QuantEstimates,
     RetornoEsperado,
     RunState,
@@ -22,6 +24,8 @@ from investmentsys.contracts import (
     ValidationReport,
     Veredicto,
 )
+from investmentsys.portfolio import resolver_prior
+from tests.almacen import sesion_de, universo_referencia
 from tests.conftest import ACTIVOS, FECHA
 
 
@@ -71,6 +75,7 @@ def estimates(matriz_covarianza: MatrizCovarianza) -> QuantEstimates:
             )
             for a, m in medias.items()
         ),
+        universe_version=universo_referencia().version,
     )
 
 
@@ -103,6 +108,7 @@ def candidatos(candidato_bl: CandidatePortfolio) -> CandidatePortfolios:
         iteracion=1,
         candidatos=(candidato_bl,),
         recomendado="bl_base",
+        universe_version=universo_referencia().version,
     )
 
 
@@ -145,11 +151,20 @@ def validacion_aprobada(
         criterios=criterios_ok,
         look_ahead_verificado=True,
         veredicto=Veredicto.APROBADA,
+        universe_version=universo_referencia().version,
     )
 
 
 @pytest.fixture
-def run_state_inicial() -> RunState:
+def prior(estimates: QuantEstimates) -> PriorSnapshot:
+    config = cargar_config()
+    return resolver_prior(
+        universo_referencia(), estimates, config.optimizacion, config.prior_equilibrio
+    )
+
+
+@pytest.fixture
+def run_state_inicial(prior: PriorSnapshot) -> RunState:
     return RunState(
         run_id="20260930T120000-golden",
         creado_en=datetime(2026, 9, 30, 12, 0, 0),
@@ -157,4 +172,7 @@ def run_state_inicial() -> RunState:
         semilla=42,
         config_hash="a" * 64,
         activos=ACTIVOS,
+        universo=universo_referencia(),
+        restricciones_sesion=sesion_de(universo_referencia()),
+        prior=prior,
     )

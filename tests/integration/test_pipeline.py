@@ -17,6 +17,7 @@ from investmentsys.orchestrator import (
     CLAVE_DIRECTORIO,
     crear_pipeline,
 )
+from tests.almacen import universo_referencia
 from tests.integration.conftest import Corrida, Llamada, LlmPorAgente, ejecutar
 from tests.integration.test_market_analyst import BORRADOR_GOLDEN, FUERA_DEL_UNIVERSO, _view
 
@@ -29,7 +30,10 @@ CRIPTO_EUFORICO = {
 
 
 def _correr(config: Config, provider: CSVPriceProvider, llm: LlmPorAgente, runs: Path) -> Corrida:
-    corrida = ejecutar(crear_pipeline(config, provider, llm, directorio_runs=runs))
+    pipeline = crear_pipeline(
+        config, provider, llm, directorio_runs=runs, universo=universo_referencia()
+    )
+    corrida = ejecutar(pipeline)
     assert llm.pendientes() == {}, "quedaron respuestas del guion sin consumir"
     return corrida
 

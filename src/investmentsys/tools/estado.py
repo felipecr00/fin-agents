@@ -18,6 +18,9 @@ CLAVE_QUANT_ESTIMATES = "quant_estimates"
 CLAVE_RESTRICCIONES = "restricciones"
 CLAVE_CANDIDATOS = "candidatos"
 CLAVE_VALIDACIONES = "validaciones"
+CLAVE_UNIVERSO = "universo"
+CLAVE_RESTRICCIONES_SESION = "restricciones_sesion"
+CLAVE_PRIOR = "prior"
 
 M = TypeVar("M", bound=BaseModel)
 
@@ -32,6 +35,21 @@ class Estado(EstadoLegible, Protocol):
     """Lo mínimo que comparten ``dict`` y ``google.adk.sessions.State``."""
 
     def __setitem__(self, key: str, value: Any) -> None: ...
+
+
+class ResultadoObsoletoError(ValueError):
+    """Un resultado se calculó sobre otra versión del universo (o sin universo): no vale."""
+
+
+def exigir_sello(sello: str | None, version: str, que: str) -> None:
+    """Regla de obsolescencia como invariante mecánico (ADR-012)."""
+    if sello is None:
+        raise ResultadoObsoletoError(f"{que}: sin sellar; recalcúlalo sobre el universo vigente")
+    if sello != version:
+        raise ResultadoObsoletoError(
+            f"{que}: obsoleto. Se calculó sobre el universo {sello[:12]}… y el vigente es "
+            f"{version[:12]}… (cambió el universo, una cap o los datos): recalcúlalo"
+        )
 
 
 class FaltaEnEstadoError(LookupError):

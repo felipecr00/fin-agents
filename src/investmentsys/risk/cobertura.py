@@ -6,7 +6,7 @@ de backtest y stress cuando la historia es corta): una sola regla, dos consumido
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from datetime import date
 from enum import StrEnum
 
@@ -50,4 +50,36 @@ def advertencias_de_cobertura(
                 f"ventana corta: stress {e.nombre} aplica solo en parte (datos desde "
                 f"{inicio_datos:%Y-%m})"
             )
+    return tuple(avisos)
+
+
+def advertencias_de_validacion(
+    inicios: Mapping[str, date],
+    pesos: Mapping[str, float],
+    inicio_backtest: date,
+    escenarios: Sequence[EscenarioStressConfig],
+    fecha_decision: date,
+) -> tuple[str, ...]:
+    """Degradación EXPLÍCITA del Escéptico: qué ventana de backtest y qué stress miden a cada
+    activo con peso. Un activo de historia corta no invalida el veredicto, pero el veredicto no
+    dice nada de él fuera de su ventana, y eso se escribe."""
+    avisos: list[str] = []
+    for activo, inicio in inicios.items():
+        if pesos.get(activo, 0.0) <= 0.0:
+            continue
+        if inicio > inicio_backtest:
+            avisos.append(
+                f"{activo}: el backtest solo lo mide desde {inicio:%Y-%m} (el walk-forward "
+                f"empieza en {inicio_backtest:%Y-%m}); antes, su peso se reparte entre los demás"
+            )
+        for e in escenarios:
+            if e.desde > fecha_decision:
+                continue
+            cobertura = cobertura_escenario(inicio, e)
+            if cobertura is Cobertura.NINGUNA:
+                avisos.append(
+                    f"{activo}: el stress {e.nombre} no lo mide (sin datos en la ventana)"
+                )
+            elif cobertura is Cobertura.PARCIAL:
+                avisos.append(f"{activo}: el stress {e.nombre} solo lo mide desde {inicio:%Y-%m}")
     return tuple(avisos)

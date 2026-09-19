@@ -26,11 +26,15 @@ from investmentsys.tools import (
     CLAVE_CANDIDATOS,
     CLAVE_FECHA_DECISION,
     CLAVE_MARKET_VIEWS,
+    CLAVE_PRIOR,
     CLAVE_QUANT_ESTIMATES,
     CLAVE_RESTRICCIONES,
+    CLAVE_RESTRICCIONES_SESION,
+    CLAVE_UNIVERSO,
     CLAVE_VALIDACIONES,
     NucleoTools,
 )
+from tests.almacen import universo_referencia
 from tests.conftest import ACTIVOS, FECHA
 
 PESOS_GOLDEN = {"VOOG": 0.70, "BNS": 0.07, "IBIT": 0.02, "VB": 0.21}
@@ -91,6 +95,7 @@ class TestEstimarMercado:
             metodos=(config.optimizacion.metodo_covarianza,),
             nivel_confianza=config.estimacion.nivel_confianza,
             regimen=config.regimen,
+            universe_version=universo_referencia().version,
         )
         assert QuantEstimates.model_validate(ctx.state[CLAVE_QUANT_ESTIMATES]) == directo
         assert salida["regimen"] == directo.regimen.value != "indeterminado"
@@ -187,7 +192,7 @@ class TestConstruirCandidatos:
             _con_views(ctx, views_golden), peso_max_por_activo={"VOOG": 0.8}
         )
         assert salida["status"] == "error"
-        assert "endurecer" in salida["mensaje"]
+        assert "solo puede ENDURECER" in salida["mensaje"]
 
 
 class TestValidarCandidato:
@@ -215,6 +220,9 @@ class TestValidarCandidato:
                 "semilla": config.reproducibilidad.semilla,
                 "config_hash": hash_config(),
                 "activos": ACTIVOS,
+                "universo": estado[CLAVE_UNIVERSO],
+                "restricciones_sesion": estado[CLAVE_RESTRICCIONES_SESION],
+                "prior": estado[CLAVE_PRIOR],
                 "etapa": EtapaCorrida.VALIDACION,
                 "restricciones": estado[CLAVE_RESTRICCIONES],
                 "market_views": estado[CLAVE_MARKET_VIEWS],

@@ -7,6 +7,7 @@ veredicto es APROBADA solo si todo se cumple (el contrato lo revalida).
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import date
 
 import pandas as pd
@@ -23,6 +24,7 @@ from investmentsys.contracts import (
 from investmentsys.contracts.common import TOLERANCIA_NUMERICA
 from investmentsys.quant import LookAheadError
 from investmentsys.risk.backtest import Estrategia, ResultadoBacktest, backtest_walk_forward
+from investmentsys.risk.cobertura import advertencias_de_validacion
 from investmentsys.risk.estrategias import pesos_fijos
 from investmentsys.risk.look_ahead import LookAheadDetectadoError, verificar_look_ahead
 from investmentsys.risk.metricas import concentracion_hhi, drawdown_por_activo, metricas_oos
@@ -41,6 +43,8 @@ def validar(
     semilla: int,
     estrategia: Estrategia | None = None,
     fecha_inicio_oos: date | None = None,
+    inicio_datos: Mapping[str, date] | None = None,
+    universe_version: str | None = None,
 ) -> ValidationReport:
     """Evalúa ``candidato`` con precios hasta ``fecha_decision`` y emite el veredicto.
 
@@ -48,6 +52,8 @@ def validar(
       backtest walk-forward; el stress siempre usa los pesos propuestos.
     - ``precios`` no puede contener filas posteriores a ``fecha_decision``: eso es un error
       del que llama (``LookAheadError``), no una propiedad del candidato.
+    - ``inicio_datos`` (primer precio de cada activo, del ``Universe``) activa la degradación
+      explícita por historia corta: ``advertencias`` dice qué ventana mide a cada activo.
     - Un look-ahead detectado en la estrategia no interrumpe: se registra
       ``look_ahead_verificado=False`` y el veredicto es RECHAZADA con la evidencia.
     """
@@ -109,6 +115,16 @@ def validar(
         look_ahead_verificado=look_ahead_detalle is None,
         veredicto=Veredicto.APROBADA if aprobada else Veredicto.RECHAZADA,
         sugerencias=sugerencias,
+        advertencias=advertencias_de_validacion(
+            inicio_datos,
+            candidato.pesos,
+            metricas.fecha_inicio,
+            validacion.escenarios_stress,
+            fecha_decision,
+        )
+        if inicio_datos is not None
+        else (),
+        universe_version=universe_version,
     )
 
 

@@ -6,14 +6,27 @@ con procedencia ``usuario``) se construye igual que en la migración real de S7.
 
 from __future__ import annotations
 
+import functools
+import tempfile
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from pathlib import Path
+from typing import TypeVar
 
 import numpy as np
 import pandas as pd
+from pydantic import BaseModel
 
-from investmentsys.config import Config
+from investmentsys.config import Config, cargar_config
+from investmentsys.contracts import (
+    AssetDiagnostic,
+    Frecuencia,
+    OrigenActivo,
+    PriorProvenance,
+    SessionConstraints,
+    Universe,
+)
 from investmentsys.data import CSVPriceProvider
 from investmentsys.data.actualizacion import escribir_series_atomico
 from investmentsys.data_manager import (
@@ -22,6 +35,7 @@ from investmentsys.data_manager import (
     MetadataActivo,
     TickerInexistenteError,
 )
+from investmentsys.portfolio import sesion_por_defecto
 from tests.conftest import ACTIVOS, CSV_REFERENCIA
 
 AHORA = datetime(2026, 10, 5, 12, 0, 0, tzinfo=UTC)
@@ -95,4 +109,48 @@ def cap_fuente(valor_usd: float = 4.9e12) -> CapFuente:
         valor_usd=valor_usd,
         as_of=date(2026, 10, 2),
         detalle="Tiingo tiingo/fundamentals/AAPL/daily (marketCap)",
+    )
+
+
+# ---------------------------------------------------------------- universos sin disco
+@functools.cache
+def universo_referencia() -> Universe:
+    """El universo de referencia (4 activos, caps pinneadas) sobre el fixture congelado."""
+    with tempfile.TemporaryDirectory() as carpeta:
+        return sembrar_gestor(Path(carpeta), cargar_config()).universo()
+
+
+def universo_de(activos: Sequence[str], cap: float = 1.0) -> Universe:
+    """Universo mínimo y válido con ``activos`` (caps de usuario iguales)."""
+    diagnosticos = [
+        AssetDiagnostic(
+            ticker=a,
+            nombre=f"{a} de prueba",
+            moneda="USD",
+            fecha_inicio_datos=date(2021, 9, 30),
+            fecha_fin_datos=date(2026, 9, 30),
+            frecuencia=Frecuencia.MENSUAL,
+            meses_disponibles=61,
+            apto=True,
+            prior_cap=cap,
+            prior_provenance=PriorProvenance.USUARIO,
+            prior_fuente_detalle="prueba",
+            prior_as_of=date(2026, 9, 16),
+        )
+        for a in activos
+    ]
+    return Universe.crear(diagnosticos, dict.fromkeys(activos, OrigenActivo.CONFIG_INICIAL))
+
+
+def sesion_de(universo: Universe) -> SessionConstraints:
+    return sesion_por_defecto(universo, cargar_config().optimizacion)
+
+
+M = TypeVar("M", bound=BaseModel)
+
+
+def sellar(contrato: M, universo: Universe) -> M:
+    """Copia de ``contrato`` sellada con ``universo`` (lo que hacen las herramientas)."""
+    return type(contrato).model_validate(
+        {**contrato.model_dump(), "universe_version": universo.version}
     )

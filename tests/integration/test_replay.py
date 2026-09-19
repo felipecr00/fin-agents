@@ -17,6 +17,7 @@ from investmentsys.orchestrator import (
 )
 from investmentsys.orchestrator.corrida import CLAVE_NOTAS
 from investmentsys.orchestrator.replay import ReplayImposibleError
+from tests.almacen import universo_referencia
 from tests.integration.conftest import Corrida, Llamada, LlmPorAgente, ejecutar
 from tests.integration.test_market_analyst import BORRADOR_GOLDEN
 from tests.integration.test_pipeline import CRIPTO_EUFORICO, NARRATIVA, _leer
@@ -44,7 +45,9 @@ def _dos_rondas() -> LlmPorAgente:
 
 
 def _correr(config: Config, provider: CSVPriceProvider, llm: LlmPorAgente, runs: Path) -> Corrida:
-    return ejecutar(crear_pipeline(config, provider, llm, directorio_runs=runs))
+    return ejecutar(
+        crear_pipeline(config, provider, llm, directorio_runs=runs, universo=universo_referencia())
+    )
 
 
 def test_el_run_state_de_la_sesion_es_el_del_disco(
