@@ -22,6 +22,7 @@ from pydantic import PrivateAttr
 
 from investmentsys.config import Config, cargar_config
 from investmentsys.data import CSVPriceProvider
+from tests.conftest import CSV_REFERENCIA
 
 
 class LlmGuionado(BaseLlm):
@@ -150,4 +151,4 @@ def config() -> Config:
 
 @pytest.fixture(scope="module")
 def provider(config: Config) -> CSVPriceProvider:
-    return CSVPriceProvider(config.datos.ruta_csv)
+    return CSVPriceProvider(CSV_REFERENCIA)

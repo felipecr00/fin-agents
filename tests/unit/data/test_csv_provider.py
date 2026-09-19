@@ -8,15 +8,14 @@ import pandas as pd
 import pytest
 
 from investmentsys.data import CSVPriceProvider, DatosInvalidosError
+from tests.conftest import CSV_REFERENCIA
 
-RAIZ = Path(__file__).resolve().parents[3]
-CSV_REAL = RAIZ / "data" / "precios.csv"
 ACTIVOS = ("VOOG", "BNS", "IBIT", "VB")
 
 
 @pytest.fixture(scope="module")
 def provider() -> CSVPriceProvider:
-    return CSVPriceProvider(CSV_REAL)
+    return CSVPriceProvider(CSV_REFERENCIA)
 
 
 def _csv(tmp_path: Path, contenido: str) -> Path:
@@ -25,7 +24,7 @@ def _csv(tmp_path: Path, contenido: str) -> Path:
     return ruta
 
 
-# --- lectura de data/precios.csv -------------------------------------------------------
+# --- lectura del fixture congelado -----------------------------------------------------
 
 
 def test_lee_el_csv_del_repo(provider: CSVPriceProvider) -> None:

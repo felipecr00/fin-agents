@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from itertools import pairwise
-from pathlib import Path
 
 import numpy as np
 import pytest
@@ -30,9 +29,7 @@ from investmentsys.risk.sensibilidad import (
     escalar_correlacion,
     escalar_volatilidad,
 )
-from tests.conftest import ACTIVOS, FECHA
-
-RAIZ = Path(__file__).resolve().parents[3]
+from tests.conftest import ACTIVOS, CSV_REFERENCIA, FECHA
 
 
 @pytest.fixture(scope="module")
@@ -42,7 +39,7 @@ def config() -> Config:
 
 @pytest.fixture(scope="module")
 def estimates(config: Config) -> QuantEstimates:
-    provider = CSVPriceProvider(RAIZ / config.datos.ruta_csv)
+    provider = CSVPriceProvider(CSV_REFERENCIA)
     return estimar(
         provider.retornos_log(ACTIVOS, hasta=FECHA),
         fecha_decision=FECHA,

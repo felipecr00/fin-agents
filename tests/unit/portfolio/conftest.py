@@ -2,17 +2,13 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 
 from investmentsys.config import Config, cargar_config
 from investmentsys.contracts import MetodoCovarianza, PortfolioConstraints, QuantEstimates
 from investmentsys.data import CSVPriceProvider
 from investmentsys.quant import estimar
-from tests.conftest import ACTIVOS, FECHA
-
-RAIZ = Path(__file__).resolve().parents[3]
+from tests.conftest import ACTIVOS, CSV_REFERENCIA, FECHA
 
 
 @pytest.fixture(scope="module")
@@ -22,7 +18,7 @@ def config() -> Config:
 
 @pytest.fixture(scope="module")
 def estimates_reales(config: Config) -> QuantEstimates:
-    provider = CSVPriceProvider(RAIZ / config.datos.ruta_csv)
+    provider = CSVPriceProvider(CSV_REFERENCIA)
     return estimar(
         provider.retornos_log(ACTIVOS, hasta=FECHA),
         fecha_decision=FECHA,

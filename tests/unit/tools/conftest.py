@@ -13,6 +13,7 @@ from google.adk.tools import ToolContext
 from investmentsys.config import Config, cargar_config
 from investmentsys.data import CSVPriceProvider
 from investmentsys.tools import NucleoTools
+from tests.conftest import CSV_REFERENCIA
 
 
 @pytest.fixture(scope="module")
@@ -22,7 +23,7 @@ def config() -> Config:
 
 @pytest.fixture(scope="module")
 def tools(config: Config) -> NucleoTools:
-    return NucleoTools(config, CSVPriceProvider(config.datos.ruta_csv))
+    return NucleoTools(config, CSVPriceProvider(CSV_REFERENCIA))
 
 
 @pytest.fixture

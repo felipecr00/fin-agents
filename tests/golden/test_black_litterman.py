@@ -1,7 +1,8 @@
 """Golden test: el ejercicio de referencia de Black-Litterman (ver CLAUDE.md).
 
-Codifica ``docs/referencia_black_litterman.py`` contra ``data/precios.csv``. Si este test se
-rompe, el núcleo está mal: no se ajusta el test para que pase.
+Codifica ``docs/referencia_black_litterman.py`` contra los precios congelados de
+``tests/fixtures/precios_referencia.csv`` (copia de ``data/precios.csv`` al cerrar S5;
+ADR-011). Si este test se rompe, el núcleo está mal: no se ajusta el test para que pase.
 
 Los valores esperados (pesos, volatilidades, correlaciones, posterior y métricas) son el
 oráculo del test, no parámetros del sistema: por eso viven aquí y no en ``config.yaml``.
@@ -26,6 +27,7 @@ from investmentsys.contracts import (
 from investmentsys.data import CSVPriceProvider
 from investmentsys.portfolio import optimizar_black_litterman
 from investmentsys.quant import estimar, estimar_covarianza
+from tests.conftest import CSV_REFERENCIA
 
 FECHA_DECISION = date(2026, 9, 30)
 
@@ -59,7 +61,7 @@ def config() -> Config:
 
 @pytest.fixture(scope="module")
 def provider(config: Config) -> CSVPriceProvider:
-    return CSVPriceProvider(config.datos.ruta_csv)
+    return CSVPriceProvider(CSV_REFERENCIA)
 
 
 @pytest.fixture(scope="module")

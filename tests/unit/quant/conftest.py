@@ -3,24 +3,21 @@
 from __future__ import annotations
 
 from datetime import date
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import pytest
 
 from investmentsys.data import CSVPriceProvider
-from tests.conftest import ACTIVOS, FECHA
+from tests.conftest import ACTIVOS, CSV_REFERENCIA, FECHA
 
-RAIZ = Path(__file__).resolve().parents[3]
-CSV_REAL = RAIZ / "data" / "precios.csv"
 VENTANA = 60
 PERIODOS = 12
 
 
 @pytest.fixture(scope="module")
 def retornos_reales() -> pd.DataFrame:
-    return CSVPriceProvider(CSV_REAL).retornos_log(ACTIVOS, hasta=FECHA)
+    return CSVPriceProvider(CSV_REFERENCIA).retornos_log(ACTIVOS, hasta=FECHA)
 
 
 @pytest.fixture(scope="module")

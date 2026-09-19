@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from datetime import UTC, date, datetime
-from pathlib import Path
 
 import pytest
 
@@ -28,9 +27,8 @@ from investmentsys.data import CSVPriceProvider
 from investmentsys.portfolio import optimizar_black_litterman
 from investmentsys.quant import estimar
 from investmentsys.risk import validar
-from tests.conftest import ACTIVOS, FECHA
+from tests.conftest import ACTIVOS, CSV_REFERENCIA, FECHA
 
-RAIZ = Path(__file__).resolve().parents[3]
 FECHA_ANTERIOR = date(2026, 6, 30)
 TOLERANCIA = 1e-8
 OTRO_HASH = "0" * 64
@@ -54,7 +52,7 @@ def _corrida(
     run_id: str,
     peso_max: float | None = None,
 ) -> RunState:
-    provider = CSVPriceProvider(RAIZ / config.datos.ruta_csv)
+    provider = CSVPriceProvider(CSV_REFERENCIA)
     opt = config.optimizacion
     estimates = estimar(
         provider.retornos_log(ACTIVOS, hasta=fecha),

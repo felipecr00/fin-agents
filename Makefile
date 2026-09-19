@@ -9,14 +9,19 @@ SERVICIO_DEV ?= fin-agents-dev
 SA_EJECUCION ?= fin-agents-run@$(PROYECTO).iam.gserviceaccount.com
 SECRETO_GEMINI ?= gemini-api-key
 VERSION_SECRETO ?= 1
+# Opcional (S6): con SECRETO_TIINGO=tiingo-api-key dev recibe TIINGO_API_KEY. Vacío por defecto:
+# hoy ninguna corrida remota actualiza datos y un secreto inexistente tumbaría el despliegue.
+SECRETO_TIINGO ?=
+VERSION_SECRETO_TIINGO ?= 1
 # Prod (Agent Engine). Vacío = crear una instancia nueva; con id = actualizarla en sitio.
 AGENT_ENGINE_ID ?=
 NOMBRE_PROD ?= fin-agents-prod
 STAGING_PROD := build/prod
+COMA := ,
 # Un caso suelto: make eval EVALSET=tests/eval/market_analyst.evalset.json:ambigua_bns
 EVALSET ?= tests/eval/market_analyst.evalset.json
 
-.PHONY: install lint type test check run-local eval evalset sensibilidad comparar clean deploy-dev url-dev corrida-dev logs-dev deploy-prod corrida-prod
+.PHONY: install lint type test check update-prices run-local eval evalset sensibilidad comparar clean deploy-dev url-dev corrida-dev logs-dev deploy-prod corrida-prod
 
 install:        ## dependencias con uv
 	$(UV) sync
@@ -31,6 +36,12 @@ test:
 	$(UV) run pytest tests/unit tests/golden tests/integration -q
 
 check: lint type test   ## puerta obligatoria antes de todo commit final
+
+update-prices:  ## paso 1 del ritual mensual: Tiingo → validar → data/precios.csv (ADR-011)
+# SIMULAR=1 valida y resume sin escribir. ACEPTAR_DISCREPANCIAS=1 solo tras revisar TÚ un aborto
+# por continuidad. Necesita TIINGO_API_KEY en el entorno o en .env. Código 1 = abortado.
+	$(UV) run python scripts/update_prices.py $(if $(SIMULAR),--dry-run,) \
+		$(if $(ACEPTAR_DISCREPANCIAS),--aceptar-discrepancias,)
 
 run-local:      ## UI de desarrollo de ADK (apps/: market_analyst; credenciales en .env o el entorno)
 	$(UV) run adk web apps
@@ -57,7 +68,7 @@ deploy-dev:     ## Cloud Run (dev): Cloud Build construye el Dockerfile y despli
 	gcloud run deploy $(SERVICIO_DEV) --source . \
 		--project $(PROYECTO) --region $(REGION) \
 		--service-account $(SA_EJECUCION) \
-		--set-secrets GOOGLE_API_KEY=$(SECRETO_GEMINI):$(VERSION_SECRETO) \
+		--set-secrets GOOGLE_API_KEY=$(SECRETO_GEMINI):$(VERSION_SECRETO)$(if $(SECRETO_TIINGO),$(COMA)TIINGO_API_KEY=$(SECRETO_TIINGO):$(VERSION_SECRETO_TIINGO),) \
 		--set-env-vars GOOGLE_GENAI_USE_ENTERPRISE=True \
 		--no-allow-unauthenticated \
 		--min-instances 0 --max-instances 1 \
