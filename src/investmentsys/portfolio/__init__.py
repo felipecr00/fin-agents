@@ -2,6 +2,11 @@
 
 from investmentsys.portfolio._comun import OptimizacionFallidaError
 from investmentsys.portfolio.black_litterman import optimizar_black_litterman
+from investmentsys.portfolio.cartera_usuario import (
+    CarteraInvalidaError,
+    cartera_del_usuario,
+    validar_pesos_usuario,
+)
 from investmentsys.portfolio.factibilidad import (
     RestriccionesInfactiblesError,
     restricciones_de_iteracion,
@@ -16,9 +21,11 @@ from investmentsys.portfolio.prior import (
 )
 
 __all__ = [
+    "CarteraInvalidaError",
     "OptimizacionFallidaError",
     "PriorNoDisponibleError",
     "RestriccionesInfactiblesError",
+    "cartera_del_usuario",
     "mensaje_estado_prior",
     "optimizar_black_litterman",
     "optimizar_hrp",
@@ -27,4 +34,5 @@ __all__ = [
     "resolver_prior",
     "restricciones_de_iteracion",
     "sesion_por_defecto",
+    "validar_pesos_usuario",
 ]

@@ -2,6 +2,7 @@
 
 from investmentsys.contracts.common import DISCLAIMER, ContractBase, Fraccion, Ticker
 from investmentsys.contracts.constraints import PortfolioConstraints
+from investmentsys.contracts.diagnostico import ETIQUETA_DIAGNOSTICO, DiagnosticoCartera
 from investmentsys.contracts.estimates import (
     MatrizCovarianza,
     MetodoCovarianza,
@@ -49,6 +50,7 @@ from investmentsys.contracts.validation import (
 from investmentsys.contracts.views import MarketViews, TipoView, View
 
 __all__ = [
+    "ETIQUETA_DIAGNOSTICO",
     "ADVERTENCIA_PRIOR_NEUTRAL",
     "ADVERTENCIA_PRIOR_SOLO_VIEWS",
     "DISCLAIMER",
@@ -57,6 +59,7 @@ __all__ = [
     "CandidatePortfolios",
     "ContractBase",
     "Criterio",
+    "DiagnosticoCartera",
     "EstadoPrior",
     "EtapaCorrida",
     "Fraccion",

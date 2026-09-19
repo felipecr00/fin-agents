@@ -2,6 +2,7 @@
 
 from investmentsys.tools.estado import (
     CLAVE_CANDIDATOS,
+    CLAVE_DIAGNOSTICOS_CARTERA,
     CLAVE_FECHA_DECISION,
     CLAVE_MARKET_VIEWS,
     CLAVE_PRIOR,
@@ -17,6 +18,7 @@ from investmentsys.tools.nucleo import NucleoTools
 
 __all__ = [
     "CLAVE_CANDIDATOS",
+    "CLAVE_DIAGNOSTICOS_CARTERA",
     "CLAVE_FECHA_DECISION",
     "CLAVE_MARKET_VIEWS",
     "CLAVE_PRIOR",

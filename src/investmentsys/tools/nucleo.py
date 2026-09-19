@@ -27,6 +27,7 @@ from investmentsys.config import Config, RegimenConfig
 from investmentsys.contracts import (
     CandidatePortfolio,
     CandidatePortfolios,
+    DiagnosticoCartera,
     MarketViews,
     PriorSnapshot,
     QuantEstimates,
@@ -39,12 +40,14 @@ from investmentsys.data import PriceProvider
 from investmentsys.portfolio import (
     OptimizacionFallidaError,
     PriorNoDisponibleError,
+    cartera_del_usuario,
     optimizar_black_litterman,
     optimizar_hrp,
     optimizar_min_varianza,
     resolver_prior,
     restricciones_de_iteracion,
     sesion_por_defecto,
+    validar_pesos_usuario,
 )
 from investmentsys.portfolio.black_litterman import NOMBRE_CANDIDATO as NOMBRE_BL
 from investmentsys.portfolio.hrp import NOMBRE_CANDIDATO as NOMBRE_HRP
@@ -52,6 +55,7 @@ from investmentsys.quant import LookAheadError, MuestraInsuficienteError, estima
 from investmentsys.risk import validar
 from investmentsys.tools.estado import (
     CLAVE_CANDIDATOS,
+    CLAVE_DIAGNOSTICOS_CARTERA,
     CLAVE_FECHA_DECISION,
     CLAVE_MARKET_VIEWS,
     CLAVE_PRIOR,
@@ -282,23 +286,9 @@ class NucleoTools:
             raise ValueError(f"la iteración {len(rondas)} ya fue validada")
         ronda = rondas[-1]
         universo = self._universo(estado)
-        sesion = self._sesion(estado, universo)
         exigir_sello(ronda.universe_version, universo.version, "candidatos a validar")
-        # Los criterios peso_min/peso_max se evalúan contra los límites de la SESIÓN.
-        optimizacion = self.config.optimizacion.model_copy(
-            update={"peso_min": sesion.peso_min.valor, "peso_max": sesion.peso_max.valor}
-        )
-        reporte = validar(
-            ronda.portafolio_recomendado,
-            self.provider.precios(ronda.activos, hasta=ronda.fecha_decision),
-            fecha_decision=ronda.fecha_decision,
-            iteracion=ronda.iteracion,
-            validacion=self.config.validacion,
-            optimizacion=optimizacion,
-            periodos_por_anio=self.provider.periodos_por_anio,
-            semilla=self.config.reproducibilidad.semilla,
-            inicio_datos={d.ticker: d.fecha_inicio_datos for d in universo.diagnosticos},
-            universe_version=universo.version,
+        reporte = self._evaluar(
+            estado, universo, ronda.portafolio_recomendado, ronda.fecha_decision, ronda.iteracion
         )
         agregar(estado, CLAVE_VALIDACIONES, reporte)
         m = reporte.metricas_oos
@@ -322,7 +312,100 @@ class NucleoTools:
             "advertencias": list(reporte.advertencias),
         }
 
+    # ------------------------------------------------------- Riesgo, exploratorio
+    def diagnosticar_cartera(
+        self, pesos: dict[str, float], tool_context: ToolContext
+    ) -> dict[str, Any]:
+        """Mide una cartera que trae el usuario: diagnóstico EXPLORATORIO, nunca un veredicto.
+
+        Mismas mediciones que el validador del comité (backtest walk-forward con costos,
+        métricas fuera de muestra, stress históricos, look-ahead) sobre los pesos indicados y
+        el universo vigente. No aprueba ni rechaza: la salida lleva ``etiqueta="diagnostico"``
+        y ``validado=false``, y no entra en ningún acta. Los pesos se validan antes de
+        calcular: suman 1, sin negativos y solo activos del universo; no se renormalizan.
+
+        Args:
+            pesos: peso de cada activo como fracción, p. ej. {"VOOG": 0.5, "BNS": 0.5}. Un
+                activo del universo que se omita pesa 0.
+        """
+        try:
+            return self._diagnosticar_cartera(tool_context.state, pesos)
+        except ERRORES_DE_DOMINIO as exc:
+            return _error(exc)
+
+    def _diagnosticar_cartera(self, estado: Estado, pesos: dict[str, float]) -> dict[str, Any]:
+        universo = self._universo(estado)
+        validar_pesos_usuario(pesos, universo.activos)  # antes de calcular nada
+        if estado.get(CLAVE_QUANT_ESTIMATES) is None:
+            self._estimar_mercado(estado)
+        estimaciones = leer(estado, CLAVE_QUANT_ESTIMATES, QuantEstimates)
+        exigir_sello(estimaciones.universe_version, universo.version, "estimaciones del Quant")
+        cartera = cartera_del_usuario(pesos, estimaciones, self.config.optimizacion)
+        reporte = self._evaluar(estado, universo, cartera, estimaciones.fecha_decision, 1)
+        diagnostico = DiagnosticoCartera.desde_reporte(reporte, cartera.metricas)
+        agregar(estado, CLAVE_DIAGNOSTICOS_CARTERA, diagnostico)
+        m, x = diagnostico.metricas_oos, diagnostico.metricas_ex_ante
+        return {
+            "status": "success",
+            "etiqueta": diagnostico.etiqueta,
+            "validado": diagnostico.validado,
+            "universe_version": diagnostico.universe_version,
+            "fecha_decision": diagnostico.fecha_decision.isoformat(),
+            "pesos_evaluados": dict(diagnostico.pesos_evaluados),
+            "look_ahead_verificado": diagnostico.look_ahead_verificado,
+            "metricas_ex_ante": {
+                "retorno_historico_anual": x.retorno_esperado_anual,
+                "volatilidad_anual": x.volatilidad_anual,
+                "sharpe": x.sharpe,
+                "concentracion_hhi": x.concentracion_hhi,
+            },
+            "metricas_oos": {
+                "periodo": [m.fecha_inicio.isoformat(), m.fecha_fin.isoformat()],
+                "sharpe_oos": m.sharpe_oos,
+                "retorno_anualizado": m.retorno_anualizado,
+                "volatilidad_anualizada": m.volatilidad_anualizada,
+                "max_drawdown": m.max_drawdown,
+                "turnover_anual": m.turnover_anual,
+            },
+            "stress": {
+                s.escenario: {"retorno_periodo": s.retorno_periodo, "max_drawdown": s.max_drawdown}
+                for s in diagnostico.stress
+            },
+            "umbrales_del_comite_como_referencia": {
+                c.nombre: {"valor": c.valor, "umbral": c.umbral, "dentro_del_umbral": c.cumple}
+                for c in diagnostico.criterios_de_referencia
+            },
+            "advertencias": list(diagnostico.advertencias),
+        }
+
     # ------------------------------------------------------------------ Común
+    def _evaluar(
+        self,
+        estado: Estado,
+        universo: Universe,
+        cartera: CandidatePortfolio,
+        fecha: date,
+        iteracion: int,
+    ) -> ValidationReport:
+        """La evaluación del Escéptico: la misma para el comité y para un diagnóstico."""
+        sesion = self._sesion(estado, universo)
+        # Los criterios peso_min/peso_max se evalúan contra los límites de la SESIÓN.
+        optimizacion = self.config.optimizacion.model_copy(
+            update={"peso_min": sesion.peso_min.valor, "peso_max": sesion.peso_max.valor}
+        )
+        return validar(
+            cartera,
+            self.provider.precios(universo.activos, hasta=fecha),
+            fecha_decision=fecha,
+            iteracion=iteracion,
+            validacion=self.config.validacion,
+            optimizacion=optimizacion,
+            periodos_por_anio=self.provider.periodos_por_anio,
+            semilla=self.config.reproducibilidad.semilla,
+            inicio_datos={d.ticker: d.fecha_inicio_datos for d in universo.diagnosticos},
+            universe_version=universo.version,
+        )
+
     def _universo(self, estado: Estado) -> Universe:
         """El universo vigente de la sesión: con diagnósticos, nunca una lista de tickers."""
         return leer(estado, CLAVE_UNIVERSO, Universe)

@@ -21,6 +21,8 @@ CLAVE_VALIDACIONES = "validaciones"
 CLAVE_UNIVERSO = "universo"
 CLAVE_RESTRICCIONES_SESION = "restricciones_sesion"
 CLAVE_PRIOR = "prior"
+# Exploratorio (S8): fuera de todo lo que lee RunState; nunca es una validación del comité.
+CLAVE_DIAGNOSTICOS_CARTERA = "diagnosticos_cartera"
 
 M = TypeVar("M", bound=BaseModel)
 
