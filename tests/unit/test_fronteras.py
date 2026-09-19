@@ -10,7 +10,8 @@ import pytest
 from investmentsys.config import RAIZ_PROYECTO
 
 PAQUETE = RAIZ_PROYECTO / "src" / "investmentsys"
-MODULOS_PUROS = ("quant", "portfolio", "risk", "contracts", "data", "comparacion")
+# S8: el Gestor de Datos también es puro; sus FunctionTools viven en tools/gestor.py.
+MODULOS_PUROS = ("quant", "portfolio", "risk", "contracts", "data", "comparacion", "data_manager")
 PROHIBIDOS = ("google", "litellm", "openai", "anthropic")
 CAPAS_DE_AGENTES = ("investmentsys.tools", "investmentsys.agents", "investmentsys.orchestrator")
 
@@ -33,3 +34,13 @@ def test_modulo_puro_sin_adk_ni_llm_ni_capas_de_agentes(modulo: str) -> None:
         for nombre in _importados(archivo):
             assert nombre.split(".")[0] not in PROHIBIDOS, f"{archivo.name} importa {nombre}"
             assert not nombre.startswith(CAPAS_DE_AGENTES), f"{archivo.name} importa {nombre}"
+
+
+def test_lo_nuevo_de_s8_en_el_nucleo_puro_esta_bajo_vigilancia() -> None:
+    """Los módulos puros que añade S8 existen donde ``rglob`` los revisa (no en una capa ADK)."""
+    for relativo in (
+        "contracts/comite.py",
+        "contracts/diagnostico.py",
+        "portfolio/cartera_usuario.py",
+    ):
+        assert (PAQUETE / relativo).is_file(), relativo

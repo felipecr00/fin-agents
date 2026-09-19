@@ -79,6 +79,7 @@ class LlmPorAgente(BaseLlm):
         "analista": "Eres el Analista de Mercados",
         "constructor": "Eres el Constructor de Portafolios",
         "reporter": "Eres el redactor del informe",
+        "director": "Eres el Director de Análisis",
     }
 
     def instrucciones(self, agente: str) -> list[str]:
@@ -96,6 +97,8 @@ class LlmPorAgente(BaseLlm):
         if not self._guiones.get(agente):
             raise AssertionError(f"{agente}: llamada al LLM no prevista en el guion")
         paso = self._guiones[agente].pop(0)
+        if callable(paso):  # respuesta calculada a partir de lo que el agente recibió
+            paso = paso(llm_request)
         if isinstance(paso, Llamada):
             parte = types.Part(function_call=types.FunctionCall(name=paso.nombre, args=dict(paso)))
         else:
@@ -108,6 +111,26 @@ class Corrida:
     eventos: list[Event] = field(default_factory=list)
     estado: dict[str, Any] = field(default_factory=dict)
 
+    def llamadas(self, autor: str | None = None) -> list[tuple[str, dict[str, Any]]]:
+        """(tool, argumentos) de cada llamada a herramienta, en orden."""
+        return [
+            (parte.function_call.name or "", dict(parte.function_call.args or {}))
+            for e in self.eventos
+            if (autor is None or e.author == autor) and e.content and e.content.parts
+            for parte in e.content.parts
+            if parte.function_call
+        ]
+
+    def respuestas(self, tool: str) -> list[dict[str, Any]]:
+        """Lo que devolvió ``tool`` cada vez que se llamó."""
+        return [
+            dict(parte.function_response.response or {})
+            for e in self.eventos
+            if e.content and e.content.parts
+            for parte in e.content.parts
+            if parte.function_response and parte.function_response.name == tool
+        ]
+
     def textos(self, autor: str) -> list[str]:
         return [
             parte.text
@@ -118,30 +141,43 @@ class Corrida:
         ]
 
 
-def ejecutar(
-    agente: BaseAgent | BaseNode, mensaje: str = "adelante", estado: dict[str, Any] | None = None
-) -> Corrida:
-    async def _correr() -> Corrida:
+def conversar(
+    agente: BaseAgent | BaseNode, mensajes: list[str], estado: dict[str, Any] | None = None
+) -> list[Corrida]:
+    """Una ``Corrida`` por mensaje del usuario, todas sobre la MISMA sesión (turnos de un chat)."""
+
+    async def _correr() -> list[Corrida]:
         sesiones = InMemorySessionService()
         if isinstance(agente, BaseAgent):
             runner = Runner(agent=agente, app_name="tests", session_service=sesiones)
         else:
             runner = Runner(node=agente, app_name="tests", session_service=sesiones)
         sesion = await sesiones.create_session(app_name="tests", user_id="u", state=estado or {})
-        corrida = Corrida()
-        contenido = types.Content(role="user", parts=[types.Part(text=mensaje)])
-        try:
-            async for evento in runner.run_async(
-                user_id="u", session_id=sesion.id, new_message=contenido
-            ):
-                corrida.eventos.append(evento)
-        finally:
-            final = await sesiones.get_session(app_name="tests", user_id="u", session_id=sesion.id)
-            assert final is not None
-            corrida.estado = dict(final.state)
-        return corrida
+        turnos: list[Corrida] = []
+        for mensaje in mensajes:
+            corrida = Corrida()
+            turnos.append(corrida)
+            contenido = types.Content(role="user", parts=[types.Part(text=mensaje)])
+            try:
+                async for evento in runner.run_async(
+                    user_id="u", session_id=sesion.id, new_message=contenido
+                ):
+                    corrida.eventos.append(evento)
+            finally:
+                final = await sesiones.get_session(
+                    app_name="tests", user_id="u", session_id=sesion.id
+                )
+                assert final is not None
+                corrida.estado = dict(final.state)
+        return turnos
 
     return asyncio.run(_correr())
+
+
+def ejecutar(
+    agente: BaseAgent | BaseNode, mensaje: str = "adelante", estado: dict[str, Any] | None = None
+) -> Corrida:
+    return conversar(agente, [mensaje], estado)[0]
 
 
 @pytest.fixture(scope="module")

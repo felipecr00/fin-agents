@@ -1,7 +1,9 @@
 """Contratos Pydantic: única forma válida de comunicación entre agentes."""
 
+from investmentsys.contracts.comite import AprobacionComite, ResumenComite, SolicitudComite
 from investmentsys.contracts.common import DISCLAIMER, ContractBase, Fraccion, Ticker
 from investmentsys.contracts.constraints import PortfolioConstraints
+from investmentsys.contracts.diagnostico import ETIQUETA_DIAGNOSTICO, DiagnosticoCartera
 from investmentsys.contracts.estimates import (
     MatrizCovarianza,
     MetodoCovarianza,
@@ -52,11 +54,14 @@ __all__ = [
     "ADVERTENCIA_PRIOR_NEUTRAL",
     "ADVERTENCIA_PRIOR_SOLO_VIEWS",
     "DISCLAIMER",
+    "ETIQUETA_DIAGNOSTICO",
+    "AprobacionComite",
     "AssetDiagnostic",
     "CandidatePortfolio",
     "CandidatePortfolios",
     "ContractBase",
     "Criterio",
+    "DiagnosticoCartera",
     "EstadoPrior",
     "EtapaCorrida",
     "Fraccion",
@@ -78,10 +83,12 @@ __all__ = [
     "QuantEstimates",
     "RegimenMercado",
     "ResultadoStress",
+    "ResumenComite",
     "RetornoEsperado",
     "RunState",
     "Sensibilidad",
     "SessionConstraints",
+    "SolicitudComite",
     "TecnicaOptimizacion",
     "Ticker",
     "TipoView",

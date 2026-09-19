@@ -11,7 +11,12 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from investmentsys.comparacion import comparar_corridas, diff_markdown
+from investmentsys.comparacion import (
+    EsquemaAnteriorError,
+    comparar_corridas,
+    diff_markdown,
+    leer_corrida,
+)
 from investmentsys.config import RAIZ_PROYECTO, cargar_config
 from investmentsys.contracts import RunState
 
@@ -28,7 +33,10 @@ def _cargar(referencia: str, corridas: Path) -> RunState:
     ruta = next((r for r in candidatas if r.is_file()), None)
     if ruta is None:
         sys.exit(f"no encuentro la corrida '{referencia}' (ni como ruta ni en {corridas}/)")
-    return RunState.model_validate_json(ruta.read_text(encoding="utf-8"))
+    try:
+        return leer_corrida(ruta.read_text(encoding="utf-8"), referencia)
+    except EsquemaAnteriorError as exc:
+        sys.exit(str(exc))
 
 
 def main() -> None:
