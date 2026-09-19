@@ -12,3 +12,4 @@
 **/.env
 **/.adk/
 data/precios_backup_*.csv
+data/series/.backups/

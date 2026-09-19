@@ -29,7 +29,8 @@ inversiones-agentes/
 │       ├── S4-despliegue-gcp.md
 │       └── S5-evaluacion-robustez.md
 ├── data/
-│   └── precios.csv               # series mensuales VOOG/BNS/IBIT/VB 2021-2026
+│   ├── series/<TICKER>.csv       # una serie mensual ajustada por activo (S7)
+│   └── universo.json             # universo vigente: diagnósticos y caps congeladas (S7)
 ├── src/investmentsys/
 │   ├── contracts/                # esquemas Pydantic: la columna vertebral
 │   ├── data/                     # PriceProvider (CSV primero, mercado después)

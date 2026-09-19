@@ -1,6 +1,6 @@
 """Los tests usan precios CONGELADOS, nunca el CSV vivo (S6, ADR-011).
 
-``make update-prices`` reescribe ``data/precios.csv`` cada mes con la serie ajustada completa
+``make update-prices`` reescribe ``data/series/`` cada mes con la serie ajustada completa
 (los niveles cambian con cada dividendo). Si el golden o cualquier oráculo leyera ese archivo,
 una actualización de datos rompería —o, peor, "arreglaría"— tests sin que cambie el código.
 """
@@ -17,7 +17,7 @@ SHA256_REFERENCIA = "d19de941920e80eca8689e809b29a409b8332de51aafb0f95259be4c3eb
 TESTS = Path(__file__).resolve().parents[2]
 # Únicos archivos que pueden nombrar la ruta viva: comprueban el valor de config, no leen datos.
 PERMITIDOS = {"test_config.py", Path(__file__).name}
-MARCA = "datos.ruta_csv"
+MARCA = "datos.directorio_series"
 
 
 def test_el_fixture_no_ha_cambiado() -> None:
@@ -26,8 +26,8 @@ def test_el_fixture_no_ha_cambiado() -> None:
 
 
 def test_ningun_test_llega_al_csv_vivo_por_config() -> None:
-    """``config.datos.ruta_csv`` es la única vía del código hacia ``data/precios.csv``."""
-    assert cargar_config().datos.ruta_csv.name != CSV_REFERENCIA.name
+    """``config.datos.directorio_series`` es la única vía del código hacia ``data/series``."""
+    assert cargar_config().datos.directorio_series.name != CSV_REFERENCIA.parent.name
     culpables = [
         str(archivo.relative_to(TESTS))
         for archivo in sorted(TESTS.rglob("*.py"))

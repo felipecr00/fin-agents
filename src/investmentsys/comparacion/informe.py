@@ -25,7 +25,7 @@ EN_PORCENTAJE = {
 def _meta(nombre: str, valor: str | None) -> str:
     if valor is None:
         return AUSENTE
-    return f"`{valor[:LARGO_HASH]}…`" if nombre == "config_hash" else valor
+    return f"`{valor[:LARGO_HASH]}…`" if nombre in ("config_hash", "universe_version") else valor
 
 
 def _pct(valor: float | None) -> str:
@@ -144,6 +144,21 @@ def diff_markdown(diff: DiffCorridas, tolerancia: float) -> str:
         ]
     else:
         lineas.append("Idénticas (misma muestra y mismo método).")
+    lineas += ["", "## Prior de equilibrio (inputs congelados y retornos implícitos)", ""]
+    lineas += [
+        "| Activo | Cap antes | Cap después | Procedencia antes | Procedencia después |",
+        "|---|---:|---:|---|---|",
+    ]
+    caps = {c.nombre: c for c in diff.prior_caps}
+    for p in diff.prior_procedencias:
+        cap = caps.get(p.nombre)
+        marca = " ⚠" if (cap is not None and cap.cambia(tolerancia)) or p.cambia else ""
+        lineas.append(
+            f"| {p.nombre}{marca} | {_num(cap.antes if cap else None)} | "
+            f"{_num(cap.despues if cap else None)} | {p.antes or AUSENTE} | "
+            f"{p.despues or AUSENTE} |"
+        )
+    lineas += ["", *_tabla_pct("π total", diff.prior_pi_total)]
     lineas += ["", "## Restricciones (peso máximo por activo)", ""]
     if any(c.cambia(tolerancia) for c in diff.peso_maximo):
         lineas += _tabla_pct("Peso máximo", diff.peso_maximo)

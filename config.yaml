@@ -1,5 +1,7 @@
 # Parámetros del sistema. Ningún número mágico vive fuera de este archivo.
 portafolio:
+  # Semilla del universo inicial (ADR-012). El universo VIGENTE vive en datos.gestor.ruta_universo
+  # y cambia con el Gestor de Datos (incorporar / refrescar_cap), no editando esta lista.
   activos: [VOOG, BNS, IBIT, VB]
   valor_usd: 9739.94
   pesos_actuales: {VOOG: 0.7944, BNS: 0.0892, IBIT: 0.0676, VB: 0.0488}
@@ -18,9 +20,16 @@ optimizacion:
 
 prior_equilibrio:
   metodo: capitalizacion
+  # Qué prior se usa cuando falta alguna cap Y el usuario aceptó degradar (ADR-013):
+  # neutral = equal-weight sobre TODO el universo (política activa); solo_views = π = 0.
+  degradacion: neutral
   # Proxies de capitalización en US$ billones (10^12): large growth US, BNS, BTC, small caps US.
-  # Valores del ejercicio de referencia (docs/referencia_black_litterman.py).
+  # Valores del ejercicio de referencia (docs/referencia_black_litterman.py). Son las caps
+  # PINNEADAS del universo de referencia (procedencia `usuario`): las usa el golden test y con
+  # ellas se sembró datos.gestor.ruta_universo. Cambiar una cap vigente es `refrescar_cap`.
   capitalizacion_usd_billones: {VOOG: 28.0, BNS: 0.116, IBIT: 1.9, VB: 2.5}
+  as_of: 2026-09-16
+  metodologia: "tamaño económico del subyacente, no AUM (large growth US, BNS, BTC, small caps US)"
 
 estimacion:
   # Nivel del intervalo t de Student de los retornos históricos anualizados (QuantEstimates).
@@ -41,11 +50,21 @@ regimen:
   ratio_volatilidad_estres: 1.3   # …con volatilidad reciente ≥ 1,3× la de toda la muestra
 
 datos:
-  # El pipeline SIEMPRE lee el CSV (reproducible y sin red). Tiingo solo lo usa
-  # `make update-prices`, que valida y reescribe ese CSV (ADR-011).
-  proveedor: csv
-  ruta_csv: data/precios.csv
+  # El pipeline SIEMPRE lee las series locales (reproducible y sin red). Tiingo solo lo usan
+  # `make update-prices` y el Gestor de Datos, que validan y escriben esas series (ADR-011, S7).
+  proveedor: series
+  directorio_series: data/series   # un CSV por activo: <TICKER>.csv
   ventana_covarianza_meses: 60
+  gestor:
+    # Universo vigente (diagnósticos + caps congeladas) e historial de cambios de input.
+    ruta_universo: data/universo.json
+    ruta_historial: data/universo_historial.jsonl
+    # Tiingo no informa la moneda: se deduce de la bolsa. Fuera de esta lista = no soportada.
+    bolsas_usd: [NYSE, NASDAQ, NYSE ARCA, NYSE MKT, AMEX, BATS]
+    # Menos meses que esto = no apto (ni covarianza ni backtest dicen nada con tan poco).
+    meses_minimos_apto: 12
+    # marketCap de la fuente viene en US$; las caps se guardan en US$ billones (10^12).
+    usd_por_unidad_cap: 1.0e12
   tiingo:
     # La API key va en la variable de entorno TIINGO_API_KEY; nunca aquí.
     url_base: https://api.tiingo.com

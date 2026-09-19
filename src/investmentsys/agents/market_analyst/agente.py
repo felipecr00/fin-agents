@@ -27,7 +27,12 @@ from investmentsys.agents.modelo import resolver_modelo
 from investmentsys.config import Config
 from investmentsys.contracts import DISCLAIMER, MarketViews
 from investmentsys.data import PriceProvider
-from investmentsys.tools.estado import CLAVE_FECHA_DECISION, CLAVE_MARKET_VIEWS, volcar
+from investmentsys.tools.estado import (
+    CLAVE_FECHA_DECISION,
+    CLAVE_MARKET_VIEWS,
+    CLAVE_UNIVERSO,
+    volcar,
+)
 
 CLAVE_BORRADOR = "market_views_borrador"
 CLAVE_ERROR_VIEWS = "market_views_error"
@@ -83,9 +88,17 @@ class ViewsInvalidasError(RuntimeError):
     """El analista agotó sus intentos sin producir un ``MarketViews`` válido."""
 
 
-def _instruccion(config: Config, fecha: date, error: str | None) -> str:
+def _activos(estado: Any, por_defecto: tuple[str, ...]) -> tuple[str, ...]:
+    """Los del universo de la sesión (S7); sin universo en el estado, los de ``config``."""
+    universo = estado.get(CLAVE_UNIVERSO)
+    if not universo:
+        return por_defecto
+    return tuple(str(d["ticker"]) for d in universo["diagnosticos"])
+
+
+def _instruccion(config: Config, activos: tuple[str, ...], fecha: date, error: str | None) -> str:
     return INSTRUCCION.format(
-        activos=", ".join(config.portafolio.activos),
+        activos=", ".join(activos),
         fecha_decision=fecha.isoformat(),
         horizonte_meses=config.agentes.horizonte_views_meses,
         max_views=config.agentes.max_views,
@@ -135,10 +148,11 @@ class MarketAnalyst(BaseAgent):
         estado = ctx.session.state
         fecha_cruda = estado.get(CLAVE_FECHA_DECISION)
         fecha = date.fromisoformat(fecha_cruda) if fecha_cruda else self.fecha_por_defecto
+        activos = _activos(estado, self.activos)
         yield _evento(
             ctx,
             self.name,
-            f"Analizando {', '.join(self.activos)} con fecha de decisión {fecha}.",
+            f"Analizando {', '.join(activos)} con fecha de decisión {fecha}.",
             {CLAVE_FECHA_DECISION: fecha.isoformat(), CLAVE_ERROR_VIEWS: None},
         )
         error = ""
@@ -154,7 +168,7 @@ class MarketAnalyst(BaseAgent):
             else:
                 try:
                     borrador = MarketViewsBorrador.model_validate(estado.get(CLAVE_BORRADOR))
-                    views = borrador.a_contrato(fecha, self.activos, self.horizonte_meses)
+                    views = borrador.a_contrato(fecha, activos, self.horizonte_meses)
                 except ValueError as exc:  # ValidationError del contrato incluido
                     error = str(exc)
             if views is None:
@@ -187,7 +201,12 @@ def crear_market_analyst(
     def instruccion(contexto: ReadonlyContext) -> str:
         fecha_cruda = contexto.state.get(CLAVE_FECHA_DECISION)
         fecha = date.fromisoformat(fecha_cruda) if fecha_cruda else fecha_por_defecto
-        return _instruccion(config, fecha, contexto.state.get(CLAVE_ERROR_VIEWS))
+        return _instruccion(
+            config,
+            _activos(contexto.state, config.portafolio.activos),
+            fecha,
+            contexto.state.get(CLAVE_ERROR_VIEWS),
+        )
 
     llm = LlmAgent(
         name=f"{NOMBRE}_llm",

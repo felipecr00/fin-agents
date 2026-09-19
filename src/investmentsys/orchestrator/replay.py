@@ -25,8 +25,11 @@ from investmentsys.tools import (
     CLAVE_CANDIDATOS,
     CLAVE_FECHA_DECISION,
     CLAVE_MARKET_VIEWS,
+    CLAVE_PRIOR,
     CLAVE_QUANT_ESTIMATES,
     CLAVE_RESTRICCIONES,
+    CLAVE_RESTRICCIONES_SESION,
+    CLAVE_UNIVERSO,
     CLAVE_VALIDACIONES,
     NucleoTools,
 )
@@ -103,6 +106,10 @@ def repetir(corrida: RunState, config: Config, provider: PriceProvider) -> Resul
     base: dict[str, Any] = {
         CLAVE_FECHA_DECISION: corrida.fecha_decision.isoformat(),
         CLAVE_MARKET_VIEWS: remoto["market_views"],
+        # El universo (con sus caps congeladas) y las restricciones de sesión son INPUTS de la
+        # corrida: se toman del RunState, no del almacén vivo, que puede haber cambiado.
+        CLAVE_UNIVERSO: remoto["universo"],
+        CLAVE_RESTRICCIONES_SESION: remoto["restricciones_sesion"],
     }
     if corrida.quant_estimates is not None:
         _exigir(tools.estimar_mercado(_contexto(base)), "quant")
@@ -124,7 +131,12 @@ def repetir(corrida: RunState, config: Config, provider: PriceProvider) -> Resul
             )
         elif corrida.market_views is not None and corrida.restricciones is not None:
             estado[CLAVE_CANDIDATOS] = remoto["candidatos"][: i - 1]
-            maximos = {a: lim[1] for a, lim in corrida.restricciones.limites_por_activo.items()}
+            sesion = corrida.restricciones_sesion
+            maximos = {
+                a: lim[1]
+                for a, lim in corrida.restricciones.limites_por_activo.items()
+                if lim != sesion.limites(a)  # lo demás ya es de la sesión, no un override
+            }
             salida = tools.construir_candidatos(ctx, ronda.recomendado, maximos)
             _exigir(salida, f"constructor (ronda {i})")
             hallazgos += _comparar(
@@ -133,6 +145,7 @@ def repetir(corrida: RunState, config: Config, provider: PriceProvider) -> Resul
             hallazgos += _comparar(
                 volcar(ronda), estado[CLAVE_CANDIDATOS][-1], f"candidatos[{i - 1}]"
             )
+            hallazgos += _comparar(remoto["prior"], estado[CLAVE_PRIOR], "prior")
             # La validación se repite sobre los pesos REMOTOS: aísla cada etapa.
             estado[CLAVE_CANDIDATOS] = remoto["candidatos"][:i]
         if i <= len(corrida.validaciones):

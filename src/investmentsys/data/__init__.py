@@ -2,6 +2,7 @@
 
 from investmentsys.data.csv_provider import CSVPriceProvider
 from investmentsys.data.provider import DatosInvalidosError, PriceProvider
+from investmentsys.data.series_provider import SeriesPriceProvider, provider_de_config
 from investmentsys.data.tiingo_provider import (
     TiingoCredencialError,
     TiingoError,
@@ -15,10 +16,12 @@ __all__ = [
     "CSVPriceProvider",
     "DatosInvalidosError",
     "PriceProvider",
+    "SeriesPriceProvider",
     "TiingoCredencialError",
     "TiingoError",
     "TiingoLimiteError",
     "TiingoPriceProvider",
     "TiingoTickerError",
     "TiingoTimeoutError",
+    "provider_de_config",
 ]

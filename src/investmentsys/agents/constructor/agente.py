@@ -12,7 +12,13 @@ from google.genai import types
 
 from investmentsys.agents.modelo import resolver_modelo
 from investmentsys.config import Config
-from investmentsys.tools import CLAVE_CANDIDATOS, CLAVE_VALIDACIONES, NucleoTools
+from investmentsys.tools import (
+    CLAVE_CANDIDATOS,
+    CLAVE_RESTRICCIONES_SESION,
+    CLAVE_UNIVERSO,
+    CLAVE_VALIDACIONES,
+    NucleoTools,
+)
 
 NOMBRE = "constructor"
 
@@ -22,12 +28,15 @@ Eres el Constructor de Portafolios. No calculas pesos: llamas UNA vez a la herra
 mínima varianza, y luego resumes en dos o tres frases qué pediste y por qué, citando solo
 cifras devueltas por la herramienta.
 
-Iteración {iteracion} de {maximo}. Límites de config.yaml: cada peso en [{peso_min}, {peso_max}].
+Iteración {iteracion} de {maximo}. Universo: {activos}. Límites de la sesión: cada peso en
+[{peso_min}, {peso_max}]. Si la herramienta informa que Black-Litterman no está disponible
+(prior de equilibrio pendiente), dilo tal cual con el motivo que ella da y trabaja con la
+técnica que haya recomendado en su lugar: nunca propongas una capitalización.
 {situacion}
 """
 
 PRIMERA = """\
-Es la primera propuesta: recomienda "black_litterman" con los límites de config.yaml (no
+Es la primera propuesta: recomienda "black_litterman" con los límites de la sesión (no
 pases `peso_max_por_activo`), salvo que el usuario haya pedido otra cosa."""
 
 TRAS_RECHAZO = """\
@@ -60,11 +69,14 @@ def crear_constructor(
 ) -> LlmAgent:
     def instruccion(contexto: ReadonlyContext) -> str:
         iteracion, situacion = _situacion(contexto)
+        sesion = contexto.state.get(CLAVE_RESTRICCIONES_SESION) or {}
+        universo = contexto.state.get(CLAVE_UNIVERSO) or {}
         return INSTRUCCION.format(
             iteracion=iteracion,
             maximo=config.validacion.max_iteraciones_constructor,
-            peso_min=config.optimizacion.peso_min,
-            peso_max=config.optimizacion.peso_max,
+            activos=", ".join(d["ticker"] for d in universo.get("diagnosticos", ())),
+            peso_min=(sesion.get("peso_min") or {}).get("valor", config.optimizacion.peso_min),
+            peso_max=(sesion.get("peso_max") or {}).get("valor", config.optimizacion.peso_max),
             situacion=situacion,
         )
 

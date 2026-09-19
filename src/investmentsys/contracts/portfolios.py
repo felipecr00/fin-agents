@@ -17,6 +17,7 @@ from investmentsys.contracts.common import (
     validar_suma,
 )
 from investmentsys.contracts.constraints import PortfolioConstraints
+from investmentsys.contracts.universe import UniverseVersion
 
 
 class TecnicaOptimizacion(StrEnum):
@@ -94,6 +95,20 @@ class CandidatePortfolios(ContractBase):
     iteracion: int = Field(ge=1, description="Ronda del bucle Constructor ↔ Validador.")
     candidatos: tuple[CandidatePortfolio, ...] = Field(min_length=1)
     recomendado: str = Field(description="Nombre del candidato que se somete a validación.")
+    no_disponibles: dict[TecnicaOptimizacion, str] = Field(
+        default_factory=dict,
+        description=(
+            "Técnicas que no pudieron producir candidato en esta ronda y por qué (p. ej. "
+            "Black-Litterman con el prior pendiente, ADR-013). El comité sigue con las demás."
+        ),
+    )
+    universe_version: UniverseVersion | None = Field(
+        default=None,
+        description=(
+            "Sello del Universe sobre el que se calculó (ADR-012). None = sin sellar: solo lo "
+            "admite el núcleo puro llamado directamente; las herramientas lo rechazan."
+        ),
+    )
 
     @field_validator("activos")
     @classmethod
@@ -109,6 +124,13 @@ class CandidatePortfolios(ContractBase):
             raise ValueError(f"recomendado '{self.recomendado}' no está entre {nombres}")
         for c in self.candidatos:
             validar_mismo_universo(c.pesos, self.activos, f"candidato {c.nombre}")
+        contradictorias = sorted(
+            {c.tecnica.value for c in self.candidatos} & set(self.no_disponibles)
+        )
+        if contradictorias:
+            raise ValueError(
+                f"técnicas declaradas no disponibles y con candidato: {contradictorias}"
+            )
         return self
 
     def candidato(self, nombre: str) -> CandidatePortfolio:

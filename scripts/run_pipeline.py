@@ -18,7 +18,7 @@ from google.adk.sessions import InMemorySessionService
 from google.genai import types
 
 from investmentsys.config import RAIZ_PROYECTO, cargar_config
-from investmentsys.data import CSVPriceProvider
+from investmentsys.data import provider_de_config
 from investmentsys.orchestrator import CLAVE_DIRECTORIO, crear_pipeline
 
 APP = "pipeline"
@@ -33,7 +33,7 @@ MAX_CARACTERES_EVENTO = 600
 
 async def correr(mensaje: str) -> str:
     config = cargar_config()
-    pipeline = crear_pipeline(config, CSVPriceProvider(config.datos.ruta_csv))
+    pipeline = crear_pipeline(config, provider_de_config(config))
     sesiones = InMemorySessionService()
     runner = Runner(node=pipeline, app_name=APP, session_service=sesiones)
     sesion = await sesiones.create_session(app_name=APP, user_id="local")
