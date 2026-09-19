@@ -82,6 +82,10 @@ class MatrizCovarianza(ContractBase):
     def volatilidad(self, activo: str) -> float:
         return math.sqrt(self.varianza(activo))
 
+    def correlacion(self, a: str, b: str) -> float:
+        i, j = self.activos.index(a), self.activos.index(b)
+        return self.valores[i][j] / (self.volatilidad(a) * self.volatilidad(b))
+
 
 class RetornoEsperado(ContractBase):
     """Retorno anual de un activo con su intervalo de confianza."""

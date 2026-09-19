@@ -46,7 +46,7 @@ update-prices:  ## paso 1 del ritual mensual: Tiingo → validar → data/series
 	$(UV) run python scripts/update_prices.py $(if $(SIMULAR),--dry-run,) \
 		$(if $(ACEPTAR_DISCREPANCIAS),--aceptar-discrepancias,)
 
-run-local:      ## UI de desarrollo de ADK (apps/: market_analyst; credenciales en .env o el entorno)
+run-local:      ## UI de desarrollo de ADK (apps/: equipo, pipeline, market_analyst; credenciales en .env)
 	$(UV) run adk web apps
 
 eval:           ## evalset del analista contra Gemini REAL (ADR-010); código 1 si algún caso falla

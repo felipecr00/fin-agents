@@ -2,7 +2,7 @@
 
 - Fecha: 2026-09-19
 - Sprint: S8 (PR 1 de 2)
-- Estado: propuesta
+- Estado: aceptada
 
 ## Contexto
 S8 añade un Director conversacional (LlmAgent) sobre el comité formal de S3-S7. Dos riesgos

@@ -79,6 +79,7 @@ class LlmPorAgente(BaseLlm):
         "analista": "Eres el Analista de Mercados",
         "constructor": "Eres el Constructor de Portafolios",
         "reporter": "Eres el redactor del informe",
+        "director": "Eres el Director de Análisis",
     }
 
     def instrucciones(self, agente: str) -> list[str]:

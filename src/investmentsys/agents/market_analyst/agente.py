@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncGenerator
 from datetime import date
-from typing import Any
+from typing import Any, Literal
 
 from google.adk.agents.base_agent import BaseAgent
 from google.adk.agents.invocation_context import InvocationContext
@@ -37,6 +37,7 @@ from investmentsys.tools.estado import (
 CLAVE_BORRADOR = "market_views_borrador"
 CLAVE_ERROR_VIEWS = "market_views_error"
 NOMBRE = "market_analyst"
+ETIQUETA_EXPLORATORIO = "exploratorio"
 
 INSTRUCCION = """\
 Eres el Analista de Mercados de un sistema de construcción de portafolios.
@@ -107,13 +108,20 @@ def _instruccion(config: Config, activos: tuple[str, ...], fecha: date, error: s
     )
 
 
-def _evento(ctx: InvocationContext, autor: str, texto: str, delta: dict[str, Any]) -> Event:
+def _evento(
+    ctx: InvocationContext,
+    autor: str,
+    texto: str,
+    delta: dict[str, Any],
+    salida: dict[str, Any] | None = None,
+) -> Event:
     return Event(
         author=autor,
         invocation_id=ctx.invocation_id,
         branch=ctx.branch,
         content=types.Content(role="model", parts=[types.Part(text=texto)]),
         actions=EventActions(state_delta=delta),
+        output=salida,
     )
 
 
@@ -143,6 +151,9 @@ class MarketAnalyst(BaseAgent):
     horizonte_meses: int
     max_intentos: int
     fecha_por_defecto: date
+    mode: Literal["chat", "task", "single_turn"] | None = None
+    """ADK 2.x: ``single_turn`` lo expone como herramienta del agente padre (el Director, S8)
+    y le devuelve el control con las views como salida. ``None`` = nodo del pipeline."""
 
     async def _run_async_impl(self, ctx: InvocationContext) -> AsyncGenerator[Event, None]:
         estado = ctx.session.state
@@ -185,15 +196,30 @@ class MarketAnalyst(BaseAgent):
                 self.name,
                 _resumen(views, intento),
                 {CLAVE_MARKET_VIEWS: volcar(views), CLAVE_ERROR_VIEWS: None},
+                self._salida_exploratoria(views),
             )
             return
         raise ViewsInvalidasError(
             f"{self.max_intentos} intentos sin un MarketViews válido; último error: {error}"
         )
 
+    def _salida_exploratoria(self, views: MarketViews) -> dict[str, Any] | None:
+        """Consultado por el Director, responde como un tool: views exploratorias, en el dato."""
+        if self.mode != "single_turn":
+            return None
+        return {
+            "status": "success",
+            "etiqueta": ETIQUETA_EXPLORATORIO,
+            "validado": False,
+            "market_views": volcar(views),
+        }
+
 
 def crear_market_analyst(
-    config: Config, provider: PriceProvider, modelo: str | BaseLlm | None = None
+    config: Config,
+    provider: PriceProvider,
+    modelo: str | BaseLlm | None = None,
+    mode: Literal["chat", "task", "single_turn"] | None = None,
 ) -> MarketAnalyst:
     """``modelo`` permite inyectar un LLM falso en tests; por defecto, ``config.agentes``."""
     fecha_por_defecto: date = provider.precios(config.portafolio.activos).index[-1].date()
@@ -229,4 +255,5 @@ def crear_market_analyst(
         horizonte_meses=config.agentes.horizonte_views_meses,
         max_intentos=config.agentes.max_intentos_analista,
         fecha_por_defecto=fecha_por_defecto,
+        mode=mode,
     )

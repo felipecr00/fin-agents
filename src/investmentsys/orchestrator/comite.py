@@ -54,6 +54,7 @@ from investmentsys.tools.estado import (
     CLAVE_FECHA_DECISION,
     CLAVE_MARKET_VIEWS,
     CLAVE_RESTRICCIONES_SESION,
+    CLAVE_SOLICITUD_COMITE,
     CLAVE_UNIVERSO,
     Estado,
     FaltaEnEstadoError,
@@ -64,11 +65,17 @@ from investmentsys.tools.estado import (
     volcar,
 )
 
-CLAVE_SOLICITUD = "solicitud_comite"
+CLAVE_SOLICITUD = CLAVE_SOLICITUD_COMITE
 FASE_SOLICITAR = "solicitar"
 FASE_EJECUTAR = "ejecutar"
 ETIQUETA_COMITE = "comite_formal"
 MENSAJE_SIN_MATERIAL = "Sin material del usuario: emite tus views desde tu conocimiento general."
+NOTA_VIEWS_DEL_COMITE = (
+    "Las views de la corrida las emite el Analista del comité DURANTE la corrida, a partir del "
+    "material_usuario y las views_de_partida del resumen (que recibe citados, sin verificar); "
+    "si ambos están vacíos, opina desde su conocimiento general con confianza topada. No es "
+    "una corrida sin views salvo que él no emita ninguna."
+)
 CLAVES_DEL_ACTA = (CLAVE_RUN_STATE, CLAVE_REPORTE, CLAVE_DIRECTORIO)
 
 
@@ -154,6 +161,7 @@ class ComiteTools:
             "status": "pendiente_de_confirmacion",
             "token": solicitud.token,
             "resumen": volcar(resumen),
+            "que_hara_el_comite": NOTA_VIEWS_DEL_COMITE,
             "siguiente_paso": (
                 "Presenta este resumen al usuario y espera su confirmación explícita. Solo "
                 "entonces, en su siguiente turno, llama a fase='ejecutar' con este token."

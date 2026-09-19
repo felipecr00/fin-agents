@@ -14,7 +14,6 @@ se normalizan (primer activo del universo con coeficiente positivo) antes de emp
 from __future__ import annotations
 
 import json
-import math
 from dataclasses import dataclass
 
 from investmentsys.contracts import (
@@ -210,8 +209,7 @@ def _correlaciones(e: QuantEstimates | None) -> dict[str, float]:
     cov = next(iter(e.covarianzas.values()))
     n = len(e.activos)
     return {
-        f"{e.activos[i]}-{e.activos[j]}": cov.valores[i][j]
-        / math.sqrt(cov.valores[i][i] * cov.valores[j][j])
+        f"{e.activos[i]}-{e.activos[j]}": cov.correlacion(e.activos[i], e.activos[j])
         for i in range(n)
         for j in range(i + 1, n)
     }
