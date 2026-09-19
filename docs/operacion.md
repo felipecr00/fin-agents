@@ -1,4 +1,4 @@
-# Operación: desplegar, verificar, ver logs y costos
+# Operación: ritual mensual, desplegar, verificar, ver logs y costos
 
 Decisiones y porqués: [ADR-008](adr/008-camino-de-despliegue-cloud-run-dev-agent-runtime-prod.md)
 (camino de despliegue) y [ADR-009](adr/009-runstate-en-la-nube-y-verificacion-de-reproducibilidad.md)
@@ -14,6 +14,63 @@ financiera.
 | Sesiones | en memoria, 1 instancia máx. (desechable) | administradas por Agent Engine (persisten el `RunState`) |
 | Acceso | solo autenticado (identity token, `roles/run.invoker`) | IAM de Vertex AI (access token, `roles/aiplatform.user`) |
 | Se despliega | en cada merge a `main` | a mano: Actions → deploy → Run workflow → `prod` |
+
+## Ritual mensual
+
+Los primeros días de cada mes, con el mes anterior ya cerrado:
+
+1. **`make update-prices`** — trae de Tiingo la serie mensual ajustada completa, la valida y, si
+   todo está verde, reescribe `data/precios.csv` ([ADR-011](adr/011-tiingo-como-fuente-de-precios-y-csv-como-cache-validado.md)).
+   **Lee el resumen antes de seguir**: meses nuevos por activo, continuidad y diff.
+2. `git diff data/precios.csv`, commit (`chore: precios AAAA-MM`) y PR: el CSV versionado es lo
+   que usan dev y prod, y su historial en git es el respaldo de verdad.
+3. `uv run python scripts/run_pipeline.py` (o `make corrida-dev` tras el despliegue) y
+   `make comparar A=<corrida anterior> B=<corrida nueva>`.
+
+### `make update-prices`
+
+| Variante | Qué hace |
+|---|---|
+| `make update-prices` | descarga, valida y, si todo está verde, escribe |
+| `make update-prices SIMULAR=1` | lo mismo sin escribir: para mirar antes de tocar nada |
+| `make update-prices ACEPTAR_DISCREPANCIAS=1` | escribe aunque la continuidad difiera. Solo después de haber revisado TÚ el aborto; queda registrado en el resumen. No salta la sanidad ni la pérdida de historia |
+
+- **Credencial**: `TIINGO_API_KEY` en el entorno o en `.env` (ver `.env.example`). Viaja en la
+  cabecera `Authorization: Token …`, nunca en la URL. Free tier: 50 peticiones/hora y 1.000/día;
+  una actualización son 4.
+- **Solo meses cerrados.** Tiingo fecha el mes en curso a su fin de mes (futuro) con el precio
+  de hoy; esa fila no se escribe nunca. Correrlo a mitad de mes no aporta nada nuevo.
+- **Salida**: resumen en consola y en `runs/actualizaciones/<marca>/resumen.{md,json}`, también
+  cuando aborta. Código 0 = escrito, sin cambios o simulación; 1 = abortado por una validación;
+  2 = fallo de la fuente. En los tres casos de fallo el CSV vigente queda intacto.
+- **Respaldos**: `data/precios_backup_<marca>.csv`, los 3 últimos (`datos.actualizacion.backups_a_conservar`),
+  ignorados por git. Deshacer: `cp data/precios_backup_<marca>.csv data/precios.csv` o `git checkout data/precios.csv`.
+- **Parámetros**: `config.yaml: datos.tiingo` y `datos.actualizacion`. Extender el histórico =
+  cambiar `datos.tiingo.fecha_inicio` (la continuidad comparará solo la ventana solapada).
+
+| Mensaje | Qué significa | Qué hacer |
+|---|---|---|
+| `continuidad: N retorno(s) difieren…` | en un mes que ya teníamos, el retorno de Tiingo no coincide con el del CSV (tolerancia 0,5 p.p.). Un precio ajustado cambia de NIVEL con cada dividendo, pero no de retorno: si cambia el retorno, la fuente reexpresó un dividendo o split, o tiene un error | mira la tabla de discrepancias y contrasta los dividendos del activo en esas fechas. Si la versión de Tiingo es la correcta, `ACEPTAR_DISCREPANCIAS=1`; si no, no actualices y anótalo |
+| `continuidad: el panel nuevo pierde meses` | Tiingo devuelve menos historia que el CSV | no se puede forzar: revisa `fecha_inicio` y el ticker |
+| `sanidad: …` | duplicados, huecos, precio ≤ 0, inicio tardío no declarado o \|retorno\| > 60 % | casi seguro un error de la fuente; reintenta otro día. Si es real (un split mal ajustado no lo es), sube el umbral en `config.yaml` con un commit que lo explique |
+| `Tiingo rechazó la API key (HTTP 403)` | key ausente, mal copiada o revocada (Tiingo usa 403, no 401) | regenera el token en tiingo.com → Account → API |
+| `límite de peticiones (HTTP 429)` | cuota horaria o diaria agotada tras 4 intentos con espera exponencial | espera una hora |
+
+**GCP (opcional, hoy sin uso).** Las corridas remotas leen el CSV empaquetado en la imagen; no
+actualizan datos. Si algún día se habilita, el secreto se crea sin que la key pase por la
+pantalla ni por el historial, y dev lo recibe al desplegar:
+
+    grep '^TIINGO_API_KEY=' .env | cut -d= -f2- | tr -d '\n' | \
+      gcloud secrets create tiingo-api-key --data-file=- --project ai-exploratory
+    gcloud secrets add-iam-policy-binding tiingo-api-key --project ai-exploratory \
+      --member serviceAccount:fin-agents-run@ai-exploratory.iam.gserviceaccount.com \
+      --role roles/secretmanager.secretAccessor
+    make deploy-dev PROYECTO=ai-exploratory SECRETO_TIINGO=tiingo-api-key
+
+`SECRETO_TIINGO` va vacío por defecto a propósito: un secreto inexistente tumbaría el despliegue
+automático de cada merge. En prod (Agent Engine) la variable se declararía en
+`apps/pipeline/.agent_engine_config.json`; no se ha hecho porque el disco del contenedor es de
+solo lectura y el CSV no podría reescribirse allí.
 
 ## Desplegar
 
