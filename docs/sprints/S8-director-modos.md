@@ -157,12 +157,89 @@ endurecimientos especulativos del Gestor (solo los que la prueba manual o la
 demo revelen como problema real, con evidencia).
 
 ## Estado
-(pendiente — el PR 1 anota aquí sus hallazgos de prueba manual; el PR 2 cierra)
 
-Decisiones registradas antes de empezar el PR 1:
-- Enmienda (3), redacción vigente: la instrucción del Director NO se carga desde
-  un archivo de docs/. Vive en código, en la constante literal de
-  `src/investmentsys/agents/director/instruccion.py`, como en los demás agentes;
-  `crear_director` la usa como base y agrega solo el cableado de tools. La prueba
-  de "falla claro si falta el archivo" no aplica; la reemplaza un test de
+**PR 1 de 2 cerrado** (rama `sprint/S8-director-pr1`, 2026-09-19). El sprint sigue abierto:
+el evalset de 12+ casos, el cambio de app por defecto, el documento de operación y la demo
+completa del DoD son del PR 2.
+
+### Logrado en el PR 1
+- Tarea menor: `comparacion.leer_corrida` — un acta pre-S7 falla con "RunState de esquema
+  anterior a S7, use el tag v0.7-pre-director para leerlo" (tag creado en `ef19648`). Probado
+  contra las 8 actas pre-S7 reales de `runs/`.
+- `diagnosticar_cartera` (tools/nucleo.py): comparte `_evaluar` con `validar_candidato` (mismas
+  métricas, verificado por test); pesos validados antes de calcular en código puro
+  (`portfolio/cartera_usuario.py`), sin renormalizar; contrato `DiagnosticoCartera` con
+  `validado: Literal[False]` y sin veredicto; un `RunState` no lo admite como validación.
+- `convocar_comite` (orchestrator/comite.py) en dos fases con token de un solo uso;
+  `RunState.aprobacion` registra el resumen presentado y la confirmación; sección
+  "Aprobación del usuario" en el informe. ADR-014 aceptado.
+- `crear_director` (agents/director/): instrucción = spec aprobado literal
+  (`instruccion.py`) + cableado de tools; `GestorTools` (tools/gestor.py) con `resolver`,
+  `incorporar`, `aceptar_prior_neutral`, `refrescar_cap`, `diagnosticar`, y declaración de
+  `resultados_obsoletos` por `universe_version` en cada cambio de universo;
+  `estimar_mercado`/`construir_candidatos` sin modificar, envueltos para llevar
+  `validado: false` en el dato. `apps/equipo/` (la app por defecto NO cambió).
+- Tests: unitarios de tools, contratos y fábrica; 16 de integración con LLM falso sobre el
+  Runner real y varios turnos por sesión (`tests/integration/test_director.py`), incluidos
+  los de las enmiendas. `make check` verde: 498 tests.
+
+### Decisiones y enmiendas (redacción vigente)
+- Enmienda (3): la instrucción del Director NO se carga desde un archivo de docs/. Vive en
+  código, en la constante literal de `src/investmentsys/agents/director/instruccion.py`, como
+  en los demás agentes; `crear_director` la usa como base y agrega solo el cableado de tools.
+  La prueba de "falla claro si falta el archivo" no aplica; la reemplaza un test de
   marcadores estructurales (modos A-D y la regla de la decisión final del usuario).
+- Gate más estricto que el spec (ADR-014): `ejecutar` exige una INVOCACIÓN distinta de la de
+  `solicitar` (si no, el LLM encadena ambas fases solo y el token vale lo que el booleano), y
+  el token muere ante cualquier cambio de lo resumido, no solo de `universe_version`.
+- La sesión del comité corre anidada y aislada: a la del Director solo suben el RunState, el
+  informe y la ruta del acta. Sus eventos internos no se ven en el chat.
+- Las views exploratorias no entran al comité como views: viajan al Analista como material
+  citado (el pipeline no se modifica).
+- Desviación del §6: los tests de `convocar_comite` están en `tests/unit/tools/test_comite.py`
+  (corren el pipeline real), no dentro de `test_nucleo.py`.
+
+### Aprendizajes
+- API de ADK 2.9.1 (docs mudados a adk.dev): el uso directo de `AgentTool` está
+  desaconsejado; lo vigente es `sub_agents` con `mode`. Con `transfer_to_agent` el control NO
+  vuelve al Director en el mismo turno (el modo B no podría sintetizar); con
+  `mode="single_turn"` sí, y corre en la sesión del padre. `MarketAnalyst` ganó el campo
+  `mode` y, solo en ese modo, devuelve sus views como salida etiquetada exploratoria.
+- Un `Workflow` no es un `BaseAgent`: no puede ser sub-agente ni `AgentTool`. Se corre desde
+  un tool con un `Runner(node=...)` anidado.
+- `ToolContext.invocation_id` distingue turnos del usuario: es la pieza que hace objetiva la
+  custodia "el usuario vio el resumen antes de confirmar".
+- El resumen de `estimar_mercado` no traía correlaciones aunque el brief rutea ahí esas
+  consultas: se añadió `MatrizCovarianza.correlacion` (puro; el comparador lo reusa) y el
+  envoltorio del Director las anexa.
+- Fuera del comité no hay validador en el bucle: sin reiniciar las rondas, la segunda
+  propuesta exploratoria fallaba con "la iteración 1 aún no se ha validado".
+
+### Hallazgos de la prueba manual (materia prima del evalset del PR 2)
+Corrida real contra `gemini-3.5-flash` (3 turnos: "hola", "¿qué correlación hay entre VOOG y
+VB?", "convoca al comité"). Ruteo correcto en los tres; las cifras citadas (0.7571, 19.29 %,
+18.95 %) coinciden con la salida de la herramienta. Desvíos observados, textuales:
+1. Ante "hola" llamó a `diagnosticar` antes de responder. Es de solo lectura y el spec fuente
+   pide presentar el universo al inicio, pero el DoD del PR 2 exige que un saludo no dispare
+   nada: decidir cuál manda y fijarlo por eval.
+2. En ese mismo saludo ofreció: "Modificar el universo: Podemos agregar nuevos activos [...] o
+   retirar alguno de los actuales" y "Ajustar restricciones de la sesión", aunque el cableado
+   dice que no hay herramienta para ninguna de las dos.
+3. Escribió "Prior Cap: **$28.0B** (US$ billones)": cifra idéntica a la de la tool, unidad
+   ambigua (10^9 vs 10^12). Mitigado: las tools del Gestor devuelven ahora `unidad_cap`.
+4. Al resumir el comité dijo: "No se han ingresado views subjetivas para esta corrida (se
+   optimizará utilizando el prior de equilibrio de mercado...)". Falso: el Analista del comité
+   emite las suyas. Mitigado: `solicitar` devuelve `que_hara_el_comite`.
+- Prueba manual del usuario en adk web (hito b): hecha; sus hallazgos textuales se añaden aquí
+  antes de mergear.
+
+### Pendiente (PR 2 y huecos detectados)
+- PR 2 completo: evalset (12 casos + los desvíos de arriba), `apps/equipo` como app por
+  defecto en adk web y despliegue, documento de operación, demo del DoD.
+- Huecos frente al spec fuente, sin herramienta hoy (no estaban en el brief del PR 1):
+  retirar un activo del universo ("saca BNS") y ajustar las restricciones de la sesión. El
+  Director debe decir que no puede; decidir en el PR 2 si se construyen.
+- `aceptar_prior_neutral` se apoya solo en la instrucción para la confirmación explícita; si
+  la prueba manual muestra que el LLM se la salta, aplicarle la custodia por turnos del comité.
+- `TiingoFuente(hoy=date.today())` se fija al arrancar `apps/equipo`: un servidor que viva
+  varios días seguirá con la fecha de arranque.
