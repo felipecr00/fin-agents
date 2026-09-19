@@ -5,11 +5,15 @@ from investmentsys.quant.covariance import (
     estimar_covarianza,
     ledoit_wolf,
 )
-from investmentsys.quant.estimates import LookAheadError, estimar
+from investmentsys.quant.errores import LookAheadError
+from investmentsys.quant.estimates import estimar
+from investmentsys.quant.regimen import DiagnosticoRegimen, clasificar_regimen
 
 __all__ = [
+    "DiagnosticoRegimen",
     "LookAheadError",
     "MuestraInsuficienteError",
+    "clasificar_regimen",
     "estimar",
     "estimar_covarianza",
     "ledoit_wolf",

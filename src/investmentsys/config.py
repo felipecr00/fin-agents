@@ -158,6 +158,25 @@ class EvaluacionConfig(_Seccion):
     q_relativa_max: float = Field(gt=0.0, description="|q_anual| máximo de una view relativa.")
 
 
+class RegimenConfig(_Seccion):
+    """Clasificador simple de régimen de mercado (``quant.regimen``)."""
+
+    activos_referencia: tuple[Ticker, ...] = Field(min_length=1)
+    ventana_tendencia_meses: int = Field(gt=0)
+    ventana_volatilidad_meses: int = Field(gt=1)
+    observaciones_minimas: int = Field(gt=1)
+    umbral_tendencia: float = Field(gt=0.0)
+    drawdown_estres: Fraccion
+    ratio_volatilidad_estres: float = Field(gt=0.0)
+
+    @model_validator(mode="after")
+    def _ventanas_dentro_del_minimo(self) -> RegimenConfig:
+        ventanas = max(self.ventana_tendencia_meses, self.ventana_volatilidad_meses)
+        if self.observaciones_minimas < ventanas:
+            raise ValueError("observaciones_minimas debe cubrir las ventanas de tendencia y vol")
+        return self
+
+
 class SensibilidadConfig(_Seccion):
     """Rejilla de perturbaciones del análisis de sensibilidad (``risk.sensibilidad``)."""
 
@@ -189,6 +208,7 @@ class Config(_Seccion):
     optimizacion: OptimizacionConfig
     prior_equilibrio: PriorEquilibrioConfig
     estimacion: EstimacionConfig
+    regimen: RegimenConfig
     datos: DatosConfig
     validacion: ValidacionConfig
     agentes: AgentesConfig
@@ -204,6 +224,9 @@ class Config(_Seccion):
             self.portafolio.activos,
             "prior_equilibrio.capitalizacion_usd_billones",
         )
+        fuera = sorted(set(self.regimen.activos_referencia) - set(self.portafolio.activos))
+        if fuera:
+            raise ValueError(f"regimen.activos_referencia fuera del universo: {fuera}")
         return self
 
 

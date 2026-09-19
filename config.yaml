@@ -28,6 +28,18 @@ estimacion:
   # Ledoit-Wolf (ADR-003): objetivo de correlación constante; la intensidad se estima sobre
   # la ventana común de todos los activos y se aplica a la matriz histórica híbrida.
 
+regimen:
+  # Clasificador simple de régimen (quant/regimen.py). Etiqueta descriptiva: no cambia pesos.
+  # Índice de referencia = promedio simple de estos activos (renta variable amplia; IBIT queda
+  # fuera porque su volatilidad dominaría el índice y solo cotiza desde 2024).
+  activos_referencia: [VOOG, VB]
+  ventana_tendencia_meses: 6
+  ventana_volatilidad_meses: 6
+  observaciones_minimas: 24
+  umbral_tendencia: 0.05          # ±5 % acumulado en la ventana separa alcista/bajista de lateral
+  drawdown_estres: 0.15           # caída desde el máximo de la muestra…
+  ratio_volatilidad_estres: 1.3   # …con volatilidad reciente ≥ 1,3× la de toda la muestra
+
 datos:
   proveedor: csv
   ruta_csv: data/precios.csv

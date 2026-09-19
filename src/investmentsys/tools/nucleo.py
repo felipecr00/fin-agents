@@ -98,6 +98,7 @@ class NucleoTools:
             ventana_meses=self.config.datos.ventana_covarianza_meses,
             metodos=(self.config.optimizacion.metodo_covarianza,),
             nivel_confianza=self.config.estimacion.nivel_confianza,
+            regimen=self.config.regimen,
         )
         estado[CLAVE_FECHA_DECISION] = fecha.isoformat()
         estado[CLAVE_QUANT_ESTIMATES] = volcar(estimaciones)
@@ -110,6 +111,7 @@ class NucleoTools:
                 estimaciones.fecha_fin_muestra.isoformat(),
             ],
             "metodo_covarianza": str(cov.metodo),
+            "regimen": estimaciones.regimen.value,
             "por_activo": {
                 r.activo: {
                     "observaciones": cov.observaciones_por_activo[r.activo],
