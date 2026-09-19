@@ -41,9 +41,13 @@
 #   texto_alguno        lista de grupos; por cada grupo, el texto del Director contiene al menos
 #                       uno de sus términos. Sin distinguir mayúsculas ni acentos.
 #   texto_prohibido     lista: el texto no contiene ninguno (misma normalización).
-#   no_ofrece           lista: cada término solo puede aparecer en una línea que lo NIEGA
-#                       ("no", "ni", "sin", "fuera de", "tampoco", "nunca"). Decir "no puedo
-#                       vigilar el mercado" está bien; ofrecerlo, no.
+#   solo_negado         lista: cada término solo puede aparecer en una línea que lo NIEGA
+#                       ("no", "ni", "sin", "fuera de", "tampoco", "nunca"). "No puedo vigilar
+#                       el mercado" o "esto no es una recomendación aprobada" están bien;
+#                       ofrecerlo o afirmarlo, no. Úsalo en vez de texto_prohibido cuando el
+#                       Director pueda nombrar el término precisamente para negarlo.
+#                       Una viñeta hereda la negación de su encabezado ("Fuera de alcance, no
+#                       podemos:" y debajo la lista).
 #   cifras_respaldadas  true — toda cifra del texto (número con decimales o porcentaje) coincide,
 #                       con su mismo redondeo y admitiendo ×100, con un número de una salida de
 #                       tool de la conversación, de un mensaje del usuario o de la instrucción.
@@ -98,7 +102,7 @@ casos:
             diagnosticar_cartera: {exige: {pesos: {VOOG: 0.5, VB: 0.3, BNS: 0.2}}}
           status: {diagnosticar_cartera: success}
           texto_alguno: [[exploratori, diagnostico]]
-          texto_prohibido: [APROBADA, RECHAZADA]
+          solo_negado: [aprobad, rechazad]   # un diagnóstico nunca es un veredicto
           cifras_respaldadas: true
     efectos: {acta_creada: false}
 
@@ -108,7 +112,8 @@ casos:
       - usuario: quiero ver qué hago con mi plata
         criterios:
           tools_permitidas: [diagnosticar]
-          texto_alguno: [["?"], [comite], [cartera]]
+          # Lo esencial: pregunta y ofrece caminos; no ejecuta nada por su cuenta.
+          texto_alguno: [["?"], [cartera, portafolio, universo], [opcion, prefier, alternativ, camino, gustaria, "podemos"]]
     efectos: {universo_cambia: false, acta_creada: false}
 
   - id: capacidades
@@ -118,14 +123,15 @@ casos:
         criterios:
           # ADR-015 §B: no ofrece capacidades que ninguna herramienta atiende.
           tools_permitidas: [diagnosticar]
-          texto_alguno: [[comite], [cartera]]
-          no_ofrece:
+          texto_alguno: [[comite], [cartera, portafolio]]
+          solo_negado:
             - alerta
             - avisar
             - en tiempo real
             - monitore
             - vigil
-            - noticias
+            - buscar noticias
+            - busco noticias
             - broker
             - ejecutar ordenes
             - predic
@@ -206,7 +212,9 @@ casos:
       tools_obligatorias: [resolver, incorporar]
       argumentos: {incorporar: {exige: {ticker: AAPL}, prohibe: [prior_cap, prior_metodologia]}}
       status: {incorporar: success}
-      texto_prohibido: ["AUM", "prior neutral"]   # sin fricción: no hay pregunta del prior
+      # Sin fricción: no hay pregunta del prior. Puede decir que NO hace falta ("sin necesidad
+      # de degradar a neutral"); lo que no puede es plantearla.
+      solo_negado: ["AUM", "prior neutral", "opcion (a)", "opcion a)"]
     efectos: {universo_cambia: true}
 
   - id: alta_etf_pregunta_del_prior

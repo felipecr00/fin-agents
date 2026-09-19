@@ -60,8 +60,8 @@ def _fallidos(**criterios: Any) -> list[str]:
         ({"texto_prohibido": ["APROBADA"]}, []),
         ({"texto_prohibido": ["sharpe"]}, ["t.texto_prohibido"]),
         ({"cifras_respaldadas": True}, []),
-        ({"no_ofrece": ["universo"]}, ["t.no_ofrece"]),
-        ({"no_ofrece": ["alerta"]}, []),
+        ({"solo_negado": ["universo"]}, ["t.solo_negado"]),
+        ({"solo_negado": ["alerta"]}, []),
     ],
 )
 def test_cada_criterio(criterios: dict[str, Any], fallidos: list[str]) -> None:
@@ -120,10 +120,29 @@ def test_coincide_compara_solo_lo_esperado_y_tolera_el_punto_flotante() -> None:
     assert not coincide({"fase": True}, {"fase": 1})
 
 
-def test_no_ofrece_admite_la_negacion_y_detecta_la_oferta() -> None:
-    criterios = Criterios(no_ofrece=("tiempo real", "alerta"))
+def test_solo_negado_admite_la_negacion_y_detecta_la_oferta() -> None:
+    criterios = Criterios(solo_negado=("tiempo real", "alerta"))
     niega = TurnoObservado(usuario="x", texto="Modo D: no hacemos monitoreo en tiempo real.")
     ofrece = TurnoObservado(usuario="x", texto="Armo tu cartera.\nY te mando una alerta si cae.")
     assert evaluar(criterios, niega, "t")[0].cumple
     (resultado,) = evaluar(criterios, ofrece, "t")
     assert not resultado.cumple and "alerta" in resultado.detalle
+
+
+def test_una_vineta_hereda_la_negacion_de_su_encabezado() -> None:
+    """Visto en una corrida real: "### Fuera de alcance (no podemos hacer)" y debajo la lista."""
+    criterios = Criterios(solo_negado=("broker", "alerta"))
+    texto = (
+        "### Lo que sí hago\n* Diagnosticar tu cartera.\n\n"
+        "### Lo que está Fuera de Alcance (No podemos hacer)\n"
+        "* **Ejecutar órdenes** o conectarnos a brokers.\n"
+        "* Monitorear el mercado o enviarte alertas.\n\n---\n\n"
+        "### Universo actual\n* VOOG y BNS."
+    )
+    assert evaluar(criterios, TurnoObservado(usuario="x", texto=texto), "t")[0].cumple
+    # La herencia termina con el siguiente encabezado: bajo "Universo actual" ya no está negado.
+    ofrece = texto + "\n* Y te mando una alerta si algo cae."
+    (resultado,) = evaluar(criterios, TurnoObservado(usuario="x", texto=ofrece), "t")
+    assert (
+        not resultado.cumple and "alerta" in resultado.detalle and "broker" not in resultado.detalle
+    )

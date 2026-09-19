@@ -24,6 +24,7 @@ from investmentsys.evaluacion.criterios import ResultadoCriterio
 CIFRA = re.compile(r"(?<![\w.,])-?\d+(?:[.,]\d+)?\s?%|(?<![\w.,])-?\d+[.,]\d+")
 NUMERO = re.compile(r"-?\d+(?:\.\d+)?(?:[eE]-?\d+)?")
 PORCENTAJE = 100.0
+VINETA = re.compile(r"^(?:[*\-•]|\d+[.)])\s")
 NEGACIONES = ("no ", "ni ", "sin ", "fuera de", "tampoco", "nunca")
 TOLERANCIA_ARGUMENTOS = 1e-9  # punto flotante al serializar argumentos, no un parámetro
 
@@ -60,11 +61,12 @@ class Criterios(_Modelo):
         default=(), description="Por cada grupo, el texto contiene al menos uno de sus términos."
     )
     texto_prohibido: tuple[str, ...] = ()
-    no_ofrece: tuple[str, ...] = Field(
+    solo_negado: tuple[str, ...] = Field(
         default=(),
         description=(
-            "Términos que solo pueden aparecer en una línea que los NIEGA ('no podemos…'): el "
-            "Director puede decir que algo está fuera de alcance, no ofrecerlo."
+            "Términos que solo pueden aparecer en una línea que los NIEGA ('no podemos…', 'no es "
+            "una recomendación aprobada'): decir que algo NO se hace está bien; hacerlo u "
+            "ofrecerlo, no."
         ),
     )
     cifras_respaldadas: bool = Field(
@@ -87,6 +89,29 @@ def normalizar(texto: str) -> str:
     """Minúsculas y sin acentos: "Todo-o-Nada" y "todo o nada" no deben depender del tilde."""
     plano = unicodedata.normalize("NFKD", texto.lower())
     return "".join(c for c in plano if not unicodedata.combining(c))
+
+
+def lineas_no_negadas(texto: str) -> list[str]:
+    """Líneas (normalizadas) que ni niegan ni cuelgan de un encabezado que niega.
+
+    Una viñeta hereda la negación de la última línea que no es viñeta: bajo "Fuera de alcance
+    (no podemos hacer):", "* ejecutar órdenes" está negada aunque no diga "no".
+    """
+    afirmadas: list[str] = []
+    encabezado_niega = False
+    for linea in normalizar(texto).splitlines():
+        limpia = linea.strip()
+        if not limpia or set(limpia) <= set("-*_"):  # vacía o separador: no corta la lista
+            continue
+        niega = any(n in f"{limpia} " for n in NEGACIONES)
+        if VINETA.match(limpia):
+            if not (niega or encabezado_niega):
+                afirmadas.append(limpia)
+            continue
+        encabezado_niega = niega
+        if not niega:
+            afirmadas.append(limpia)
+    return afirmadas
 
 
 def _numeros_de(fuentes: Iterable[str]) -> list[float]:
@@ -218,15 +243,15 @@ def evaluar(criterios: Criterios, turno: TurnoObservado, prefijo: str) -> list[R
                 "ningún término prohibido",
             )
         )
-    if criterios.no_ofrece:
-        ofrecidos = [
+    if criterios.solo_negado:
+        afirmados = [
             f"'{termino}' en «{linea.strip()[:120]}»"
-            for linea in normalizar(turno.texto).splitlines()
-            for termino in criterios.no_ofrece
-            if normalizar(termino) in linea and not any(n in linea for n in NEGACIONES)
+            for linea in lineas_no_negadas(turno.texto)
+            for termino in criterios.solo_negado
+            if normalizar(termino) in linea
         ]
         resultados.append(
-            _resultado(f"{prefijo}.no_ofrece", ofrecidos, "no ofrece nada sin herramienta")
+            _resultado(f"{prefijo}.solo_negado", afirmados, "solo aparecen negados, o no aparecen")
         )
     if criterios.cifras_respaldadas:
         fuentes = [

@@ -74,7 +74,7 @@ Hallazgos:
 3. **Criterios** (puros, `evaluacion/criterios_director.py`): tools obligatorias / prohibidas /
    únicas permitidas por turno; argumentos exigidos o prohibidos (p. ej. `incorporar` sin
    `prior_cap`); `status` de la respuesta de una tool; grupos de texto "alguno de" y texto
-   prohibido (sin distinguir mayúsculas ni acentos); `no_ofrece` (un término solo puede
+   prohibido (sin distinguir mayúsculas ni acentos); `solo_negado` (un término solo puede
    aparecer en una línea que lo niega: añadido tras la primera corrida real, donde "no podemos…
    monitoreo en tiempo real" disparó un texto prohibido); **cifras respaldadas** (todo número del
    texto aparece idéntico en una salida de tool del caso — el detector del PR 1, promovido a

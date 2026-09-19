@@ -201,7 +201,7 @@ MALOS: dict[str, tuple[dict[str, list[Any]], str]] = {
     ),
     "capacidades": (
         {"director": ["Puedo armar tu cartera, el comité, y te aviso con una alerta si cae."]},
-        "turno1.no_ofrece",
+        "turno1.solo_negado",
     ),
     "restricciones_infactibles": (
         {
