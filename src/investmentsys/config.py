@@ -136,6 +136,8 @@ class AgentesConfig(_Seccion):
     temperatura: float = Field(ge=0.0, le=2.0)
     max_intentos_analista: int = Field(ge=1)
     horizonte_views_meses: int = Field(gt=0)
+    max_views: int = Field(ge=1)
+    confianza_max_sin_conviccion: Fraccion
     ubicacion_vertex: str | None = Field(
         default=None, description="Ubicación del modelo en Vertex AI; None = la del entorno."
     )
@@ -147,6 +149,49 @@ class AgentesConfig(_Seccion):
         if v.endswith("-latest"):
             raise ValueError("usa un id de modelo fijo, no un alias -latest (ADR-005)")
         return v
+
+
+class EvaluacionConfig(_Seccion):
+    """Criterios universales de los evalsets del analista (ADR-010)."""
+
+    q_absoluta_max: float = Field(gt=0.0, description="|q_anual| máximo de una view absoluta.")
+    q_relativa_max: float = Field(gt=0.0, description="|q_anual| máximo de una view relativa.")
+
+
+class RegimenConfig(_Seccion):
+    """Clasificador simple de régimen de mercado (``quant.regimen``)."""
+
+    activos_referencia: tuple[Ticker, ...] = Field(min_length=1)
+    ventana_tendencia_meses: int = Field(gt=0)
+    ventana_volatilidad_meses: int = Field(gt=1)
+    observaciones_minimas: int = Field(gt=1)
+    umbral_tendencia: float = Field(gt=0.0)
+    drawdown_estres: Fraccion
+    ratio_volatilidad_estres: float = Field(gt=0.0)
+
+    @model_validator(mode="after")
+    def _ventanas_dentro_del_minimo(self) -> RegimenConfig:
+        ventanas = max(self.ventana_tendencia_meses, self.ventana_volatilidad_meses)
+        if self.observaciones_minimas < ventanas:
+            raise ValueError("observaciones_minimas debe cubrir las ventanas de tendencia y vol")
+        return self
+
+
+class SensibilidadConfig(_Seccion):
+    """Rejilla de perturbaciones del análisis de sensibilidad (``risk.sensibilidad``)."""
+
+    retornos_pp: tuple[float, ...] = Field(min_length=1, description="Absolutas: 0.01 = 1 p.p.")
+    covarianza_rel: tuple[float, ...] = Field(min_length=1, description="Relativas: 0.10 = 10 %.")
+    parametros_rel: tuple[float, ...] = Field(min_length=1, description="Relativas, sobre δ y τ.")
+
+    @model_validator(mode="after")
+    def _magnitudes(self) -> SensibilidadConfig:
+        if any(m <= 0.0 for m in self.retornos_pp):
+            raise ValueError("retornos_pp: magnitudes positivas (el signo lo pone el análisis)")
+        for nombre in ("covarianza_rel", "parametros_rel"):
+            if any(not 0.0 < m < 1.0 for m in getattr(self, nombre)):
+                raise ValueError(f"{nombre}: magnitudes relativas en (0, 1)")
+        return self
 
 
 class CorridasConfig(_Seccion):
@@ -163,9 +208,12 @@ class Config(_Seccion):
     optimizacion: OptimizacionConfig
     prior_equilibrio: PriorEquilibrioConfig
     estimacion: EstimacionConfig
+    regimen: RegimenConfig
     datos: DatosConfig
     validacion: ValidacionConfig
     agentes: AgentesConfig
+    evaluacion: EvaluacionConfig
+    sensibilidad: SensibilidadConfig
     corridas: CorridasConfig
     reproducibilidad: ReproducibilidadConfig
 
@@ -176,6 +224,9 @@ class Config(_Seccion):
             self.portafolio.activos,
             "prior_equilibrio.capitalizacion_usd_billones",
         )
+        fuera = sorted(set(self.regimen.activos_referencia) - set(self.portafolio.activos))
+        if fuera:
+            raise ValueError(f"regimen.activos_referencia fuera del universo: {fuera}")
         return self
 
 

@@ -90,8 +90,10 @@ class TestEstimarMercado:
             ventana_meses=config.datos.ventana_covarianza_meses,
             metodos=(config.optimizacion.metodo_covarianza,),
             nivel_confianza=config.estimacion.nivel_confianza,
+            regimen=config.regimen,
         )
         assert QuantEstimates.model_validate(ctx.state[CLAVE_QUANT_ESTIMATES]) == directo
+        assert salida["regimen"] == directo.regimen.value != "indeterminado"
         cov = directo.covarianza(config.optimizacion.metodo_covarianza)
         for activo in ACTIVOS:
             assert salida["por_activo"][activo]["volatilidad_anual"] == cov.volatilidad(activo)

@@ -10,7 +10,7 @@ import pytest
 from investmentsys.config import RAIZ_PROYECTO
 
 PAQUETE = RAIZ_PROYECTO / "src" / "investmentsys"
-MODULOS_PUROS = ("quant", "portfolio", "risk", "contracts", "data")
+MODULOS_PUROS = ("quant", "portfolio", "risk", "contracts", "data", "comparacion")
 PROHIBIDOS = ("google", "litellm", "openai", "anthropic")
 CAPAS_DE_AGENTES = ("investmentsys.tools", "investmentsys.agents", "investmentsys.orchestrator")
 

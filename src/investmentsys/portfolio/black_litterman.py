@@ -16,6 +16,8 @@ se devuelven como retornos totales (μ_BL + rf) y la volatilidad ex ante se calc
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import numpy as np
 
 from investmentsys.config import MetodoOmega, OptimizacionConfig, PriorEquilibrioConfig
@@ -60,19 +62,9 @@ def optimizar_black_litterman(
         optimizacion.tau,
         optimizacion.tasa_libre_riesgo,
     )
-    sigma = matriz(estimates, optimizacion.metodo_covarianza)
-    pi = prior_equilibrio(sigma, pesos_mercado(prior, activos), delta)
-    p = np.array(views.matriz_p(), dtype=float).reshape(len(views.views), len(activos))
-    q = vector_q_en_exceso(views, rf)
-    omega = matriz_omega(p, sigma, tau, optimizacion.metodo_omega)
-    mu_bl, m = posterior(pi, sigma, tau, p, q, omega)
-    sigma_bl = sigma + m
-
-    w = resolver_qp(
-        lambda w: float(-(w @ mu_bl - 0.5 * delta * w @ sigma_bl @ w)),
-        lambda w: np.asarray(-(mu_bl - delta * sigma_bl @ w), dtype=float),
-        restricciones,
-    )
+    post = posterior_black_litterman(estimates, views, optimizacion, prior)
+    mu_bl, sigma = post.mu, post.sigma
+    w = pesos_optimos(mu_bl, post.sigma_bl, delta, restricciones)
     retornos_totales = mu_bl + rf
     return CandidatePortfolio(
         nombre=NOMBRE_CANDIDATO,
@@ -89,6 +81,44 @@ def optimizar_black_litterman(
             "prior": prior.metodo,
             "n_views": len(views.views),
         },
+    )
+
+
+@dataclass(frozen=True)
+class PosteriorBL:
+    """Posterior de Black-Litterman: lo que entra al optimizador (pasos 1-4 del módulo)."""
+
+    mu: Vector
+    """μ_BL en exceso de la tasa libre de riesgo."""
+    sigma: Matriz
+    sigma_bl: Matriz
+
+
+def posterior_black_litterman(
+    estimates: QuantEstimates,
+    views: MarketViews,
+    optimizacion: OptimizacionConfig,
+    prior: PriorEquilibrioConfig,
+) -> PosteriorBL:
+    delta, tau = optimizacion.aversion_riesgo_delta, optimizacion.tau
+    activos = estimates.activos
+    sigma = matriz(estimates, optimizacion.metodo_covarianza)
+    pi = prior_equilibrio(sigma, pesos_mercado(prior, activos), delta)
+    p = np.array(views.matriz_p(), dtype=float).reshape(len(views.views), len(activos))
+    q = vector_q_en_exceso(views, optimizacion.tasa_libre_riesgo)
+    omega = matriz_omega(p, sigma, tau, optimizacion.metodo_omega)
+    mu_bl, m = posterior(pi, sigma, tau, p, q, omega)
+    return PosteriorBL(mu=mu_bl, sigma=sigma, sigma_bl=sigma + m)
+
+
+def pesos_optimos(
+    mu: Vector, sigma_bl: Matriz, delta: float, restricciones: PortfolioConstraints
+) -> Vector:
+    """max wᵀμ − ½·δ·wᵀΣ_BL·w sujeto a Σw = 1 y límites (paso 5 del módulo)."""
+    return resolver_qp(
+        lambda w: float(-(w @ mu - 0.5 * delta * w @ sigma_bl @ w)),
+        lambda w: np.asarray(-(mu - delta * sigma_bl @ w), dtype=float),
+        restricciones,
     )
 
 

@@ -10,6 +10,7 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 
+from investmentsys.config import RegimenConfig
 from investmentsys.contracts import (
     MetodoCovarianza,
     QuantEstimates,
@@ -17,10 +18,8 @@ from investmentsys.contracts import (
     RetornoEsperado,
 )
 from investmentsys.quant.covariance import MuestraInsuficienteError, estimar_covarianza
-
-
-class LookAheadError(ValueError):
-    """La muestra contiene observaciones posteriores a la fecha de decisión."""
+from investmentsys.quant.errores import LookAheadError
+from investmentsys.quant.regimen import clasificar_regimen
 
 
 def estimar(
@@ -31,6 +30,7 @@ def estimar(
     metodos: Sequence[MetodoCovarianza],
     *,
     nivel_confianza: float,
+    regimen: RegimenConfig | None = None,
 ) -> QuantEstimates:
     """Covarianzas por método, retornos históricos con intervalo y régimen.
 
@@ -40,7 +40,8 @@ def estimar(
     - Retorno histórico anualizado = media por período × ``periodos_por_anio``, con
       intervalo t de Student al ``nivel_confianza`` sobre la media (cada activo con su
       propia muestra, como la covarianza híbrida).
-    - Régimen: ``INDETERMINADO``. La detección de régimen no forma parte de S1.
+    - Régimen: ``quant.regimen.clasificar_regimen`` sobre TODA la muestra recibida (no solo la
+      ventana de covarianza) si se pasa ``regimen``; sin él, ``INDETERMINADO``.
     """
     if not metodos:
         raise ValueError("se necesita al menos un método de covarianza")
@@ -73,7 +74,11 @@ def estimar(
         periodos_por_anio=periodos_por_anio,
         covarianzas=covarianzas,
         retornos_historicos=retornos_historicos,
-        regimen=RegimenMercado.INDETERMINADO,
+        regimen=(
+            clasificar_regimen(retornos, fecha_decision, regimen).regimen
+            if regimen is not None
+            else RegimenMercado.INDETERMINADO
+        ),
     )
 
 

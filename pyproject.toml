@@ -26,6 +26,9 @@ dev = [
     "types-pyyaml>=6.0",
     "scipy-stubs>=1.14",
 ]
+eval = [
+    "google-adk[eval]==2.9.1",
+]
 
 [build-system]
 requires = ["hatchling"]

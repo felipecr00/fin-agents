@@ -49,6 +49,30 @@ desviación máxima 8.9e-16; prod 140 valores, 1.3e-15; tolerancia 1e-8.
   solos (`agentes.reintentos_modelo`: 6 intentos, ≈ 1 min de espera en total); si aun así
   llega uno, la cuota está agotada de verdad: espera unos minutos.
 
+## Evaluar, medir robustez y comparar corridas (S5)
+
+Todo en local; nada de esto se despliega ni entra en CI salvo sus tests unitarios.
+
+| Comando | Qué hace | LLM | Salida |
+|---|---|---|---|
+| `make eval` | 11 casos del analista contra Gemini real; código 1 si alguno falla ([ADR-010](adr/010-evaluacion-del-analista-con-metrica-determinista-en-adk-eval.md)) | sí | `runs/evals/<id>.md` y `apps/market_analyst/.adk/eval_history/` |
+| `make eval EVALSET=tests/eval/market_analyst.evalset.json:ambigua_bns` | un solo caso | sí | ídem |
+| `make evalset` | regenera el `.evalset.json` tras editar `tests/eval/casos_market_analyst.yaml` | no | `tests/eval/market_analyst.evalset.json` |
+| `make sensibilidad [RUN_STATE=runs/<id>/run_state.json]` | sensibilidad de la cartera a sus supuestos ([docs/sensibilidad.md](sensibilidad.md)) | no | `runs/sensibilidad/<fecha>_<hash>/` |
+| `make comparar A=<run_id> B=<run_id>` | diff estructurado entre dos `RunState` (locales o de `runs/remotas/`) | no | `runs/comparaciones/<a>__<b>.md` |
+
+- `make eval` instala al vuelo el grupo de dependencias `eval` (`google-adk[eval]`, ~50
+  paquetes); no forma parte de `dev` ni de las imágenes.
+- Credenciales: las mismas que `make run-local`. `adk eval` carga el `.env` de la raíz: respeta
+  lo que ya esté exportado en la shell, pero **añade lo que falte**. Si tu `.env` define
+  `GOOGLE_CLOUD_PROJECT`/`GOOGLE_CLOUD_LOCATION` junto a una llave de modo express, el SDK ignora
+  la llave aunque hayas hecho `unset` de esas variables (ver `.env.example`). Para que cuente
+  solo lo exportado en la shell: `ADK_DISABLE_LOAD_DOTENV=1 make eval`.
+- Un caso que falla de forma intermitente es información, no ruido: el LLM no es determinista.
+  Repite el caso suelto y mira el criterio incumplido en el resumen.
+- Añadir un caso: edita el YAML (noticias **sintéticas**, con su `categoria` y sus `criterios`),
+  `make evalset`, `make check` (un test exige que YAML y JSON estén sincronizados) y `make eval`.
+
 ## Logs
 
     make logs-dev PROYECTO=ai-exploratory
