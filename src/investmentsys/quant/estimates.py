@@ -31,6 +31,7 @@ def estimar(
     *,
     nivel_confianza: float,
     regimen: RegimenConfig | None = None,
+    universe_version: str | None = None,
 ) -> QuantEstimates:
     """Covarianzas por método, retornos históricos con intervalo y régimen.
 
@@ -42,6 +43,8 @@ def estimar(
       propia muestra, como la covarianza híbrida).
     - Régimen: ``quant.regimen.clasificar_regimen`` sobre TODA la muestra recibida (no solo la
       ventana de covarianza) si se pasa ``regimen``; sin él, ``INDETERMINADO``.
+    - ``universe_version`` sella el resultado con el ``Universe`` sobre el que se calculó
+      (ADR-012). ``None`` = sin sellar: solo para el núcleo llamado directamente.
     """
     if not metodos:
         raise ValueError("se necesita al menos un método de covarianza")
@@ -79,6 +82,7 @@ def estimar(
             if regimen is not None
             else RegimenMercado.INDETERMINADO
         ),
+        universe_version=universe_version,
     )
 
 

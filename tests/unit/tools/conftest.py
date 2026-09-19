@@ -12,7 +12,8 @@ from google.adk.tools import ToolContext
 
 from investmentsys.config import Config, cargar_config
 from investmentsys.data import CSVPriceProvider
-from investmentsys.tools import NucleoTools
+from investmentsys.tools import CLAVE_UNIVERSO, NucleoTools
+from tests.almacen import universo_referencia
 from tests.conftest import CSV_REFERENCIA
 
 
@@ -30,7 +31,9 @@ def tools(config: Config) -> NucleoTools:
 def ctx() -> ToolContext:
     """Contexto nuevo por test; el agente es de relleno y nunca llama a un modelo."""
     servicio = InMemorySessionService()
-    sesion = asyncio.run(servicio.create_session(app_name="tests", user_id="tests"))
+    # El universo es estado de la SESIÓN (lo pone `iniciar` o, en S8, el Director), no del tool.
+    inicial = {CLAVE_UNIVERSO: universo_referencia().model_dump(mode="json")}
+    sesion = asyncio.run(servicio.create_session(app_name="tests", user_id="tests", state=inicial))
     invocacion = InvocationContext(
         session_service=servicio,
         invocation_id="inv-tests",

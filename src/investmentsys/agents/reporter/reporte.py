@@ -10,7 +10,13 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from investmentsys.contracts import DISCLAIMER, RunState, ValidationReport
+from investmentsys.contracts import (
+    DISCLAIMER,
+    MetodoPrior,
+    RunState,
+    ValidationReport,
+)
+from investmentsys.portfolio.prior import mensaje_estado_prior
 
 _CIFRA = re.compile(r"(?<![\w.,])[-+−]?\d+(?:[.,]\d+)?\s?%")
 
@@ -39,6 +45,13 @@ def hoja_de_hechos(corrida: RunState) -> dict[str, Any]:
             for v in corrida.market_views.views
         ]
         hechos["lectura_de_mercado"] = corrida.market_views.resumen
+    hechos["universo"] = {
+        "version": corrida.universo.version[:12],
+        "advertencias": [
+            f"{d.ticker}: {a}" for d in corrida.universo.diagnosticos for a in d.advertencias
+        ],
+    }
+    hechos["prior"] = _hechos_prior(corrida)
     hechos["rondas"] = [
         {
             "iteracion": r.iteracion,
@@ -49,10 +62,88 @@ def hoja_de_hechos(corrida: RunState) -> dict[str, Any]:
             "max_drawdown": _pct(v.metricas_oos.max_drawdown),
             "razones_rechazo": list(v.razones_rechazo),
             "sugerencias": list(v.sugerencias),
+            "advertencias": list(v.advertencias),
+            "tecnicas_no_disponibles": {t.value: m for t, m in r.no_disponibles.items()},
         }
         for r, v in zip(corrida.candidatos, corrida.validaciones, strict=False)
     ]
     return hechos
+
+
+def _hechos_prior(corrida: RunState) -> dict[str, Any]:
+    prior = corrida.prior
+    if prior is None:
+        return {"disponible": False, "motivo": mensaje_estado_prior(corrida.universo)}
+    return {
+        "disponible": True,
+        "metodo": prior.metodo.value,
+        "advertencia": prior.advertencia,
+        "por_activo": {
+            a.activo: {
+                "procedencia": a.procedencia.value,
+                "peso_mercado": _pct(a.peso_mercado) if a.peso_mercado is not None else None,
+                "retorno_implicito_total": _pct(a.pi_total),
+            }
+            for a in prior.activos
+        },
+    }
+
+
+def _seccion_universo(corrida: RunState) -> list[str]:
+    u, sesion = corrida.universo, corrida.restricciones_sesion
+    lineas = [
+        "## Universo y restricciones",
+        "",
+        f"Universo `{u.version[:12]}` · restricciones de la sesión: piso "
+        f"{_pct(sesion.peso_min.valor)} ({sesion.peso_min.origen.value}), techo "
+        f"{_pct(sesion.peso_max.valor)} ({sesion.peso_max.origen.value}).",
+        "",
+        "| Activo | Nombre | Origen | Datos | Meses | Límites |",
+        "|---|---|---|---|---:|---|",
+    ]
+    for d in u.diagnosticos:
+        lo, hi = sesion.limites(d.ticker)
+        propio = sesion.limites_por_activo.get(d.ticker)
+        origen_limite = f" ({propio.origen.value})" if propio else ""
+        lineas.append(
+            f"| {d.ticker} | {d.nombre} | {u.origenes[d.ticker].value} | {d.fecha_inicio_datos} → "
+            f"{d.fecha_fin_datos} | {d.meses_disponibles} | {_pct(lo)} – {_pct(hi)}"
+            f"{origen_limite} |"
+        )
+    avisos = [f"- **{d.ticker}**: {a}" for d in u.diagnosticos for a in d.advertencias]
+    if avisos:
+        lineas += ["", "Advertencias de datos:", "", *avisos]
+    return [*lineas, ""]
+
+
+def _seccion_prior(corrida: RunState) -> list[str]:
+    """SIEMPRE presente (ADR-013): la tabla π con la procedencia de cada peso, o por qué no hay."""
+    lineas = ["## Prior de equilibrio (Black-Litterman)", ""]
+    prior = corrida.prior
+    if prior is None:
+        return [*lineas, f"> **{mensaje_estado_prior(corrida.universo)}.**", ""]
+    if prior.advertencia:
+        lineas += [f"> **Advertencia — {prior.advertencia}.**", ""]
+    lineas += [
+        f"Método: `{prior.metodo.value}` · δ = {prior.delta:g} · π = δ·Σ·w_mkt con covarianza "
+        f"`{prior.metodo_covarianza.value}`; retorno implícito total = π + tasa libre de riesgo "
+        f"({_pct(prior.tasa_libre_riesgo)}).",
+        "",
+        "| Activo | Procedencia | Cap (US$ bill.) | Detalle | As-of | w_mkt | π (exceso) "
+        "| π (total) |",
+        "|---|---|---:|---|---|---:|---:|---:|",
+    ]
+    for a in prior.activos:
+        cap = f"{a.cap:g}" if a.cap is not None else "—"
+        peso = _pct(a.peso_mercado) if a.peso_mercado is not None else "—"
+        lineas.append(
+            f"| {a.activo} | {a.procedencia.value} | {cap} | {a.fuente_detalle or '—'} | "
+            f"{a.as_of or '—'} | {peso} | {_pct(a.pi_exceso)} | {_pct(a.pi_total)} |"
+        )
+    if prior.metodo is not MetodoPrior.CAPITALIZACION:
+        sin_cap = ", ".join(corrida.universo.sin_cap)
+        lineas += ["", f"Degradación confirmada por el usuario; sin capitalización: {sin_cap}."]
+    return [*lineas, ""]
 
 
 def cifras_no_verificadas(narrativa: str, corrida: RunState) -> list[str]:
@@ -115,6 +206,9 @@ def _seccion_validacion(v: ValidationReport) -> list[str]:
                 for s in v.stress
             ),
         ]
+    if v.advertencias:
+        lineas += ["", "Alcance de esta validación (historia corta):", ""]
+        lineas += [f"- {a}" for a in v.advertencias]
     if v.razones_rechazo or v.sugerencias:
         lineas += ["", *(f"- Razón de rechazo: {r}" for r in v.razones_rechazo)]
         lineas += [f"- Sugerencia al constructor: {s}" for s in v.sugerencias]
@@ -154,6 +248,8 @@ def renderizar(corrida: RunState, narrativa: str, modelo: str, notas: tuple[str,
             *(f"| {a} | {_pct(final.pesos[a])} |" for a in corrida.activos),
             "",
         ]
+    lineas += _seccion_universo(corrida)
+    lineas += _seccion_prior(corrida)
     if corrida.market_views:
         lineas += ["## Views del analista", "", corrida.market_views.resumen, ""]
         lineas += [
@@ -164,6 +260,11 @@ def renderizar(corrida: RunState, narrativa: str, modelo: str, notas: tuple[str,
         lineas.append("")
     for i, validacion in enumerate(corrida.validaciones):
         lineas += [f"## Iteración {i + 1}", "", *_tabla_candidatos(corrida, i), ""]
+        lineas += [
+            f"- **{t.value} no disponible**: {m}"
+            for t, m in corrida.candidatos[i].no_disponibles.items()
+        ]
+        lineas += [""] if corrida.candidatos[i].no_disponibles else []
         lineas += [*_seccion_validacion(validacion), ""]
     if notas or corrida.errores:
         lineas += [

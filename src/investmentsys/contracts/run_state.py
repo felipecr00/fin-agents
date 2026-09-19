@@ -20,7 +20,14 @@ from investmentsys.contracts.common import (
 )
 from investmentsys.contracts.constraints import PortfolioConstraints
 from investmentsys.contracts.estimates import QuantEstimates
-from investmentsys.contracts.portfolios import CandidatePortfolio, CandidatePortfolios
+from investmentsys.contracts.portfolios import (
+    CandidatePortfolio,
+    CandidatePortfolios,
+    TecnicaOptimizacion,
+)
+from investmentsys.contracts.prior import PriorSnapshot
+from investmentsys.contracts.session import SessionConstraints
+from investmentsys.contracts.universe import Universe
 from investmentsys.contracts.validation import ValidationReport, Veredicto
 from investmentsys.contracts.views import MarketViews
 
@@ -44,8 +51,23 @@ class RunState(ContractBase):
         pattern=r"^[0-9a-f]{64}$", description="SHA-256 del config.yaml usado en la corrida."
     )
     activos: tuple[Ticker, ...] = Field(min_length=1)
+    universo: Universe = Field(
+        description="Universo de la corrida, con diagnósticos y caps congeladas (ADR-012)."
+    )
+    restricciones_sesion: SessionConstraints = Field(
+        description="Restricciones vigentes en la sesión, con su origen."
+    )
+    prior: PriorSnapshot | None = Field(
+        default=None,
+        description=(
+            "Prior de equilibrio efectivo: w_mkt, procedencia por activo y tabla π (ADR-013). "
+            "None = aún no se construyó, o Black-Litterman no estuvo disponible."
+        ),
+    )
     etapa: EtapaCorrida = EtapaCorrida.INICIADA
-    restricciones: PortfolioConstraints | None = None
+    restricciones: PortfolioConstraints | None = Field(
+        default=None, description="Las de la última iteración (sesión + overrides)."
+    )
     market_views: MarketViews | None = None
     quant_estimates: QuantEstimates | None = None
     candidatos: tuple[CandidatePortfolios, ...] = Field(
@@ -69,6 +91,43 @@ class RunState(ContractBase):
         if v != DISCLAIMER:
             raise ValueError("el disclaimer no se modifica")
         return v
+
+    @model_validator(mode="after")
+    def _sellado(self) -> RunState:
+        """Ningún resultado sin sellar, ni sellado con otro universo, llega a un acta."""
+        version = self.universo.version
+        if self.activos != self.universo.activos:
+            raise ValueError("activos: no coinciden con los del universo de la corrida")
+        if self.restricciones_sesion.activos != self.activos:
+            raise ValueError("restricciones_sesion: universo distinto al de la corrida")
+        sellos = (
+            ("restricciones_sesion", self.restricciones_sesion.universe_version),
+            *(("prior", p.universe_version) for p in [self.prior] if p),
+            *(("quant_estimates", q.universe_version) for q in [self.quant_estimates] if q),
+            *((f"candidatos[{i}]", c.universe_version) for i, c in enumerate(self.candidatos)),
+            *((f"validaciones[{i}]", r.universe_version) for i, r in enumerate(self.validaciones)),
+        )
+        for nombre, sello in sellos:
+            if sello is None:
+                raise ValueError(
+                    f"{nombre}: sin sellar (universe_version=None); un resultado del núcleo "
+                    "llamado directamente no entra en un RunState"
+                )
+            if sello != version:
+                raise ValueError(
+                    f"{nombre}: obsoleto, sellado con el universo {sello[:12]}… y la corrida "
+                    f"usa {version[:12]}…"
+                )
+        if self.prior is not None and self.prior.tickers != self.activos:
+            raise ValueError("prior: activos u orden distintos a los de la corrida")
+        for i, ronda in enumerate(self.candidatos):
+            hay_bl = any(c.tecnica is TecnicaOptimizacion.BLACK_LITTERMAN for c in ronda.candidatos)
+            if hay_bl and self.prior is None:
+                raise ValueError(
+                    f"candidatos[{i}]: hay un candidato Black-Litterman y el RunState no "
+                    "registra el prior con el que se calculó"
+                )
+        return self
 
     @model_validator(mode="after")
     def _coherencia(self) -> RunState:

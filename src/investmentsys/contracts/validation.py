@@ -13,6 +13,7 @@ from enum import StrEnum
 from pydantic import Field, model_validator
 
 from investmentsys.contracts.common import ContractBase, Fraccion, Ticker, validar_suma
+from investmentsys.contracts.universe import UniverseVersion
 
 
 class Veredicto(StrEnum):
@@ -85,6 +86,20 @@ class ValidationReport(ContractBase):
     veredicto: Veredicto
     sugerencias: tuple[str, ...] = Field(
         default=(), description="Indicaciones al Constructor para la siguiente iteración."
+    )
+    advertencias: tuple[str, ...] = Field(
+        default=(),
+        description=(
+            "Degradaciones explícitas por historia corta: qué ventana de backtest y qué stress "
+            "aplican a cada activo (S7 §3). No cambian el veredicto; nunca se omiten."
+        ),
+    )
+    universe_version: UniverseVersion | None = Field(
+        default=None,
+        description=(
+            "Sello del Universe sobre el que se calculó (ADR-012). None = sin sellar: solo lo "
+            "admite el núcleo puro llamado directamente; las herramientas lo rechazan."
+        ),
     )
 
     @model_validator(mode="after")

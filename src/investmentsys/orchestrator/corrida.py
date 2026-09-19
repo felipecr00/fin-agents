@@ -13,8 +13,11 @@ from investmentsys.tools.estado import (
     CLAVE_CANDIDATOS,
     CLAVE_FECHA_DECISION,
     CLAVE_MARKET_VIEWS,
+    CLAVE_PRIOR,
     CLAVE_QUANT_ESTIMATES,
     CLAVE_RESTRICCIONES,
+    CLAVE_RESTRICCIONES_SESION,
+    CLAVE_UNIVERSO,
     CLAVE_VALIDACIONES,
     EstadoLegible,
 )
@@ -41,6 +44,7 @@ def armar_run_state(
     estado: EstadoLegible | Mapping[str, Any], config: Config, etapa: EtapaCorrida, **extra: Any
 ) -> RunState:
     """Revalida TODOS los contratos del estado y su coherencia cruzada (``RunState``)."""
+    universo: Mapping[str, Any] = estado.get(CLAVE_UNIVERSO) or {}
     return RunState.model_validate(
         {
             "run_id": estado.get(CLAVE_RUN_ID),
@@ -48,7 +52,10 @@ def armar_run_state(
             "fecha_decision": estado.get(CLAVE_FECHA_DECISION),
             "semilla": config.reproducibilidad.semilla,
             "config_hash": hash_config(),
-            "activos": config.portafolio.activos,
+            "activos": [d["ticker"] for d in universo.get("diagnosticos", ())],
+            "universo": estado.get(CLAVE_UNIVERSO),
+            "restricciones_sesion": estado.get(CLAVE_RESTRICCIONES_SESION),
+            "prior": estado.get(CLAVE_PRIOR),
             "etapa": etapa,
             "restricciones": estado.get(CLAVE_RESTRICCIONES),
             "market_views": estado.get(CLAVE_MARKET_VIEWS),

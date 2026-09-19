@@ -5,6 +5,9 @@ Reglas (CLAUDE.md):
   pura y escribe el contrato resultante. Las cifras salen del núcleo, nunca del LLM.
 - Los argumentos que decide un LLM son pocos y pequeños (qué candidato recomendar, qué
   límite endurecer); los contratos grandes viajan por el estado (ver ``estado.py``).
+- S7: los tools operan sobre el ``Universe`` y las ``SessionConstraints`` del estado (nunca
+  sobre listas de tickers), SELLAN su salida con ``universe_version`` y rechazan todo input
+  sin sello o sellado con otra versión (ADR-012).
 - Un error de dominio no lanza: devuelve ``{"status": "error", ...}`` para que el agente
   pueda corregir y reintentar. Todo lo demás es un bug y sí se propaga.
 """
@@ -20,34 +23,47 @@ from google.adk.tools.function_tool import FunctionTool
 from google.adk.tools.tool_context import ToolContext
 from pydantic import ValidationError
 
-from investmentsys.config import Config
+from investmentsys.config import Config, RegimenConfig
 from investmentsys.contracts import (
     CandidatePortfolio,
     CandidatePortfolios,
     MarketViews,
-    PortfolioConstraints,
+    PriorSnapshot,
     QuantEstimates,
+    SessionConstraints,
+    TecnicaOptimizacion,
+    Universe,
     ValidationReport,
 )
 from investmentsys.data import PriceProvider
 from investmentsys.portfolio import (
     OptimizacionFallidaError,
+    PriorNoDisponibleError,
     optimizar_black_litterman,
     optimizar_hrp,
     optimizar_min_varianza,
+    resolver_prior,
+    restricciones_de_iteracion,
+    sesion_por_defecto,
 )
+from investmentsys.portfolio.black_litterman import NOMBRE_CANDIDATO as NOMBRE_BL
+from investmentsys.portfolio.hrp import NOMBRE_CANDIDATO as NOMBRE_HRP
 from investmentsys.quant import LookAheadError, MuestraInsuficienteError, estimar
 from investmentsys.risk import validar
 from investmentsys.tools.estado import (
     CLAVE_CANDIDATOS,
     CLAVE_FECHA_DECISION,
     CLAVE_MARKET_VIEWS,
+    CLAVE_PRIOR,
     CLAVE_QUANT_ESTIMATES,
     CLAVE_RESTRICCIONES,
+    CLAVE_RESTRICCIONES_SESION,
+    CLAVE_UNIVERSO,
     CLAVE_VALIDACIONES,
     Estado,
     FaltaEnEstadoError,
     agregar,
+    exigir_sello,
     leer,
     leer_fecha,
     leer_lista,
@@ -89,8 +105,9 @@ class NucleoTools:
             return _error(exc)
 
     def _estimar_mercado(self, estado: Estado) -> dict[str, Any]:
-        activos = self.config.portafolio.activos
-        fecha = leer_fecha(estado) or self._ultimo_cierre()
+        universo = self._universo(estado)
+        activos = universo.activos
+        fecha = leer_fecha(estado) or self._ultimo_cierre(activos)
         estimaciones = estimar(
             self.provider.retornos_log(activos, hasta=fecha),
             fecha_decision=fecha,
@@ -98,13 +115,15 @@ class NucleoTools:
             ventana_meses=self.config.datos.ventana_covarianza_meses,
             metodos=(self.config.optimizacion.metodo_covarianza,),
             nivel_confianza=self.config.estimacion.nivel_confianza,
-            regimen=self.config.regimen,
+            regimen=self._regimen(activos),
+            universe_version=universo.version,
         )
         estado[CLAVE_FECHA_DECISION] = fecha.isoformat()
         estado[CLAVE_QUANT_ESTIMATES] = volcar(estimaciones)
         cov = estimaciones.covarianza(self.config.optimizacion.metodo_covarianza)
         return {
             "status": "success",
+            "universe_version": universo.version,
             "fecha_decision": fecha.isoformat(),
             "muestra": [
                 estimaciones.fecha_inicio_muestra.isoformat(),
@@ -134,8 +153,11 @@ class NucleoTools:
         """Optimiza los candidatos de esta iteración (Black-Litterman, HRP, mínima varianza).
 
         Requiere las estimaciones del Quant y las views del Analista en el estado. Los
-        límites salen de config.yaml; ``peso_max_por_activo`` solo puede ENDURECER el máximo
-        de un activo (p. ej. tras un rechazo del validador por concentración o drawdown).
+        límites son los de la sesión; ``peso_max_por_activo`` solo puede ENDURECER el máximo
+        de un activo (p. ej. tras un rechazo del validador por concentración o drawdown) y
+        nunca por debajo de su piso. Si el prior de equilibrio está pendiente (falta la
+        capitalización de algún activo), Black-Litterman no está disponible: se construyen
+        HRP y mínima varianza y la respuesta explica qué falta.
 
         Args:
             recomendado: candidato que se someterá a validación: "black_litterman", "hrp"
@@ -153,38 +175,77 @@ class NucleoTools:
     def _construir_candidatos(
         self, estado: Estado, recomendado: str, peso_max_por_activo: dict[str, float]
     ) -> dict[str, Any]:
+        universo = self._universo(estado)
+        sesion = self._sesion(estado, universo)
         estimaciones = leer(estado, CLAVE_QUANT_ESTIMATES, QuantEstimates)
+        exigir_sello(estimaciones.universe_version, universo.version, "estimaciones del Quant")
         views = leer(estado, CLAVE_MARKET_VIEWS, MarketViews)
+        if views.activos != universo.activos:
+            raise ValueError(
+                f"las views son de otro universo ({list(views.activos)}); el vigente es "
+                f"{list(universo.activos)}: vuelve a pedirlas al analista"
+            )
         rondas = leer_lista(estado, CLAVE_CANDIDATOS, CandidatePortfolios)
         validadas = leer_lista(estado, CLAVE_VALIDACIONES, ValidationReport)
+        for i, previa in enumerate(rondas, start=1):
+            exigir_sello(previa.universe_version, universo.version, f"candidatos de la ronda {i}")
         maximo = self.config.validacion.max_iteraciones_constructor
         if len(rondas) > len(validadas):
             raise ValueError(f"la iteración {len(rondas)} aún no se ha validado")
         if len(rondas) >= maximo:
             raise ValueError(f"se alcanzó el máximo de {maximo} iteraciones del constructor")
 
-        restricciones = self._restricciones(peso_max_por_activo)
+        restricciones = restricciones_de_iteracion(sesion, peso_max_por_activo)
         opt = self.config.optimizacion
-        candidatos: tuple[CandidatePortfolio, ...] = (
-            optimizar_black_litterman(
-                estimaciones, views, restricciones, opt, self.config.prior_equilibrio
-            ),
+        no_disponibles: dict[TecnicaOptimizacion, str] = {}
+        prior: PriorSnapshot | None = None
+        candidatos: list[CandidatePortfolio] = []
+        try:
+            prior = resolver_prior(universo, estimaciones, opt, self.config.prior_equilibrio)
+            candidatos.append(
+                optimizar_black_litterman(estimaciones, views, restricciones, opt, prior)
+            )
+        except PriorNoDisponibleError as exc:
+            no_disponibles[TecnicaOptimizacion.BLACK_LITTERMAN] = str(exc)
+        candidatos += [
             optimizar_hrp(estimaciones, restricciones, opt),
             optimizar_min_varianza(estimaciones, restricciones, opt),
-        )
+        ]
+        avisos: list[str] = []
+        if recomendado == NOMBRE_BL and TecnicaOptimizacion.BLACK_LITTERMAN in no_disponibles:
+            avisos.append(
+                f"se pidió recomendar '{NOMBRE_BL}' pero no está disponible; se recomienda "
+                f"'{NOMBRE_HRP}' en su lugar"
+            )
+            recomendado = NOMBRE_HRP
+        if prior is not None and prior.advertencia:
+            avisos.append(prior.advertencia)
         ronda = CandidatePortfolios(
             fecha_decision=estimaciones.fecha_decision,
             activos=estimaciones.activos,
             iteracion=len(rondas) + 1,
-            candidatos=candidatos,
+            candidatos=tuple(candidatos),
             recomendado=recomendado,
+            no_disponibles=no_disponibles,
+            universe_version=universo.version,
         )
         estado[CLAVE_RESTRICCIONES] = volcar(restricciones)
+        estado[CLAVE_PRIOR] = volcar(prior) if prior is not None else None
         agregar(estado, CLAVE_CANDIDATOS, ronda)
         return {
             "status": "success",
+            "universe_version": universo.version,
             "iteracion": ronda.iteracion,
             "recomendado": ronda.recomendado,
+            "no_disponibles": {t.value: m for t, m in no_disponibles.items()},
+            "avisos": avisos,
+            "prior": None
+            if prior is None
+            else {
+                "metodo": prior.metodo.value,
+                "procedencias": {a: p.value for a, p in prior.procedencias.items()},
+                "retornos_implicitos_totales": {a.activo: a.pi_total for a in prior.activos},
+            },
             "limites": {a: list(restricciones.limites(a)) for a in restricciones.activos},
             "candidatos": {
                 c.nombre: {
@@ -197,21 +258,6 @@ class NucleoTools:
                 for c in candidatos
             },
         }
-
-    def _restricciones(self, peso_max_por_activo: dict[str, float]) -> PortfolioConstraints:
-        opt = self.config.optimizacion
-        relajados = {a: m for a, m in peso_max_por_activo.items() if m > opt.peso_max}
-        if relajados:
-            raise ValueError(
-                f"peso_max_por_activo solo puede endurecer peso_max={opt.peso_max}: {relajados}"
-            )
-        return PortfolioConstraints(
-            activos=self.config.portafolio.activos,
-            peso_min=opt.peso_min,
-            peso_max=opt.peso_max,
-            permitir_cortos=opt.permitir_cortos,
-            limites_por_activo={a: (opt.peso_min, m) for a, m in peso_max_por_activo.items()},
-        )
 
     # ----------------------------------------------------------------- Riesgo
     def validar_candidato(self, tool_context: ToolContext) -> dict[str, Any]:
@@ -235,15 +281,24 @@ class NucleoTools:
         if len(validadas) >= len(rondas):
             raise ValueError(f"la iteración {len(rondas)} ya fue validada")
         ronda = rondas[-1]
+        universo = self._universo(estado)
+        sesion = self._sesion(estado, universo)
+        exigir_sello(ronda.universe_version, universo.version, "candidatos a validar")
+        # Los criterios peso_min/peso_max se evalúan contra los límites de la SESIÓN.
+        optimizacion = self.config.optimizacion.model_copy(
+            update={"peso_min": sesion.peso_min.valor, "peso_max": sesion.peso_max.valor}
+        )
         reporte = validar(
             ronda.portafolio_recomendado,
             self.provider.precios(ronda.activos, hasta=ronda.fecha_decision),
             fecha_decision=ronda.fecha_decision,
             iteracion=ronda.iteracion,
             validacion=self.config.validacion,
-            optimizacion=self.config.optimizacion,
+            optimizacion=optimizacion,
             periodos_por_anio=self.provider.periodos_por_anio,
             semilla=self.config.reproducibilidad.semilla,
+            inicio_datos={d.ticker: d.fecha_inicio_datos for d in universo.diagnosticos},
+            universe_version=universo.version,
         )
         agregar(estado, CLAVE_VALIDACIONES, reporte)
         m = reporte.metricas_oos
@@ -264,11 +319,31 @@ class NucleoTools:
             "stress_no_superados": [s.escenario for s in reporte.stress if not s.superado],
             "razones_rechazo": list(reporte.razones_rechazo),
             "sugerencias": list(reporte.sugerencias),
+            "advertencias": list(reporte.advertencias),
         }
 
     # ------------------------------------------------------------------ Común
-    def _ultimo_cierre(self) -> date:
-        indice = self.provider.precios(self.config.portafolio.activos).index
+    def _universo(self, estado: Estado) -> Universe:
+        """El universo vigente de la sesión: con diagnósticos, nunca una lista de tickers."""
+        return leer(estado, CLAVE_UNIVERSO, Universe)
+
+    def _sesion(self, estado: Estado, universo: Universe) -> SessionConstraints:
+        """Restricciones de la sesión; si no hay, las de config.yaml sobre este universo."""
+        if estado.get(CLAVE_RESTRICCIONES_SESION) is None:
+            estado[CLAVE_RESTRICCIONES_SESION] = volcar(
+                sesion_por_defecto(universo, self.config.optimizacion)
+            )
+        sesion = leer(estado, CLAVE_RESTRICCIONES_SESION, SessionConstraints)
+        exigir_sello(sesion.universe_version, universo.version, "restricciones de la sesión")
+        return sesion
+
+    def _regimen(self, activos: tuple[str, ...]) -> RegimenConfig | None:
+        """Sin los activos de referencia en el universo no hay índice: régimen indeterminado."""
+        referencia = self.config.regimen.activos_referencia
+        return self.config.regimen if set(referencia) <= set(activos) else None
+
+    def _ultimo_cierre(self, activos: tuple[str, ...]) -> date:
+        indice = self.provider.precios(activos).index
         ultimo: date = indice[-1].date()
         return ultimo
 

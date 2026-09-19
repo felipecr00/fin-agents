@@ -132,3 +132,45 @@ def test_rechazo_luego_aprobacion(
     assert not s.aprobado
     s = s.avanzar(validaciones=(rechazo, ok2))
     assert s.aprobado and s.portafolio_final is not None
+
+
+# ------------------------------------------------ S7: sellado por universe_version (ADR-012)
+def test_ningun_resultado_sin_sellar_llega_a_un_acta(
+    run_state_inicial: RunState,
+    estimates: QuantEstimates,
+    candidatos: CandidatePortfolios,
+    validacion_aprobada: ValidationReport,
+) -> None:
+    """El ``None`` del núcleo puro (golden, sensibilidad) tiene su cerco: RunState lo rechaza."""
+    sin_sello = {"universe_version": None}
+    with pytest.raises(ValidationError, match="quant_estimates: sin sellar"):
+        run_state_inicial.avanzar(quant_estimates=estimates.model_copy(update=sin_sello))
+    with pytest.raises(ValidationError, match=r"candidatos\[0\]: sin sellar"):
+        run_state_inicial.avanzar(candidatos=(candidatos.model_copy(update=sin_sello),))
+    with pytest.raises(ValidationError, match=r"validaciones\[0\]: sin sellar"):
+        run_state_inicial.avanzar(
+            candidatos=(candidatos,),
+            validaciones=(validacion_aprobada.model_copy(update=sin_sello),),
+        )
+
+
+def test_resultado_sellado_con_otro_universo_se_rechaza(
+    run_state_inicial: RunState, estimates: QuantEstimates
+) -> None:
+    viejo = estimates.model_copy(update={"universe_version": "f" * 64})
+    with pytest.raises(ValidationError, match="quant_estimates: obsoleto"):
+        run_state_inicial.avanzar(quant_estimates=viejo)
+
+
+def test_universo_y_restricciones_de_sesion_son_obligatorios(run_state_inicial: RunState) -> None:
+    crudo = run_state_inicial.model_dump()
+    for campo in ("universo", "restricciones_sesion"):
+        with pytest.raises(ValidationError, match=campo):
+            RunState.model_validate({k: v for k, v in crudo.items() if k != campo})
+
+
+def test_un_candidato_bl_exige_el_prior_en_el_acta(
+    run_state_inicial: RunState, candidatos: CandidatePortfolios
+) -> None:
+    with pytest.raises(ValidationError, match="no registra el prior"):
+        run_state_inicial.avanzar(prior=None, candidatos=(candidatos,))

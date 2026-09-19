@@ -72,6 +72,83 @@ def ultimo_mes_cerrado(hoy: date) -> pd.Timestamp:
     return pd.Timestamp(hoy.replace(day=1) - timedelta(days=1))
 
 
+class ClienteTiingo:
+    """GET autenticado con reintentos (429 y timeouts) y errores tipados. Lo comparten el
+    proveedor de precios y la fuente de metadata del Gestor de Datos (S7)."""
+
+    def __init__(
+        self, config: TiingoConfig, api_key: str | None, dormir: Callable[[float], None]
+    ) -> None:
+        key = api_key if api_key is not None else os.environ.get(VARIABLE_API_KEY, "")
+        if not key.strip():
+            raise TiingoCredencialError(
+                f"falta la variable de entorno {VARIABLE_API_KEY} (ver .env.example)"
+            )
+        self._config = config
+        self._cabeceras = {"Authorization": f"Token {key.strip()}", "Accept": "application/json"}
+        self._dormir = dormir
+
+    def get(
+        self,
+        cliente: httpx.Client,
+        ruta: str,
+        parametros: dict[str, str],
+        activo: str,
+        codigos_sin_dato: tuple[int, ...] = (),
+    ) -> Any:
+        """JSON de ``{url_base}/{ruta}``; ``None`` si el código está en ``codigos_sin_dato``."""
+        url = f"{self._config.url_base.rstrip('/')}/{ruta}"
+        reintentos = self._config.reintentos
+        ultimo: TiingoError | None = None
+        for intento in range(reintentos.intentos):
+            if intento:
+                self._dormir(self._espera(intento, ultimo))
+            try:
+                respuesta = cliente.get(url, params=parametros, headers=self._cabeceras)
+            except httpx.TimeoutException:
+                ultimo = TiingoTimeoutError(
+                    f"Tiingo: {activo} sin respuesta en {self._config.timeout_s:g} s "
+                    f"({intento + 1} intentos)"
+                )
+                continue
+            except httpx.HTTPError as exc:
+                raise TiingoError(f"Tiingo: error de red con {activo}: {exc!r}") from exc
+            if respuesta.status_code == httpx.codes.TOO_MANY_REQUESTS:
+                ultimo = TiingoLimiteError(
+                    f"Tiingo: límite de peticiones (HTTP 429) con {activo} "
+                    f"({intento + 1} intentos); free tier: 50/hora, 1.000/día",
+                    _retry_after(respuesta),
+                )
+                continue
+            if respuesta.status_code in codigos_sin_dato:
+                return None
+            return self._interpretar(respuesta, activo)
+        assert ultimo is not None
+        raise ultimo
+
+    def _espera(self, intento: int, ultimo: TiingoError | None) -> float:
+        r = self._config.reintentos
+        espera = min(r.espera_inicial_s * r.base_exponencial ** (intento - 1), r.espera_maxima_s)
+        pedida = ultimo.retry_after if isinstance(ultimo, TiingoLimiteError) else None
+        return min(max(espera, pedida), r.espera_maxima_s) if pedida is not None else espera
+
+    @staticmethod
+    def _interpretar(respuesta: httpx.Response, activo: str) -> Any:
+        codigo = respuesta.status_code
+        if codigo in (httpx.codes.UNAUTHORIZED, httpx.codes.FORBIDDEN):
+            raise TiingoCredencialError(
+                f"Tiingo rechazó la API key (HTTP {codigo}): revisa {VARIABLE_API_KEY}"
+            )
+        if codigo == httpx.codes.NOT_FOUND:
+            raise TiingoTickerError(f"Tiingo no conoce el ticker {activo} (HTTP 404)")
+        if codigo != httpx.codes.OK:
+            raise TiingoError(f"Tiingo: HTTP {codigo} inesperado con {activo}")
+        try:
+            return respuesta.json()
+        except ValueError as exc:
+            raise DatosInvalidosError(f"Tiingo: respuesta de {activo} no es JSON") from exc
+
+
 class TiingoPriceProvider(PriceProvider):
     """Descarga perezosa (una petición por activo, en la primera consulta) y en caché.
 
@@ -93,17 +170,11 @@ class TiingoPriceProvider(PriceProvider):
     ) -> None:
         if not activos:
             raise ValueError("TiingoPriceProvider necesita al menos un activo")
-        key = api_key if api_key is not None else os.environ.get(VARIABLE_API_KEY, "")
-        if not key.strip():
-            raise TiingoCredencialError(
-                f"falta la variable de entorno {VARIABLE_API_KEY} (ver .env.example)"
-            )
+        self._http = ClienteTiingo(config, api_key, dormir)
         self._activos = tuple(activos)
         self._config = config
         self._cierre = ultimo_mes_cerrado(hoy)
-        self._cabeceras = {"Authorization": f"Token {key.strip()}", "Accept": "application/json"}
         self._cliente = cliente
-        self._dormir = dormir
         self._panel: pd.DataFrame | None = None
 
     @property
@@ -171,60 +242,13 @@ class TiingoPriceProvider(PriceProvider):
         return serie
 
     def _pedir(self, cliente: httpx.Client, activo: str) -> Any:
-        url = f"{self._config.url_base.rstrip('/')}/tiingo/daily/{activo}/prices"
         parametros = {
             "startDate": self._config.fecha_inicio.isoformat(),
             "endDate": self._cierre.date().isoformat(),
             "resampleFreq": FRECUENCIA,
             "format": "json",
         }
-        reintentos = self._config.reintentos
-        ultimo: TiingoError | None = None
-        for intento in range(reintentos.intentos):
-            if intento:
-                self._dormir(self._espera(intento, ultimo))
-            try:
-                respuesta = cliente.get(url, params=parametros, headers=self._cabeceras)
-            except httpx.TimeoutException:
-                ultimo = TiingoTimeoutError(
-                    f"Tiingo: {activo} sin respuesta en {self._config.timeout_s:g} s "
-                    f"({intento + 1} intentos)"
-                )
-                continue
-            except httpx.HTTPError as exc:
-                raise TiingoError(f"Tiingo: error de red con {activo}: {exc!r}") from exc
-            if respuesta.status_code == httpx.codes.TOO_MANY_REQUESTS:
-                ultimo = TiingoLimiteError(
-                    f"Tiingo: límite de peticiones (HTTP 429) con {activo} "
-                    f"({intento + 1} intentos); free tier: 50/hora, 1.000/día",
-                    _retry_after(respuesta),
-                )
-                continue
-            return self._interpretar(respuesta, activo)
-        assert ultimo is not None
-        raise ultimo
-
-    def _espera(self, intento: int, ultimo: TiingoError | None) -> float:
-        r = self._config.reintentos
-        espera = min(r.espera_inicial_s * r.base_exponencial ** (intento - 1), r.espera_maxima_s)
-        pedida = ultimo.retry_after if isinstance(ultimo, TiingoLimiteError) else None
-        return min(max(espera, pedida), r.espera_maxima_s) if pedida is not None else espera
-
-    @staticmethod
-    def _interpretar(respuesta: httpx.Response, activo: str) -> Any:
-        codigo = respuesta.status_code
-        if codigo in (httpx.codes.UNAUTHORIZED, httpx.codes.FORBIDDEN):
-            raise TiingoCredencialError(
-                f"Tiingo rechazó la API key (HTTP {codigo}): revisa {VARIABLE_API_KEY}"
-            )
-        if codigo == httpx.codes.NOT_FOUND:
-            raise TiingoTickerError(f"Tiingo no conoce el ticker {activo} (HTTP 404)")
-        if codigo != httpx.codes.OK:
-            raise TiingoError(f"Tiingo: HTTP {codigo} inesperado con {activo}")
-        try:
-            return respuesta.json()
-        except ValueError as exc:
-            raise DatosInvalidosError(f"Tiingo: respuesta de {activo} no es JSON") from exc
+        return self._http.get(cliente, f"tiingo/daily/{activo}/prices", parametros, activo)
 
 
 def _retry_after(respuesta: httpx.Response) -> float | None:

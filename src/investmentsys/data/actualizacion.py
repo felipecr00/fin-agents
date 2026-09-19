@@ -33,10 +33,12 @@ from pydantic import BaseModel, ConfigDict
 from investmentsys.config import ActualizacionConfig
 from investmentsys.data.csv_provider import COLUMNA_FECHA, FORMATO_FECHA, CSVPriceProvider
 from investmentsys.data.provider import DatosInvalidosError, PriceProvider
+from investmentsys.data.series_provider import EXTENSION, SeriesPriceProvider, ruta_serie
 from investmentsys.data.tiingo_provider import ultimo_mes_cerrado
 
 FORMATO_MARCA = "%Y%m%dT%H%M%S"
 SUFIJO_BACKUP = "_backup_"
+DIRECTORIO_BACKUPS = ".backups"
 MESES_DIFF = 3
 NOMBRE_RESUMEN = "resumen"
 
@@ -270,15 +272,10 @@ def serializar_csv(panel: pd.DataFrame, decimales: int) -> str:
     return str(salida.to_csv(float_format=f"%.{decimales}f", na_rep="", lineterminator="\n"))
 
 
-def escribir_csv_atomico(
-    panel: pd.DataFrame, destino: Path, config: ActualizacionConfig, marca: str
-) -> Path | None:
-    """Reemplaza ``destino`` de forma atómica y devuelve la ruta del respaldo (si había vigente).
-
-    El temporal vive en la misma carpeta (``os.replace`` solo es atómico dentro de un sistema
-    de archivos) y se relee con ``CSVPriceProvider`` antes de reemplazar nada. Ante cualquier
-    fallo se borra el temporal y ``destino`` queda como estaba.
-    """
+def _escribir_temporal(panel: pd.DataFrame, destino: Path, config: ActualizacionConfig) -> Path:
+    """Temporal junto a ``destino`` (``os.replace`` solo es atómico dentro de un sistema de
+    archivos), releído con ``CSVPriceProvider``: las reglas del consumidor. Si no valida, se
+    borra y se lanza."""
     destino.parent.mkdir(parents=True, exist_ok=True)
     descriptor, nombre = tempfile.mkstemp(
         dir=destino.parent, prefix=f".{destino.stem}_", suffix=".tmp"
@@ -295,6 +292,21 @@ def escribir_csv_atomico(
             releido.to_numpy(dtype=float), esperado.to_numpy(dtype=float), equal_nan=True
         ):
             raise DatosInvalidosError("el CSV escrito no coincide con el panel validado")
+    except BaseException:
+        temporal.unlink(missing_ok=True)
+        raise
+    return temporal
+
+
+def escribir_csv_atomico(
+    panel: pd.DataFrame, destino: Path, config: ActualizacionConfig, marca: str
+) -> Path | None:
+    """Reemplaza ``destino`` de forma atómica y devuelve la ruta del respaldo (si había vigente).
+
+    Ante cualquier fallo se borra el temporal y ``destino`` queda como estaba.
+    """
+    temporal = _escribir_temporal(panel, destino, config)
+    try:
         backup: Path | None = None
         if destino.exists():
             backup = destino.with_name(f"{destino.stem}{SUFIJO_BACKUP}{marca}{destino.suffix}")
@@ -303,6 +315,54 @@ def escribir_csv_atomico(
     finally:
         temporal.unlink(missing_ok=True)
     _podar_backups(destino, config.backups_a_conservar)
+    return backup
+
+
+def escribir_series_atomico(
+    panel: pd.DataFrame, directorio: Path, config: ActualizacionConfig, marca: str
+) -> Path | None:
+    """Reemplaza ``<directorio>/<ACTIVO>.csv`` para cada columna de ``panel`` (S7).
+
+    Todo o nada entre archivos: primero se escriben y validan TODOS los temporales, después se
+    respaldan las series vigentes en ``.backups/<marca>/`` y solo entonces se reemplaza. Si un
+    reemplazo falla, las ya reemplazadas se restauran desde ese respaldo. Devuelve la carpeta
+    del respaldo (``None`` si no había ninguna serie vigente).
+    """
+    activos = [str(c) for c in panel.columns]
+    destinos = {a: ruta_serie(directorio, a) for a in activos}
+    temporales: dict[str, Path] = {}
+    backup: Path | None = None
+    reemplazados: list[str] = []
+    try:
+        for a in activos:
+            serie = panel[[a]].dropna()  # un inicio tardío no deja filas vacías en su archivo
+            temporales[a] = _escribir_temporal(serie, destinos[a], config)
+        vigentes = [a for a in activos if destinos[a].exists()]
+        if vigentes:
+            backup = directorio / DIRECTORIO_BACKUPS / marca
+            backup.mkdir(parents=True, exist_ok=False)
+            for a in vigentes:
+                shutil.copy2(destinos[a], backup / destinos[a].name)
+        try:
+            for a in activos:
+                os.replace(temporales[a], destinos[a])
+                reemplazados.append(a)
+        except BaseException:
+            for a in reemplazados:
+                respaldo = backup / destinos[a].name if backup is not None else None
+                if respaldo is not None and respaldo.exists():
+                    shutil.copy2(respaldo, destinos[a])
+                else:
+                    destinos[a].unlink(missing_ok=True)
+            if backup is not None:
+                shutil.rmtree(backup)
+            raise
+    finally:
+        for temporal in temporales.values():
+            temporal.unlink(missing_ok=True)
+    respaldos = sorted(p for p in (directorio / DIRECTORIO_BACKUPS).glob("*") if p.is_dir())
+    for viejo in respaldos[: max(len(respaldos) - config.backups_a_conservar, 0)]:
+        shutil.rmtree(viejo)
     return backup
 
 
@@ -316,8 +376,35 @@ def _podar_backups(destino: Path, conservar: int) -> None:
 # --- orquestación --------------------------------------------------------------------------
 
 
-def _sha256(ruta: Path) -> str:
-    return hashlib.sha256(ruta.read_bytes()).hexdigest()
+def _es_almacen_de_series(ruta: Path) -> bool:
+    """``data/series`` (S7) frente al CSV único legado: lo decide la extensión."""
+    return ruta.suffix != EXTENSION
+
+
+def _leer_vigente(ruta: Path, activos: Sequence[str]) -> pd.DataFrame | None:
+    if not _es_almacen_de_series(ruta):
+        return CSVPriceProvider(ruta).precios() if ruta.exists() else None
+    presentes = [a for a in activos if ruta_serie(ruta, a).is_file()]
+    return SeriesPriceProvider(ruta, presentes).precios() if presentes else None
+
+
+def _texto(panel: pd.DataFrame, config: ActualizacionConfig) -> str:
+    return serializar_csv(panel, config.decimales_csv)
+
+
+def _sin_cambios(ruta: Path, nuevo: pd.DataFrame, config: ActualizacionConfig) -> bool:
+    if not _es_almacen_de_series(ruta):
+        return ruta.read_text(encoding="utf-8") == _texto(nuevo, config)
+    return all(
+        ruta_serie(ruta, str(a)).is_file()
+        and ruta_serie(ruta, str(a)).read_text(encoding="utf-8")
+        == _texto(nuevo[[a]].dropna(), config)
+        for a in nuevo.columns
+    )
+
+
+def _sha256(texto: str) -> str:
+    return hashlib.sha256(texto.encode("utf-8")).hexdigest()
 
 
 def _cobertura(nuevo: pd.DataFrame, vigente: pd.DataFrame | None) -> tuple[CoberturaActivo, ...]:
@@ -383,7 +470,8 @@ def actualizar_precios(
     simular: bool = False,
     aceptar_discrepancias: bool = False,
 ) -> ResumenActualizacion:
-    """Descarga, valida y (si todo está verde) reescribe ``ruta_csv``. Nunca lanza por datos
+    """Descarga, valida y (si todo está verde) reescribe ``ruta_csv``: la carpeta de series
+    ``data/series`` (S7) o, si termina en ``.csv``, un CSV único (legado). Nunca lanza por datos
     inválidos: devuelve un resumen con ``estado = ABORTADO`` y el motivo.
 
     ``aceptar_discrepancias`` es la decisión del humano tras revisar un aborto por continuidad
@@ -392,7 +480,7 @@ def actualizar_precios(
     """
     marca = ahora.strftime(FORMATO_MARCA)
     cierre = ultimo_mes_cerrado(hoy)
-    vigente = CSVPriceProvider(ruta_csv).precios() if ruta_csv.exists() else None
+    vigente = _leer_vigente(ruta_csv, activos)
 
     nuevo = fuente.precios(list(activos))
     nuevo = nuevo.loc[nuevo.index <= cierre]
@@ -421,10 +509,8 @@ def actualizar_precios(
             continuidad=continuidad,
             discrepancias_aceptadas=aceptar_discrepancias,
             diff_ultimos_meses=_diff(nuevo, vigente),
-            sha256_vigente=_sha256(ruta_csv) if vigente is not None else None,
-            sha256_nuevo=hashlib.sha256(
-                serializar_csv(nuevo, config.decimales_csv).encode("utf-8")
-            ).hexdigest(),
+            sha256_vigente=_sha256(_texto(vigente, config)) if vigente is not None else None,
+            sha256_nuevo=_sha256(_texto(nuevo, config)),
             backup=str(backup) if backup is not None else None,
         )
 
@@ -439,9 +525,7 @@ def actualizar_precios(
                 f"continuidad: {len(continuidad.discrepancias)} retorno(s) difieren más de "
                 f"{config.tolerancia_continuidad:.2%} del CSV vigente",
             )
-    if vigente is not None and ruta_csv.read_text(encoding="utf-8") == serializar_csv(
-        nuevo, config.decimales_csv
-    ):
+    if vigente is not None and _sin_cambios(ruta_csv, nuevo, config):
         return resumen(Estado.SIN_CAMBIOS, "el CSV vigente ya contiene exactamente estos datos")
     if continuidad is not None and continuidad.discrepancias:
         veredicto = (
@@ -452,7 +536,8 @@ def actualizar_precios(
         veredicto = "validaciones en verde"
     if simular:
         return resumen(Estado.SIMULACION, f"{veredicto}; no se escribió (simulación)")
-    backup = escribir_csv_atomico(nuevo, ruta_csv, config, marca)
+    escribir = escribir_series_atomico if _es_almacen_de_series(ruta_csv) else escribir_csv_atomico
+    backup = escribir(nuevo, ruta_csv, config, marca)
     return resumen(Estado.ESCRITO, f"{veredicto}; CSV reemplazado", backup)
 
 

@@ -2,7 +2,7 @@
 
     uv run python scripts/analisis_sensibilidad.py [--run-state runs/<id>/run_state.json]
 
-Por defecto usa las views del ejercicio de referencia y el último cierre de `data/precios.csv`;
+Por defecto usa las views del ejercicio de referencia y el último cierre de `data/series/`;
 con `--run-state` usa las views y la fecha de decisión de una corrida real. Perturba un
 supuesto a la vez según `config.yaml: sensibilidad`, con los límites de peso reales y con
 límites relajados (0-100 %), y escribe en `runs/sensibilidad/<fecha>_<hash>/`:
@@ -20,7 +20,7 @@ from demo_pipeline import views_fijas
 
 from investmentsys.config import RAIZ_PROYECTO, cargar_config, hash_config
 from investmentsys.contracts import MarketViews, PortfolioConstraints, RunState
-from investmentsys.data import CSVPriceProvider
+from investmentsys.data import provider_de_config
 from investmentsys.quant import estimar
 from investmentsys.risk.informe_sensibilidad import Escenario, informe_markdown
 from investmentsys.risk.sensibilidad import PP, analizar_sensibilidad
@@ -51,7 +51,7 @@ def main() -> None:
 
     config = cargar_config()
     opt, activos = config.optimizacion, config.portafolio.activos
-    provider = CSVPriceProvider(config.datos.ruta_csv)
+    provider = provider_de_config(config)
     views_corrida, origen = _views(args.run_state, activos)
     fecha = (
         views_corrida.fecha_decision

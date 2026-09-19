@@ -19,6 +19,7 @@ from investmentsys.contracts.common import (
     validar_activos_unicos,
     validar_mismo_universo,
 )
+from investmentsys.contracts.universe import UniverseVersion
 
 
 class MetodoCovarianza(StrEnum):
@@ -113,6 +114,13 @@ class QuantEstimates(ContractBase):
         description="Uno por activo, en el orden canónico."
     )
     regimen: RegimenMercado = RegimenMercado.INDETERMINADO
+    universe_version: UniverseVersion | None = Field(
+        default=None,
+        description=(
+            "Sello del Universe sobre el que se calculó (ADR-012). None = sin sellar: solo lo "
+            "admite el núcleo puro llamado directamente; las herramientas lo rechazan."
+        ),
+    )
 
     @field_validator("activos")
     @classmethod

@@ -20,7 +20,7 @@ from google.genai import types
 from investmentsys.agents.market_analyst import crear_market_analyst
 from investmentsys.config import RAIZ_PROYECTO, cargar_config
 from investmentsys.contracts import MarketViews
-from investmentsys.data import CSVPriceProvider
+from investmentsys.data import provider_de_config
 from investmentsys.tools import CLAVE_MARKET_VIEWS
 
 APP = "market_analyst"  # ADK espera el nombre del paquete del agente raíz
@@ -34,7 +34,7 @@ VARIABLES = (
 
 async def correr(mensaje: str) -> MarketViews:
     config = cargar_config()
-    agente = crear_market_analyst(config, CSVPriceProvider(config.datos.ruta_csv))
+    agente = crear_market_analyst(config, provider_de_config(config))
     sesiones = InMemorySessionService()
     runner = Runner(agent=agente, app_name=APP, session_service=sesiones)
     sesion = await sesiones.create_session(app_name=APP, user_id="local")

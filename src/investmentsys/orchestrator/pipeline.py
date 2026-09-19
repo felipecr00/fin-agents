@@ -25,8 +25,9 @@ from investmentsys.agents.constructor import crear_constructor
 from investmentsys.agents.market_analyst import crear_market_analyst
 from investmentsys.agents.reporter import crear_reporter, renderizar
 from investmentsys.config import RAIZ_PROYECTO, Config
-from investmentsys.contracts import EtapaCorrida, RunState, Veredicto
+from investmentsys.contracts import EtapaCorrida, RunState, Universe, Veredicto
 from investmentsys.data import PriceProvider
+from investmentsys.data_manager import GestorDatos
 from investmentsys.orchestrator.corrida import (
     CLAVE_CREADO_EN,
     CLAVE_DIRECTORIO,
@@ -39,12 +40,17 @@ from investmentsys.orchestrator.corrida import (
     nuevo_run_id,
     persistir,
 )
+from investmentsys.portfolio import sesion_por_defecto
 from investmentsys.tools import (
     CLAVE_CANDIDATOS,
     CLAVE_FECHA_DECISION,
+    CLAVE_PRIOR,
+    CLAVE_RESTRICCIONES_SESION,
+    CLAVE_UNIVERSO,
     CLAVE_VALIDACIONES,
     NucleoTools,
 )
+from investmentsys.tools.estado import volcar
 
 NOMBRE = "pipeline_inversiones"
 RUTA_REINTENTAR = "REINTENTAR"
@@ -66,7 +72,11 @@ def crear_pipeline(
     provider: PriceProvider,
     modelo: str | BaseLlm | None = None,
     directorio_runs: Path | None = None,
+    universo: Universe | None = None,
 ) -> Workflow:
+    """``universo``: el de la corrida. Por defecto, el vigente del Gestor de Datos, leído al
+    INICIAR cada corrida (un alta entre dos corridas se ve sin reiniciar el servidor). Si la
+    sesión ya trae un universo en su estado (S8), manda ese."""
     tools = NucleoTools(config, provider)
     destino = directorio_runs or RAIZ_PROYECTO / config.corridas.directorio
     maximo = config.validacion.max_iteraciones_constructor
@@ -79,12 +89,25 @@ def crear_pipeline(
         run_id, creado_en = nuevo_run_id()
         ctx.state[CLAVE_RUN_ID] = ctx.state.get(CLAVE_RUN_ID) or run_id
         ctx.state[CLAVE_CREADO_EN] = ctx.state.get(CLAVE_CREADO_EN) or creado_en.isoformat()
+        if ctx.state.get(CLAVE_UNIVERSO) is None:
+            ctx.state[CLAVE_UNIVERSO] = volcar(universo or GestorDatos(config).universo())
+        vigente = Universe.model_validate(ctx.state[CLAVE_UNIVERSO])
+        sesion = ctx.state.get(CLAVE_RESTRICCIONES_SESION)
+        if sesion is None or sesion.get("universe_version") != vigente.version:
+            # Sin restricciones de sesión, o de otro universo: las de config sobre el vigente.
+            ctx.state[CLAVE_RESTRICCIONES_SESION] = volcar(
+                sesion_por_defecto(vigente, config.optimizacion)
+            )
         if not ctx.state.get(CLAVE_FECHA_DECISION):
-            ultimo = provider.precios(config.portafolio.activos).index[-1].date()
+            ultimo = provider.precios(vigente.activos).index[-1].date()
             ctx.state[CLAVE_FECHA_DECISION] = ultimo.isoformat()
         for clave in (CLAVE_CANDIDATOS, CLAVE_VALIDACIONES, CLAVE_NOTAS):
             ctx.state[clave] = []
-        return f"Corrida {ctx.state[CLAVE_RUN_ID]}, decisión al {ctx.state[CLAVE_FECHA_DECISION]}."
+        ctx.state[CLAVE_PRIOR] = None
+        return (
+            f"Corrida {ctx.state[CLAVE_RUN_ID]}, decisión al {ctx.state[CLAVE_FECHA_DECISION]}, "
+            f"universo {vigente.version[:12]} ({', '.join(vigente.activos)})."
+        )
 
     def quant(ctx: Context) -> dict[str, Any]:
         return _exigir(tools.estimar_mercado(ctx), "quant")
@@ -101,6 +124,7 @@ def crear_pipeline(
         )
         ctx.state[CLAVE_NOTAS] = [*(ctx.state.get(CLAVE_NOTAS) or []), nota]
         salida = _exigir(tools.construir_candidatos(ctx), "constructor (por defecto)")
+        ctx.state[CLAVE_NOTAS] = [*ctx.state[CLAVE_NOTAS], *salida["avisos"]]
         return {"iteracion": salida["iteracion"], "origen": "por_defecto"}
 
     def validador(ctx: Context) -> Event:
