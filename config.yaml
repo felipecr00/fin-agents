@@ -81,6 +81,13 @@ evaluacion:
   q_absoluta_max: 0.30
   q_relativa_max: 0.20
 
+sensibilidad:
+  # Rejilla del análisis de sensibilidad (risk/sensibilidad.py): cada magnitud se aplica con
+  # signo + y −, a un supuesto por vez. Son errores de estimación plausibles, no escenarios.
+  retornos_pp: [0.01, 0.02]      # ± sobre el q de cada view y sobre μ posterior de cada activo
+  covarianza_rel: [0.10, 0.20]   # ± relativo: volatilidad por activo, correlación por par y Σ
+  parametros_rel: [0.10, 0.20]   # ± relativo sobre δ y τ
+
 corridas:
   # RunState y reporte de cada corrida: <directorio>/<run_id>/ (relativo a la raíz del repo).
   directorio: runs

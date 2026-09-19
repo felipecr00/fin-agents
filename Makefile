@@ -16,7 +16,7 @@ STAGING_PROD := build/prod
 # Un caso suelto: make eval EVALSET=tests/eval/market_analyst.evalset.json:ambigua_bns
 EVALSET ?= tests/eval/market_analyst.evalset.json
 
-.PHONY: install lint type test check run-local eval evalset clean deploy-dev url-dev corrida-dev logs-dev deploy-prod corrida-prod
+.PHONY: install lint type test check run-local eval evalset sensibilidad clean deploy-dev url-dev corrida-dev logs-dev deploy-prod corrida-prod
 
 install:        ## dependencias con uv
 	$(UV) sync
@@ -44,6 +44,9 @@ eval:           ## evalset del analista contra Gemini REAL (ADR-010); código 1 
 
 evalset:        ## regenera el evalset de ADK desde tests/eval/casos_market_analyst.yaml
 	$(UV) run python scripts/generar_evalset.py
+
+sensibilidad:   ## sensibilidad del núcleo BL a retornos, covarianzas y parámetros → runs/sensibilidad/
+	$(UV) run python scripts/analisis_sensibilidad.py $(if $(RUN_STATE),--run-state $(RUN_STATE),)
 
 deploy-dev:     ## Cloud Run (dev): Cloud Build construye el Dockerfile y despliega, en un solo comando
 	@test -n "$(PROYECTO)" -a -n "$(REGION)" || { echo "Faltan PROYECTO y REGION"; exit 1; }

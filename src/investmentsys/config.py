@@ -158,6 +158,23 @@ class EvaluacionConfig(_Seccion):
     q_relativa_max: float = Field(gt=0.0, description="|q_anual| máximo de una view relativa.")
 
 
+class SensibilidadConfig(_Seccion):
+    """Rejilla de perturbaciones del análisis de sensibilidad (``risk.sensibilidad``)."""
+
+    retornos_pp: tuple[float, ...] = Field(min_length=1, description="Absolutas: 0.01 = 1 p.p.")
+    covarianza_rel: tuple[float, ...] = Field(min_length=1, description="Relativas: 0.10 = 10 %.")
+    parametros_rel: tuple[float, ...] = Field(min_length=1, description="Relativas, sobre δ y τ.")
+
+    @model_validator(mode="after")
+    def _magnitudes(self) -> SensibilidadConfig:
+        if any(m <= 0.0 for m in self.retornos_pp):
+            raise ValueError("retornos_pp: magnitudes positivas (el signo lo pone el análisis)")
+        for nombre in ("covarianza_rel", "parametros_rel"):
+            if any(not 0.0 < m < 1.0 for m in getattr(self, nombre)):
+                raise ValueError(f"{nombre}: magnitudes relativas en (0, 1)")
+        return self
+
+
 class CorridasConfig(_Seccion):
     directorio: Path
 
@@ -176,6 +193,7 @@ class Config(_Seccion):
     validacion: ValidacionConfig
     agentes: AgentesConfig
     evaluacion: EvaluacionConfig
+    sensibilidad: SensibilidadConfig
     corridas: CorridasConfig
     reproducibilidad: ReproducibilidadConfig
 
