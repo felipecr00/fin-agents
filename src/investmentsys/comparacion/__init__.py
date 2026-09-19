@@ -8,9 +8,11 @@ from investmentsys.comparacion.corridas import (
     CorridasIncomparablesError,
     DiffCorridas,
     DiffViews,
+    EsquemaAnteriorError,
     ViewNormalizada,
     cartera_de,
     comparar_corridas,
+    leer_corrida,
     normalizar_view,
 )
 from investmentsys.comparacion.informe import diff_markdown
@@ -23,9 +25,11 @@ __all__ = [
     "CorridasIncomparablesError",
     "DiffCorridas",
     "DiffViews",
+    "EsquemaAnteriorError",
     "ViewNormalizada",
     "cartera_de",
     "comparar_corridas",
     "diff_markdown",
+    "leer_corrida",
     "normalizar_view",
 ]

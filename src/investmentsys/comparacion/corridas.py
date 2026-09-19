@@ -13,6 +13,7 @@ se normalizan (primer activo del universo con coeficiente positivo) antes de emp
 
 from __future__ import annotations
 
+import json
 import math
 from dataclasses import dataclass
 
@@ -28,8 +29,27 @@ from investmentsys.contracts import (
 PP = 100.0  # fracción → puntos porcentuales (unidad de presentación)
 
 
+TAG_PRE_S7 = "v0.7-pre-director"
+CAMPOS_DESDE_S7 = ("universo", "restricciones_sesion")  # obligatorios desde ADR-012
+
+
 class CorridasIncomparablesError(ValueError):
     """Las corridas no comparten universo: no hay nada que emparejar."""
+
+
+class EsquemaAnteriorError(ValueError):
+    """El acta es de un ``RunState`` anterior a S7: este código no la puede leer."""
+
+
+def leer_corrida(texto: str, referencia: str = "acta") -> RunState:
+    """``RunState`` desde el JSON de un acta; las pre-S7 fallan diciendo cómo leerlas."""
+    crudo = json.loads(texto)
+    if isinstance(crudo, dict) and not any(c in crudo for c in CAMPOS_DESDE_S7):
+        raise EsquemaAnteriorError(
+            f"{referencia}: RunState de esquema anterior a S7, use el tag {TAG_PRE_S7} para "
+            "leerlo"
+        )
+    return RunState.model_validate(crudo)
 
 
 @dataclass(frozen=True)

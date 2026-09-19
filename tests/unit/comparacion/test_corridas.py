@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, date, datetime
 
 import pytest
+from pydantic import ValidationError
 
 from investmentsys.comparacion import (
     CorridasIncomparablesError,
+    EsquemaAnteriorError,
     comparar_corridas,
     diff_markdown,
+    leer_corrida,
     normalizar_view,
 )
 from investmentsys.config import Config, cargar_config, hash_config
@@ -275,3 +279,26 @@ def test_un_refrescar_cap_aparece_en_el_diff(config: Config, septiembre: RunStat
     assert any(c.cambia(TOLERANCIA) for c in diff.prior_pi_total)
     informe = diff_markdown(diff, TOLERANCIA)
     assert "| BNS ⚠ | 0.116 | 1.160 | usuario | usuario |" in informe
+
+
+class TestLeerCorrida:
+    def test_acta_vigente_se_lee_igual_que_con_el_contrato(self, junio: RunState) -> None:
+        assert leer_corrida(junio.model_dump_json()) == junio
+
+    def test_acta_pre_s7_falla_con_mensaje_claro(self, junio: RunState) -> None:
+        """Un acta anterior a S7 no tiene universo ni restricciones de sesión (ADR-012)."""
+        pre_s7 = junio.model_dump(mode="json")
+        for campo in ("universo", "restricciones_sesion", "prior"):
+            del pre_s7[campo]
+        with pytest.raises(EsquemaAnteriorError) as error:
+            leer_corrida(json.dumps(pre_s7), "20260917T131210_881337Z")
+        assert str(error.value) == (
+            "20260917T131210_881337Z: RunState de esquema anterior a S7, use el tag "
+            "v0.7-pre-director para leerlo"
+        )
+
+    def test_acta_vigente_corrupta_sigue_fallando_por_el_contrato(self, junio: RunState) -> None:
+        """El mensaje de esquema anterior no tapa un acta S7 rota: esa la explica pydantic."""
+        rota = {**junio.model_dump(mode="json"), "semilla": "no-es-un-entero"}
+        with pytest.raises(ValidationError):
+            leer_corrida(json.dumps(rota))
