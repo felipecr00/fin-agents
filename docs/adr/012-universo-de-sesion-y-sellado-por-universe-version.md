@@ -2,7 +2,8 @@
 
 - Fecha: 2026-09-19
 - Sprint: S7
-- Estado: propuesta (cambio de contratos: requiere aprobación antes de implementar consumidores)
+- Estado: aceptada (aprobada en sesión el 2026-09-19 con dos condiciones, ambas con test: el flag
+  de neutral entra al hash, y `RunState` rechaza componentes sin sellar)
 
 ## Contexto
 Hasta S6 el universo era `config.portafolio.activos`: cuatro strings que cada módulo leía por

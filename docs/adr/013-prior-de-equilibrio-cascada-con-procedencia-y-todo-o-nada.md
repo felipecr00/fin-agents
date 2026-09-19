@@ -2,8 +2,8 @@
 
 - Fecha: 2026-09-19
 - Sprint: S7
-- Estado: propuesta (la política la decidió el usuario en el spec de S7 §4; este ADR la
-  documenta y fija cómo se representa; pendiente de aprobación en sesión)
+- Estado: aceptada (política decidida por el usuario en el spec de S7 §4; representación y
+  refinamiento de la §1 aprobados en sesión el 2026-09-19)
 
 ## Contexto
 Black-Litterman parte de un prior de equilibrio π = δ·Σ·w_mkt. Hasta S6, w_mkt salía de cuatro
@@ -61,6 +61,34 @@ Dos tentaciones que esta decisión cierra:
   volver a consultar ninguna fuente.
 - `prior_neutral_aceptado=True` con todas las caps presentes es un error: neutral es el último
   escalón de la cascada, no una alternativa a caps disponibles.
+
+### Refinamiento respecto a la redacción original del spec (aprobado en sesión)
+La §1 original decía `AssetDiagnostic.prior_provenance: fuente | usuario | neutral`. Se
+implementó `fuente | usuario` en el activo y `neutral` solo en el universo y en el
+`PriorSnapshot`, porque son dos cosas distintas: de dónde viene la cap de un activo es una
+propiedad del activo; qué prior se usó es una propiedad del vector, y solo ahí aparece
+neutral. La lectura literal obligaba a descartar caps congeladas al degradar (y a volver a
+consultar la fuente después), justo lo que la §4 rechaza. La §1 del spec se corrigió en el
+mismo PR.
+
+### Sondeo de Tiingo (2026-09-19, servicio real, tier gratuito)
+- `GET /tiingo/daily/<ticker>` → `ticker, name, description, startDate, endDate, exchangeCode`;
+  404 `{"detail": "Not found."}` si no existe. **No trae moneda ni capitalización.** La moneda
+  se deduce de `exchangeCode` contra `datos.gestor.bolsas_usd`; otra bolsa = "moneda no
+  soportada".
+- `GET /tiingo/fundamentals/meta?tickers=…` → solo acciones (los ETFs VOOG e IBIT no
+  aparecen): `isActive, isADR, reportingCurrency`… Es la prueba de "tipo correcto".
+- `GET /tiingo/fundamentals/<ticker>/daily` → `marketCap` en US$. **Solo DOW 30 en los planes
+  Free y Power**: AAPL responde; BNS, NVDA y VOOG devuelven HTTP 400 "Free and Power plans are
+  limited to the DOW 30".
+- **Consecuencia esperada y aceptada**: la procedencia `fuente` será rara (acción del DOW 30,
+  no ADR, que reporta en USD) y casi todas las altas serán `usuario`. Es la cascada operando
+  como se diseñó, no un fallo a rodear: **nada de scraping ni de fuentes secundarias
+  improvisadas**; si la fuente no da la cap con calidad, la da el usuario. Un 400 de plan no es
+  un error del alta: deja el bloque de prior pendiente.
+- Criterio conservador de "tipo correcto": aparece en `fundamentals/meta`, `isActive`, no es
+  ADR y `reportingCurrency = usd` (BNS es ADR y reporta en CAD: aunque el plan lo permitiera,
+  su cap la aporta el usuario).
 
 ### Equal-weight NO es agnóstico
 Un prior equiponderado afirma que el mercado tiene la misma cantidad de cada activo, y por

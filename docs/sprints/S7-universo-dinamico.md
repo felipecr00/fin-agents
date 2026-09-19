@@ -17,12 +17,17 @@ equilibrio auditable por procedencia.
 ### 1. Contratos nuevos y modificados
 - `AssetDiagnostic`: ticker resuelto, nombre, moneda, fecha de inicio y fin de
   datos, frecuencia, huecos, meses disponibles, advertencias ("ventana corta:
-  stress 2022 no aplica"), apto/no apto, y el bloque de prior:
-  `prior_cap` (valor congelado, opcional), `prior_provenance: fuente | usuario |
-  neutral`, `prior_fuente_detalle` (qué endpoint o qué metodología del usuario),
+  stress 2022 no aplica"), apto/no apto, y el bloque de prior (la cap congelada
+  del activo; los cuatro campos juntos o ninguno): `prior_cap`,
+  `prior_provenance: fuente | usuario` (de dónde viene la cap: propiedad del
+  activo), `prior_fuente_detalle` (qué endpoint o qué metodología del usuario),
   `prior_as_of` (fecha del valor).
 - `Universe`: activos con diagnósticos, versión (hash del contenido, incluye las
-  caps congeladas), origen de cada activo (config inicial / agregado en sesión).
+  caps congeladas y `prior_neutral_aceptado`), origen de cada activo (config
+  inicial / agregado en sesión). `neutral` NO es procedencia de un activo: es la
+  resolución del vector completo (`Universe.prior_neutral_aceptado` →
+  `PriorSnapshot`), y solo ahí aparece. (Corregido en S7; ver ADR-013,
+  "Refinamiento".)
 - `SessionConstraints`: restricciones vigentes con su origen (default de config /
   ajustadas por el usuario).
 - `QuantEstimates`, `CandidatePortfolios`, `ValidationReport`, `RunState`: ganan

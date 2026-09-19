@@ -118,6 +118,12 @@ def test_estado_del_prior_todo_o_nada() -> None:
     assert neutral.diagnostico("VOOG").prior_cap == 28.0  # las caps congeladas no se pierden
 
 
+def test_aceptar_neutral_cambia_la_version() -> None:
+    """Cambiar el prior efectivo invalida resultados previos: el flag entra al hash."""
+    caps: dict[str, float | None] = CAPS | {"IBIT": None}
+    assert _universo(caps, neutral=False).version != _universo(caps, neutral=True).version
+
+
 def test_neutral_solo_si_falta_alguna_cap() -> None:
     with pytest.raises(ValidationError, match="último escalón"):
         _universo(CAPS, neutral=True)
