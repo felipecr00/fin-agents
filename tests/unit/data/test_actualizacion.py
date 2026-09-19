@@ -236,6 +236,7 @@ def test_aceptar_discrepancias_es_una_decision_explicita_y_queda_registrada(
     alterado.loc["2024-03-31", "BNS"] *= 1.02
     r = _actualizar(alterado, csv_vigente, config, aceptar_discrepancias=True)
     assert r.estado is Estado.ESCRITO and r.discrepancias_aceptadas
+    assert "2 discrepancia(s) de continuidad ACEPTADAS" in r.motivo  # nunca "en verde"
     assert r.continuidad is not None and len(r.continuidad.discrepancias) == 2
     assert "ACEPTADAS por el operador" in formatear_resumen(r)
 

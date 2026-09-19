@@ -443,10 +443,17 @@ def actualizar_precios(
         nuevo, config.decimales_csv
     ):
         return resumen(Estado.SIN_CAMBIOS, "el CSV vigente ya contiene exactamente estos datos")
+    if continuidad is not None and continuidad.discrepancias:
+        veredicto = (
+            f"sanidad en verde; {len(continuidad.discrepancias)} discrepancia(s) de continuidad "
+            "ACEPTADAS por el operador"
+        )
+    else:
+        veredicto = "validaciones en verde"
     if simular:
-        return resumen(Estado.SIMULACION, "validaciones en verde; no se escribió (simulación)")
+        return resumen(Estado.SIMULACION, f"{veredicto}; no se escribió (simulación)")
     backup = escribir_csv_atomico(nuevo, ruta_csv, config, marca)
-    return resumen(Estado.ESCRITO, "validaciones en verde; CSV reemplazado", backup)
+    return resumen(Estado.ESCRITO, f"{veredicto}; CSV reemplazado", backup)
 
 
 # --- presentación ------------------------------------------------------------------------
