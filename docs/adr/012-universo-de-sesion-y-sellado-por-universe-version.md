@@ -44,6 +44,20 @@ llevar diagnósticos ni demostrar sobre qué universo se calculó un resultado.
 4. `PortfolioConstraints` no cambia: es el formato del optimizador y el golden lo construye
    directamente. `SessionConstraints.a_portfolio_constraints()` lo produce.
 
+5. **Almacenamiento** (`data/`): una serie por activo en `data/series/<TICKER>.csv`, con el
+   formato de `CSVPriceProvider` de una sola columna (hereda sus validaciones), y el universo
+   vigente en `data/universo.json` (el contrato `Universe` serializado) con su historial de
+   cambios en `data/universo_historial.jsonl`. `SeriesPriceProvider` arma el panel y rechaza un
+   almacén a medio actualizar (series que no terminan en el mismo mes). `make update-prices`
+   escribe todo-o-nada entre archivos (temporales validados → respaldo → reemplazo → restauración
+   si falla) y re-diagnostica el universo. El `precios.csv` legado se migró con
+   `scripts/migrar_series.py` (panel idéntico, verificado); el fixture del golden no se tocó.
+   `Gestor.universo()` verifica que cada diagnóstico corresponde a su serie en disco: un
+   universo desincronizado es un error, no un aviso.
+6. **El universo viaja en el estado de sesión** (`universo`, `restricciones_sesion`, `prior`):
+   lo siembra `iniciar` desde el Gestor —o, en S8, el Director— y las herramientas lo leen de
+   ahí. `crear_pipeline` lee el universo vigente al iniciar cada corrida, no al importarse.
+
 ## Alternativas descartadas
 - **Versión = contador incremental**: no es reproducible entre sesiones ni detecta dos
   universos iguales construidos por caminos distintos. El hash sí.

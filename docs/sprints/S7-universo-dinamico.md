@@ -143,4 +143,108 @@ conversacionales, la elicitación interactiva de caps (S8).
 > make check verde, Estado y PR.
 
 ## Estado
-(pendiente — actualizar al cerrar el sprint)
+Cerrado el 2026-09-19 (rama `sprint/S7-universo-dinamico`, PR contra `main`).
+
+### Desviaciones del spec (aprobadas en sesión)
+- **`neutral` no es procedencia de un activo** (refinamiento de la §1; ADR-013). En
+  `AssetDiagnostic` solo caben `fuente | usuario` —de dónde viene la cap—; `neutral` es la
+  resolución del vector (`Universe.prior_neutral_aceptado` → `PriorSnapshot`). Así el todo-o-nada
+  es imposible de violar por construcción y degradar no borra las caps congeladas. La §1 de este
+  spec se corrigió en el mismo PR.
+- **`universe_version` es opcional en `QuantEstimates`/`CandidatePortfolios`/`ValidationReport`**
+  (`None` = núcleo puro llamado directamente: es lo que permite no tocar el golden) **y
+  obligatorio donde importa**: las herramientas sellan siempre y rechazan lo que no esté sellado
+  con el universo vigente, y `RunState` rechaza cualquier componente con `None` (test).
+- **El universo vive en el estado de sesión**, no como argumento de cada especialista: lo siembra
+  `iniciar` desde el Gestor (en S8, el Director) y las herramientas lo leen de ahí.
+- **Añadidos que el spec no pedía**: `CandidatePortfolios.no_disponibles`,
+  `ValidationReport.advertencias`, `Gestor.sincronizar()` (re-diagnóstico tras
+  `make update-prices`), `Gestor.aceptar_prior_neutral()`, `scripts/universo.py` + `make universo`
+  (sin un CLI el Gestor no se podía usar hasta S8), `hypothesis` como dependencia de desarrollo.
+- **`docs/prompts/director.md` no existe** en el repo, en el historial ni en ninguna sesión
+  accesible: no se inventó. No afecta a S7; **bloquea S8** (ver Pendiente).
+
+### Logrado
+- **ADR-012** (universo como contrato, sellado, almacenamiento) y **ADR-013** (prior: cascada,
+  todo-o-nada, caps congeladas, equal-weight no es agnóstico —IBIT 24,1 % vs. 15,0 % en exceso,
+  medido con nuestra Σ—, π = 0 evaluada y disponible por config), ambos aceptados en sesión.
+- **Contratos** (`contracts/universe.py`, `session.py`, `prior.py`): `AssetDiagnostic` (bloque de
+  prior completo o vacío: "una cap sin procedencia es una cap inventada"), `Universe` (solo aptos;
+  `version` = SHA-256 del contenido, incluye caps y el flag de neutral; se revalida al cargar),
+  `SessionConstraints` (origen de cada límite; piso×N y techos), `PriorSnapshot` (w_mkt,
+  procedencias, tabla π; rechaza mezclas). `RunState` gana `universo`, `restricciones_sesion` y
+  `prior`, y exige el prior si hay un candidato BL.
+- **Sondeo real de Tiingo** (documentado en ADR-013): la metadata no trae moneda ni cap;
+  `fundamentals/meta` solo lista acciones; `marketCap` solo para el DOW 30 en el plan gratuito
+  (HTTP 400 para el resto). La procedencia `fuente` es rara y casi toda alta será `usuario`: es la
+  cascada operando como se diseñó. Nada de scraping ni fuentes secundarias.
+- **Gestor de Datos** (`data_manager/`, determinista): `resolver`, `incorporar` (sanidad de S6,
+  cap de la fuente o por argumento con metodología obligatoria, alineación con el almacén),
+  `refrescar_cap` (única vía; historial con cap y versión antes/después), `aceptar_prior_neutral`,
+  `sincronizar`, `diagnosticar` (ventana común, activo más corto, stress por activo, estado del
+  prior). `TiingoFuente` con criterio conservador de "tipo correcto" (acción activa, no ADR, que
+  reporta en USD). Probado contra el servicio real: AAPL → cap `fuente` 4,94 bill. (as-of
+  2026-09-18); QQQ → prior pendiente; ticker inexistente → error claro.
+- **Cascada pura del prior** (`portfolio/prior.py`) y BL aceptando el `PriorSnapshot` resuelto: lo
+  que se reporta es exactamente lo que se usó. **Test de propiedad** con hypothesis (200 universos
+  arbitrarios + 100 mezclas hechas a mano rechazadas por el contrato). El camino por `Universe`
+  da los pesos del golden a 1e-9.
+- **Almacén** `data/series/<TICKER>.csv` + `data/universo.json`: migración real con panel
+  idéntico al legado (verificado); escritura todo-o-nada entre archivos con restauración;
+  `make update-prices` opera sobre el universo vigente y re-diagnostica (real contra Tiingo:
+  `SIN_CAMBIOS`). Un almacén a medio actualizar o un universo desincronizado son errores.
+- **Especialistas por universo**: herramientas selladas, obsolescencia como invariante
+  (`ResultadoObsoletoError`), los cinco chequeos de factibilidad (`portfolio/factibilidad.py`),
+  criterios `peso_min/max` contra la SESIÓN, BL no disponible con mensaje claro y HRP/mín-var
+  operativos, Escéptico con advertencias explícitas de ventana de backtest y stress por activo.
+  Analista y Constructor leen el universo del estado.
+- **Informe**: universo y restricciones con origen, tabla π con procedencias SIEMPRE (o por qué no
+  hay prior), advertencia estándar de prior neutral, alcance de la validación por historia corta.
+  **Comparador**: caps, procedencias y π entre corridas (un `refrescar_cap` sale como cambio de
+  INPUT). **Replay**: toma universo y restricciones del `RunState`, no del almacén vivo.
+- **DoD**: golden intacto; test de propiedad en CI; end-to-end de 5 activos con alta en caliente
+  (APROBADA; acta con universo, diagnósticos, restricciones, prior y tabla π); tests de ticker
+  inexistente, historia corta hasta el informe, `universe_version` viejo, factibilidad, prior
+  pendiente, degradación aceptada y `refrescar_cap`.
+- **Corrida real** tras todos los cambios: `20260919T184929_955370Z`, APROBADA a la primera
+  (70/2/4,6/23,4; la de S6 dio 70/2/5,3/22,7) y **replay local: 128 valores, desviación 0.0**.
+- `make check` verde: 424 tests (80 nuevos), ruff y mypy strict sin avisos. Verificado con
+  `data/series` y `data/universo.json` escondidos: solo falla el test que custodia a propósito
+  el universo vivo del repo.
+
+### Pendiente
+- **`docs/prompts/director.md` (bloqueante para S8)**: hay que traer el documento original (rol,
+  equipo de 6, modos A-D, reglas) al repo; S8 carga la instrucción desde ese archivo.
+- `config.portafolio.pesos_actuales` y `regimen.activos_referencia` siguen atados a los 4 activos
+  iniciales (si un activo de referencia sale del universo, el régimen queda `INDETERMINADO`).
+  No existe `retirar(ticker)`: S7 solo pedía altas.
+- `AssetDiagnostic.huecos` siempre va vacío: los proveedores rechazan series con huecos antes de
+  diagnosticarlas. El campo queda para una fuente que los tolere.
+- `SessionConstraints` ajustadas por el usuario: el contrato y los chequeos existen; la vía para
+  fijarlas en sesión es de S8 (hoy siempre son las de `config.yaml`).
+- La cap congelada es de su fecha as-of: una estrategia `reestimada` con BL en el backtest la
+  usaría en fechas pasadas. Hoy el validador simula pesos fijos, así que no afecta (ADR-013).
+- Tras el merge, dev queda con otro `config_hash` y con el almacén nuevo: el replay rechazará las
+  corridas anteriores, como está diseñado. Los `RunState` previos a S7 no validan (ADR-012).
+- Siguen abiertos de S2-S6: el analista no conoce el prior de equilibrio (ahora π está en el
+  estado y en el informe: darle la tabla es barato); `sensibilidad` de los candidatos; intervalos
+  de confianza OOS; persistir corridas fallidas; proteger `main`; reportar a Tiingo los
+  dividendos duplicados de BNS.
+
+### Aprendizajes
+- **Un checkpoint de contratos antes de implementar pagó solo**: la separación "cap del activo /
+  resolución del vector" salió de intentar escribir el validador de la lectura literal y ver que
+  obligaba a tirar caps congeladas. Escribir el contrato es la forma más barata de encontrar
+  una imprecisión del spec.
+- **Sondear antes de mockear, otra vez**: tres decisiones salieron del servicio real (la moneda
+  se deduce de la bolsa, un 400 de plan es "sin dato" y no un error, los ETFs no existen en
+  fundamentals). La expectativa pesimista sobre `marketCap` era correcta y quedó escrita.
+- Hacer imposible un estado inválido (no hay campo donde marcar neutral un solo activo) vale más
+  que validarlo: el test de propiedad pasa a verificar una consecuencia, no a sostener la regla.
+- El sello opcional con cerco (herramientas + `RunState`) dio la garantía sin tocar el golden:
+  "opcional en el tipo, obligatorio en la frontera".
+- Reutilizar el formato de `CSVPriceProvider` para las series por activo hizo que validaciones,
+  escritura atómica y 22 tests de S6 siguieran valiendo sin reescribirlos.
+- Si un usuario dice "ese archivo está en nuestra conversación" y no está, se busca (sesiones,
+  disco, historial) y se dice; redactarlo "de memoria" habría sido inventar la fuente de verdad
+  de S8.

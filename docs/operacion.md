@@ -20,10 +20,12 @@ financiera.
 Los primeros días de cada mes, con el mes anterior ya cerrado:
 
 1. **`make update-prices`** — trae de Tiingo la serie mensual ajustada completa, la valida y, si
-   todo está verde, reescribe `data/precios.csv` ([ADR-011](adr/011-tiingo-como-fuente-de-precios-y-csv-como-cache-validado.md)).
+   todo está verde, reescribe `data/series/<TICKER>.csv` para TODO el universo vigente
+   ([ADR-011](adr/011-tiingo-como-fuente-de-precios-y-csv-como-cache-validado.md)) y re-diagnostica
+   `data/universo.json` (datos nuevos = otra `universe_version`: lo calculado antes queda obsoleto).
    **Lee el resumen antes de seguir**: meses nuevos por activo, continuidad y diff.
-2. `git diff data/precios.csv`, commit (`chore: precios AAAA-MM`) y PR: el CSV versionado es lo
-   que usan dev y prod, y su historial en git es el respaldo de verdad.
+2. `git diff data/`, commit (`chore: precios AAAA-MM`) y PR: las series y el universo versionados
+   son lo que usan dev y prod, y su historial en git es el respaldo de verdad.
 3. `uv run python scripts/run_pipeline.py` (o `make corrida-dev` tras el despliegue) y
    `make comparar A=<corrida anterior> B=<corrida nueva>`.
 
@@ -42,9 +44,11 @@ Los primeros días de cada mes, con el mes anterior ya cerrado:
   de hoy; esa fila no se escribe nunca. Correrlo a mitad de mes no aporta nada nuevo.
 - **Salida**: resumen en consola y en `runs/actualizaciones/<marca>/resumen.{md,json}`, también
   cuando aborta. Código 0 = escrito, sin cambios o simulación; 1 = abortado por una validación;
-  2 = fallo de la fuente. En los tres casos de fallo el CSV vigente queda intacto.
-- **Respaldos**: `data/precios_backup_<marca>.csv`, los 3 últimos (`datos.actualizacion.backups_a_conservar`),
-  ignorados por git. Deshacer: `cp data/precios_backup_<marca>.csv data/precios.csv` o `git checkout data/precios.csv`.
+  2 = fallo de la fuente. En los tres casos de fallo las series vigentes quedan intactas.
+- **Todo o nada entre archivos**: se escriben y validan todos los temporales, se respaldan las
+  series vigentes y solo entonces se reemplaza; si un reemplazo falla, se restaura lo ya cambiado.
+- **Respaldos**: `data/series/.backups/<marca>/`, los 3 últimos (`datos.actualizacion.backups_a_conservar`),
+  ignorados por git. Deshacer: `cp data/series/.backups/<marca>/*.csv data/series/` o `git checkout data/series`.
 - **Parámetros**: `config.yaml: datos.tiingo` y `datos.actualizacion`. Extender el histórico =
   cambiar `datos.tiingo.fecha_inicio` (la continuidad comparará solo la ventana solapada).
 
@@ -56,7 +60,7 @@ Los primeros días de cada mes, con el mes anterior ya cerrado:
 | `Tiingo rechazó la API key (HTTP 403)` | key ausente, mal copiada o revocada (Tiingo usa 403, no 401) | regenera el token en tiingo.com → Account → API |
 | `límite de peticiones (HTTP 429)` | cuota horaria o diaria agotada tras 4 intentos con espera exponencial | espera una hora |
 
-**GCP (opcional, hoy sin uso).** Las corridas remotas leen el CSV empaquetado en la imagen; no
+**GCP (opcional, hoy sin uso).** Las corridas remotas leen las series empaquetadas en la imagen; no
 actualizan datos. Si algún día se habilita, el secreto se crea sin que la key pase por la
 pantalla ni por el historial, y dev lo recibe al desplegar:
 
@@ -71,6 +75,34 @@ pantalla ni por el historial, y dev lo recibe al desplegar:
 automático de cada merge. En prod (Agent Engine) la variable se declararía en
 `apps/pipeline/.agent_engine_config.json`; no se ha hecho porque el disco del contenedor es de
 solo lectura y el CSV no podría reescribirse allí.
+
+## Universo: altas, capitalizaciones y prior (S7)
+
+El universo vigente vive en `data/universo.json` (diagnósticos + capitalizaciones CONGELADAS del
+prior de Black-Litterman, [ADR-013](adr/013-prior-de-equilibrio-cascada-con-procedencia-y-todo-o-nada.md));
+`config.yaml: portafolio.activos` es solo la semilla. Hasta que llegue el Director (S8), se
+gestiona con `make universo` (las caps van en US$ billones, 10^12):
+
+| Comando | Qué hace |
+|---|---|
+| `make universo` | diagnóstico: ventana común, activo más corto, qué stress aplica a quién, estado del prior |
+| `make universo ARGS="resolver AAPL"` | valida el ticker contra Tiingo y muestra su diagnóstico; no modifica nada |
+| `make universo ARGS="incorporar QQQ --cap 22 --metodologia 'cap del Nasdaq-100'"` | alta con cap del usuario (para ETFs: capitalización del subyacente, no AUM; AUM vale como proxy débil y queda anotado) |
+| `make universo ARGS="incorporar AAPL"` | alta automática si la fuente da la cap (en el plan gratuito de Tiingo, solo acciones del DOW 30) |
+| `make universo ARGS="incorporar QQQ --aceptar-neutral"` | alta sin cap degradando TODO el prior a equiponderado (el informe llevará la advertencia) |
+| `make universo ARGS="refrescar-cap BNS --cap 0.12 --metodologia '…'"` | ÚNICA vía para cambiar una cap congelada; sin `--cap`, la pide a la fuente |
+| `make universo ARGS="aceptar-neutral"` | confirma la degradación para un universo con caps pendientes |
+
+- **Sin cap y sin aceptar neutral**: el activo entra, pero Black-Litterman queda *no disponible*
+  (el informe y la herramienta dicen qué cap falta); HRP y mínima varianza siguen operativos.
+- **Todo o nada**: o todas las procedencias son `fuente`/`usuario`, o todas `neutral`. Degradar no
+  borra las caps ya congeladas: al llegar la que faltaba, vuelve el prior de mercado.
+- Cada cambio deja una línea en `data/universo_historial.jsonl` (acción, cap antes/después,
+  versión antes/después) y cambia `universe_version`: `make comparar` lo muestra como cambio de
+  INPUT, y las herramientas rechazan cualquier resultado sellado con la versión anterior.
+- El informe de cada corrida muestra SIEMPRE la tabla de retornos implícitos π con la procedencia
+  de cada peso, las restricciones de la sesión con su origen y las advertencias de historia corta.
+- Tras un alta: `git diff data/`, commit (`chore: alta de <TICKER>`) y PR, igual que con los precios.
 
 ## Desplegar
 

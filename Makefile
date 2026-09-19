@@ -21,7 +21,7 @@ COMA := ,
 # Un caso suelto: make eval EVALSET=tests/eval/market_analyst.evalset.json:ambigua_bns
 EVALSET ?= tests/eval/market_analyst.evalset.json
 
-.PHONY: install lint type test check update-prices run-local eval evalset sensibilidad comparar clean deploy-dev url-dev corrida-dev logs-dev deploy-prod corrida-prod
+.PHONY: install lint type test check universo update-prices run-local eval evalset sensibilidad comparar clean deploy-dev url-dev corrida-dev logs-dev deploy-prod corrida-prod
 
 install:        ## dependencias con uv
 	$(UV) sync
@@ -37,7 +37,10 @@ test:
 
 check: lint type test   ## puerta obligatoria antes de todo commit final
 
-update-prices:  ## paso 1 del ritual mensual: Tiingo → validar → data/precios.csv (ADR-011)
+universo:       ## Gestor de Datos: make universo [ARGS="incorporar QQQ --cap 22 --metodologia '…'"]
+	$(UV) run python scripts/universo.py $(if $(ARGS),$(ARGS),diagnosticar)
+
+update-prices:  ## paso 1 del ritual mensual: Tiingo → validar → data/series/ (ADR-011, S7)
 # SIMULAR=1 valida y resume sin escribir. ACEPTAR_DISCREPANCIAS=1 solo tras revisar TÚ un aborto
 # por continuidad. Necesita TIINGO_API_KEY en el entorno o en .env. Código 1 = abortado.
 	$(UV) run python scripts/update_prices.py $(if $(SIMULAR),--dry-run,) \

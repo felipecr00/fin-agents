@@ -143,7 +143,10 @@ def correr(config: Config, fecha: date | None, costo_bps: float | None) -> Valid
     activos = config.portafolio.activos
     precios = provider.precios(activos, hasta=fecha)
     fecha = fecha or precios.index[-1].date()
-    print(f"[1] Precios: {provider.ruta} — {len(precios)} cierres hasta {fecha}, activos {activos}")
+    print(
+        f"[1] Precios: {provider.directorio} — {len(precios)} cierres hasta {fecha}, "
+        f"activos {activos}"
+    )
 
     est = estimar(
         provider.retornos_log(activos, hasta=fecha),

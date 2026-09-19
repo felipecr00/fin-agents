@@ -38,7 +38,7 @@ pytest, ruff, mypy. GCP: Cloud Run (dev) → Vertex AI Agent Engine (prod).
 
 ## Referencia de calidad
 `tests/golden/test_black_litterman.py` codifica el ejercicio de referencia: con
-`data/precios.csv`, views {IBIT neutral 3% total, VOOG>VB +3%, BNS 10% total},
+`tests/fixtures/precios_referencia.csv` (fixture congelado), views {IBIT neutral 3% total, VOOG>VB +3%, BNS 10% total},
 delta=2.5, tau=0.05, rf=4%, límites 2%-70% → pesos ≈ VOOG 70%, BNS 7%, IBIT 2%, VB 21%
 (tolerancia ±2 p.p.). Si este test se rompe, el núcleo está mal: no lo "ajustes"
 para que pase.
