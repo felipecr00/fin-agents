@@ -18,6 +18,7 @@ from typing import Any
 
 import yaml
 from google.adk.agents.base_agent import BaseAgent
+from google.adk.agents.run_config import RunConfig
 from google.adk.events.event import Event
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
@@ -32,6 +33,10 @@ from investmentsys.evaluacion.informe import CasoEvaluado, CriterioEvaluado
 APP = "eval_director"
 USUARIO = "eval"
 PREPARACIONES = ("incorporar", "retirar")
+# Topes del arnés (no son parámetros financieros): un Director en bucle o una llamada colgada
+# hacen FALLAR el caso en vez de dejar la corrida esperando para siempre.
+MAX_LLAMADAS_LLM_POR_TURNO = 25
+LIMITE_POR_CASO_S = 300.0
 
 
 class _Modelo(BaseModel):
@@ -134,7 +139,10 @@ async def conversar(mundo: Mundo, mensajes: tuple[str, ...]) -> list[TurnoObserv
         eventos = [
             e
             async for e in runner.run_async(
-                user_id=USUARIO, session_id=sesion.id, new_message=contenido
+                user_id=USUARIO,
+                session_id=sesion.id,
+                new_message=contenido,
+                run_config=RunConfig(max_llm_calls=MAX_LLAMADAS_LLM_POR_TURNO),
             )
         ]
         turno = observar(mensaje, eventos, respaldo, mundo.director.name)

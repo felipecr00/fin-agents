@@ -298,3 +298,19 @@ def test_preparacion_desconocida_es_un_error_del_caso(config: Config, tmp_path: 
     )
     with pytest.raises(ValueError, match="preparación desconocida"):
         _correr(caso, {"director": []}, config, tmp_path)
+
+
+def test_un_director_en_bucle_agota_el_tope_de_llamadas_en_vez_de_colgar_el_eval(
+    config: Config, casos: Casos, tmp_path: Path
+) -> None:
+    """Visto en una corrida real (ADR-015): un caso que no termina no puede frenar a los demás."""
+    from google.adk.agents.invocation_context import LlmCallsLimitExceededError
+
+    from investmentsys.evaluacion.director import MAX_LLAMADAS_LLM_POR_TURNO
+
+    saludo = next(c for c in casos.casos if c.id == "saludo")
+    bucle = [Llamada("diagnosticar") for _ in range(MAX_LLAMADAS_LLM_POR_TURNO + 5)]
+    llm = LlmPorAgente(director=bucle)
+    with pytest.raises(LlmCallsLimitExceededError):
+        asyncio.run(correr_caso(saludo, lambda: mundo_director(tmp_path, config, llm)))
+    assert llm.pendientes() == {"director": 5}

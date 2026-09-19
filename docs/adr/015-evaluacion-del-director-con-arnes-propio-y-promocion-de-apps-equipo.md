@@ -122,8 +122,15 @@ turnos sobre el `Runner` real y verificar criterios— **sin generalizarlo a fra
 plugins, sin métricas configurables, sin usuario simulado, sin DSL de aserciones más allá de los
 criterios documentados en `tests/eval/casos_director.yaml` (que describe su propio formato). Si
 un caso nuevo no cabe en esos criterios, primero se discute si el caso es el correcto; ampliar
-el arnés es la última opción y pasa por este ADR. Hoy: ~200 líneas de arnés y ~230 de criterios
+el arnés es la última opción y pasa por este ADR. Hoy: ~210 líneas de arnés y ~250 de criterios
 puros.
+
+Única ampliación hecha tras la evidencia: **dos topes**. En la segunda corrida real un caso
+(`cambio_de_universo_a_mitad`) no terminó en más de 8 minutos y retuvo la corrida entera; aislado
+y con trazas por evento, el mismo caso terminó en 25 s con la trayectoria correcta, así que fue
+una llamada colgada o un bucle raro del modelo, no un defecto del caso. El arnés limita las
+llamadas al LLM por turno (`MAX_LLAMADAS_LLM_POR_TURNO`) y `make eval-director` el tiempo por
+caso (`LIMITE_POR_CASO_S`): un caso que los excede cuenta como FALLIDO y los demás siguen.
 
 ## Alternativas descartadas
 - **`adk eval` como en ADR-010**: sin aislamiento por caso, sin preparación del almacén y sin

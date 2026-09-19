@@ -184,6 +184,8 @@ Todo en local; nada de esto se despliega ni entra en CI salvo sus tests unitario
 |---|---|---|---|
 | `make eval` | los dos evalsets contra Gemini real: `eval-analista` (11 casos, `adk eval`) y `eval-director` (19 casos, arnés propio con un almacén aislado por caso, [ADR-015](adr/015-evaluacion-del-director-con-arnes-propio-y-promocion-de-apps-equipo.md)); código 1 si alguno falla ([ADR-010](adr/010-evaluacion-del-analista-con-metrica-determinista-en-adk-eval.md)) | sí | `runs/evals/<id>.md` y `apps/market_analyst/.adk/eval_history/` |
 | `make eval EVALSET=tests/eval/market_analyst.evalset.json:ambigua_bns` | un solo caso | sí | ídem |
+| `make eval-director CASOS="saludo degradar_a_neutral"` | solo esos casos del Director (sin `CASOS`, los 19); cada caso en un almacén aislado, sin tocar `data/` ni Tiingo; un caso que no termina en 5 min cuenta como fallido | sí | `runs/evals/director_<marca>/` (`resumen.md` y `conversaciones.md`) |
+| `uv run python scripts/demo_director.py` | sesión completa de demostración (A → B → altas → comité) en un almacén aislado | sí | `runs/demos/director_<marca>/` (transcripción y acta) |
 | `make evalset` | regenera el `.evalset.json` tras editar `tests/eval/casos_market_analyst.yaml` | no | `tests/eval/market_analyst.evalset.json` |
 | `make sensibilidad [RUN_STATE=runs/<id>/run_state.json]` | sensibilidad de la cartera a sus supuestos ([docs/sensibilidad.md](sensibilidad.md)) | no | `runs/sensibilidad/<fecha>_<hash>/` |
 | `make comparar A=<run_id> B=<run_id>` | diff estructurado entre dos `RunState` (locales o de `runs/remotas/`) | no | `runs/comparaciones/<a>__<b>.md` |

@@ -25,7 +25,12 @@ sys.path.insert(0, str(RAIZ_PROYECTO))  # el mundo de los casos vive en tests/al
 from tests.almacen import mundo_director
 
 from investmentsys.evaluacion.criterios_director import TurnoObservado
-from investmentsys.evaluacion.director import Caso, cargar_casos, correr_caso
+from investmentsys.evaluacion.director import (
+    LIMITE_POR_CASO_S,
+    Caso,
+    cargar_casos,
+    correr_caso,
+)
 from investmentsys.evaluacion.informe import CasoEvaluado, a_markdown
 
 CASOS = RAIZ_PROYECTO / "tests" / "eval" / "casos_director.yaml"
@@ -57,9 +62,12 @@ async def _correr(casos: list[Caso]) -> list[tuple[CasoEvaluado, str]]:
         async with semaforo:
             raiz = Path(tempfile.mkdtemp(prefix=f"eval_{caso.id}_"))
             try:
-                evaluado, turnos = await correr_caso(caso, lambda: mundo_director(raiz, config))
+                evaluado, turnos = await asyncio.wait_for(
+                    correr_caso(caso, lambda: mundo_director(raiz, config)), LIMITE_POR_CASO_S
+                )
             except Exception as exc:  # un caso que revienta es un caso fallido, no un aborto
                 sin_evaluar = CasoEvaluado(eval_id=caso.id, aprobado=False, nota=None, criterios=())
+                print(f"❌ {caso.id} (no terminó: {type(exc).__name__})", flush=True)
                 return sin_evaluar, f"## {caso.id}\n\nNo terminó: {type(exc).__name__}: {exc}\n"
             print(f"{'✅' if evaluado.aprobado else '❌'} {caso.id}", flush=True)
             return evaluado, _conversacion(caso, turnos)
