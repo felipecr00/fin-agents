@@ -230,8 +230,8 @@ VB?", "convoca al comité"). Ruteo correcto en los tres; las cifras citadas (0.7
 4. Al resumir el comité dijo: "No se han ingresado views subjetivas para esta corrida (se
    optimizará utilizando el prior de equilibrio de mercado...)". Falso: el Analista del comité
    emite las suyas. Mitigado: `solicitar` devuelve `que_hara_el_comite`.
-- Prueba manual del usuario en adk web (hito b): hecha; sus hallazgos textuales se añaden aquí
-  antes de mergear.
+- Prueba manual del usuario en adk web (hito b, 2026-09-19): hecha; no observó ruteos
+  incorrectos. Los cuatro desvíos de arriba son los únicos registrados en este PR.
 
 ### Pendiente (PR 2 y huecos detectados)
 - PR 2 completo: evalset (12 casos + los desvíos de arriba), `apps/equipo` como app por
