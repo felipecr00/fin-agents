@@ -1,0 +1,13 @@
+{
+  "criteria": {
+    "views_cumplen_criterios": 1.0
+  },
+  "custom_metrics": {
+    "views_cumplen_criterios": {
+      "code_config": {
+        "name": "investmentsys.evaluacion.metrica_adk.views_cumplen_criterios"
+      },
+      "description": "Fracción de criterios verificables que cumple el MarketViews del caso (ADR-010). 1.0 = todos."
+    }
+  }
+}

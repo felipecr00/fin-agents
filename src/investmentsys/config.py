@@ -136,6 +136,8 @@ class AgentesConfig(_Seccion):
     temperatura: float = Field(ge=0.0, le=2.0)
     max_intentos_analista: int = Field(ge=1)
     horizonte_views_meses: int = Field(gt=0)
+    max_views: int = Field(ge=1)
+    confianza_max_sin_conviccion: Fraccion
     ubicacion_vertex: str | None = Field(
         default=None, description="Ubicación del modelo en Vertex AI; None = la del entorno."
     )
@@ -147,6 +149,13 @@ class AgentesConfig(_Seccion):
         if v.endswith("-latest"):
             raise ValueError("usa un id de modelo fijo, no un alias -latest (ADR-005)")
         return v
+
+
+class EvaluacionConfig(_Seccion):
+    """Criterios universales de los evalsets del analista (ADR-010)."""
+
+    q_absoluta_max: float = Field(gt=0.0, description="|q_anual| máximo de una view absoluta.")
+    q_relativa_max: float = Field(gt=0.0, description="|q_anual| máximo de una view relativa.")
 
 
 class CorridasConfig(_Seccion):
@@ -166,6 +175,7 @@ class Config(_Seccion):
     datos: DatosConfig
     validacion: ValidacionConfig
     agentes: AgentesConfig
+    evaluacion: EvaluacionConfig
     corridas: CorridasConfig
     reproducibilidad: ReproducibilidadConfig
 

@@ -13,8 +13,10 @@ VERSION_SECRETO ?= 1
 AGENT_ENGINE_ID ?=
 NOMBRE_PROD ?= fin-agents-prod
 STAGING_PROD := build/prod
+# Un caso suelto: make eval EVALSET=tests/eval/market_analyst.evalset.json:ambigua_bns
+EVALSET ?= tests/eval/market_analyst.evalset.json
 
-.PHONY: install lint type test check run-local eval clean deploy-dev url-dev corrida-dev logs-dev deploy-prod corrida-prod
+.PHONY: install lint type test check run-local eval evalset clean deploy-dev url-dev corrida-dev logs-dev deploy-prod corrida-prod
 
 install:        ## dependencias con uv
 	$(UV) sync
@@ -33,8 +35,15 @@ check: lint type test   ## puerta obligatoria antes de todo commit final
 run-local:      ## UI de desarrollo de ADK (apps/: market_analyst; credenciales en .env o el entorno)
 	$(UV) run adk web apps
 
-eval:           ## evalsets de agentes (S5)
-	$(UV) run adk eval apps tests/eval
+eval:           ## evalset del analista contra Gemini REAL (ADR-010); código 1 si algún caso falla
+# `adk eval` siempre termina en 0 e imprime una tabla muy ancha: el resumen por caso y el código
+# de salida los pone scripts/resumen_eval.py a partir del resultado que ADK deja en disco.
+	$(UV) run --group eval adk eval apps/market_analyst $(EVALSET) \
+		--config_file_path tests/eval/test_config.json
+	$(UV) run --group eval python scripts/resumen_eval.py apps/market_analyst
+
+evalset:        ## regenera el evalset de ADK desde tests/eval/casos_market_analyst.yaml
+	$(UV) run python scripts/generar_evalset.py
 
 deploy-dev:     ## Cloud Run (dev): Cloud Build construye el Dockerfile y despliega, en un solo comando
 	@test -n "$(PROYECTO)" -a -n "$(REGION)" || { echo "Faltan PROYECTO y REGION"; exit 1; }

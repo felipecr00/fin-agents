@@ -57,6 +57,10 @@ agentes:
   # Intentos del analista hasta que su salida valide contra MarketViews (incluye el primero).
   max_intentos_analista: 3
   horizonte_views_meses: 12
+  # Tope de views por corrida y confianza máxima cuando la evidencia es ambigua o contradictoria.
+  # Los lee la instrucción del analista y los verifican los evalsets (ADR-010).
+  max_views: 4
+  confianza_max_sin_conviccion: 0.5
   # ADR-008: en Vertex AI con proyecto (prod) el modelo se pide al endpoint global; la región
   # del despliegue (us-central1) no sirve los Gemini 3.x. Con API key no se usa.
   ubicacion_vertex: global
@@ -69,6 +73,13 @@ agentes:
     espera_maxima_s: 60.0
     base_exponencial: 2.0
     codigos_http: [408, 429, 500, 502, 503, 504]
+
+evaluacion:
+  # Criterios universales de los evalsets del analista (ADR-010). Una view absoluta es un
+  # retorno TOTAL a 12 meses; una relativa, un diferencial. Por encima de estos topes la view
+  # no es "sobria", diga lo que diga la noticia.
+  q_absoluta_max: 0.30
+  q_relativa_max: 0.20
 
 corridas:
   # RunState y reporte de cada corrida: <directorio>/<run_id>/ (relativo a la raíz del repo).

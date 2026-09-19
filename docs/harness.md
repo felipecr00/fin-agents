@@ -194,8 +194,9 @@ check: lint type test   ## puerta obligatoria antes de todo commit final
 run-local:      ## UI de desarrollo de ADK
 	uv run adk web src/investmentsys
 
-eval:           ## evalsets de agentes (S5)
-	uv run adk eval src/investmentsys tests/eval
+eval:           ## evalset del analista contra Gemini real (S5, ADR-010); ver el Makefile
+	uv run --group eval adk eval apps/market_analyst tests/eval/market_analyst.evalset.json \
+		--config_file_path tests/eval/test_config.json
 
 clean:
 	rm -rf .pytest_cache .mypy_cache .ruff_cache
