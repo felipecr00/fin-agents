@@ -12,8 +12,11 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
+from pydantic import ValidationError
+
 from investmentsys.config import OptimizacionConfig
 from investmentsys.contracts import (
+    LimiteActivo,
     LimiteGlobal,
     OrigenRestriccion,
     PortfolioConstraints,
@@ -38,6 +41,42 @@ def sesion_por_defecto(universo: Universe, optimizacion: OptimizacionConfig) -> 
         peso_min=LimiteGlobal(valor=optimizacion.peso_min, origen=origen),
         peso_max=LimiteGlobal(valor=optimizacion.peso_max, origen=origen),
     )
+
+
+def sesion_ajustada(
+    vigente: SessionConstraints,
+    peso_min: float | None = None,
+    peso_max: float | None = None,
+    limites_por_activo: Mapping[str, tuple[float, float]] | None = None,
+) -> SessionConstraints:
+    """``vigente`` con los ajustes del usuario (origen ``ajuste_usuario``); lo demás no cambia.
+
+    La factibilidad la decide el contrato ``SessionConstraints`` (piso×N ≤ 100 %, los techos
+    alcanzan el 100 %, tickers del universo): aquí solo se le da un mensaje sin ruido de pydantic.
+    """
+    usuario = OrigenRestriccion.AJUSTE_USUARIO
+    propios = dict(vigente.limites_por_activo)
+    for activo, (minimo, maximo) in (limites_por_activo or {}).items():
+        propios[activo] = LimiteActivo.model_construct(minimo=minimo, maximo=maximo, origen=usuario)
+    try:
+        return SessionConstraints.model_validate(
+            {
+                "universe_version": vigente.universe_version,
+                "activos": vigente.activos,
+                "peso_min": vigente.peso_min
+                if peso_min is None
+                else {"valor": peso_min, "origen": usuario},
+                "peso_max": vigente.peso_max
+                if peso_max is None
+                else {"valor": peso_max, "origen": usuario},
+                "limites_por_activo": {a: dict(limite) for a, limite in propios.items()},
+            }
+        )
+    except ValidationError as exc:
+        motivos = "; ".join(str(e["msg"]).removeprefix("Value error, ") for e in exc.errors())
+        raise RestriccionesInfactiblesError(
+            f"restricciones rechazadas: {motivos}. Las vigentes no cambian"
+        ) from exc
 
 
 def restricciones_de_iteracion(

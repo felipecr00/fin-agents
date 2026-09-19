@@ -10,6 +10,7 @@ from investmentsys.portfolio.cartera_usuario import (
 from investmentsys.portfolio.factibilidad import (
     RestriccionesInfactiblesError,
     restricciones_de_iteracion,
+    sesion_ajustada,
     sesion_por_defecto,
 )
 from investmentsys.portfolio.hrp import optimizar_hrp, pesos_hrp
@@ -33,6 +34,7 @@ __all__ = [
     "pesos_hrp",
     "resolver_prior",
     "restricciones_de_iteracion",
+    "sesion_ajustada",
     "sesion_por_defecto",
     "validar_pesos_usuario",
 ]

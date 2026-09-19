@@ -218,6 +218,23 @@ class GestorDatos:
         self._persistir(nuevo, actual, "refrescar_cap", ticker, antes, despues)
         return nuevo
 
+    def retirar(self, ticker: str) -> Universe:
+        """Saca ``ticker`` del universo. Su serie se queda en disco como caché: no se borra."""
+        ticker = ticker.strip().upper()
+        actual = self.universo()
+        if ticker not in actual.activos:
+            raise GestorError(f"{ticker} no está en el universo {list(actual.activos)}")
+        if len(actual.activos) == 1:
+            raise GestorError(f"{ticker} es el único activo: un universo no puede quedar vacío")
+        antes = actual.diagnostico(ticker)
+        nuevo = self._armar(
+            tuple(d for d in actual.diagnosticos if d.ticker != ticker),
+            {a: o for a, o in actual.origenes.items() if a != ticker},
+            actual.prior_neutral_aceptado,
+        )
+        self._persistir(nuevo, actual, "retirar", ticker, antes, None)
+        return nuevo
+
     def aceptar_prior_neutral(self) -> Universe:
         """Confirmación explícita de degradar TODO el prior a equal-weight (ADR-013)."""
         actual = self.universo()

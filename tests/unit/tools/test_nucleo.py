@@ -348,6 +348,64 @@ class TestDiagnosticarCartera:
         assert tools.diagnosticar_cartera not in tools.funciones()
 
 
+class TestAjustarRestricciones:
+    def test_el_ajuste_del_usuario_queda_en_la_sesion_con_su_origen(
+        self, tools: NucleoTools, ctx: ToolContext
+    ) -> None:
+        salida = tools.ajustar_restricciones(
+            ctx, peso_max=0.8, limites_por_activo={"IBIT": [0.0, 0.1]}
+        )
+        assert salida["status"] == "success"
+        assert salida["peso_max"] == {"valor": 0.8, "origen": "ajuste_usuario"}
+        assert salida["peso_min"]["origen"] == "default_config"  # lo no pedido no cambia
+        assert salida["limites_vigentes"]["IBIT"] == [0.0, 0.1]
+        assert salida["limites_vigentes"]["VOOG"] == [0.02, 0.8]
+        sesion = ctx.state[CLAVE_RESTRICCIONES_SESION]
+        assert sesion["universe_version"] == universo_referencia().version
+        assert sesion["limites_por_activo"]["IBIT"]["origen"] == "ajuste_usuario"
+
+    def test_el_constructor_usa_las_restricciones_ajustadas(
+        self, tools: NucleoTools, ctx: ToolContext, views_golden: MarketViews
+    ) -> None:
+        assert tools.ajustar_restricciones(ctx, peso_max=0.4)["status"] == "success"
+        _hasta_candidatos(tools, ctx, views_golden)
+        ronda = CandidatePortfolios.model_validate(ctx.state[CLAVE_CANDIDATOS][-1])
+        assert max(ronda.portafolio_recomendado.pesos.values()) <= 0.4 + 1e-9
+
+    @pytest.mark.parametrize(
+        ("args", "fragmento"),
+        [
+            ({"peso_min": 0.3}, "los pisos suman 120.00% > 100 %"),
+            ({"peso_max": 0.2}, "los techos suman 80.00% < 100 %"),
+            ({"peso_min": 0.5, "peso_max": 0.4}, "peso_min mayor que peso_max"),
+            ({"limites_por_activo": {"NVDA": [0.0, 0.5]}}, "tickers fuera del universo"),
+            ({"limites_por_activo": {"IBIT": [0.3, 0.1]}}, "límite inferior mayor"),
+            ({"limites_por_activo": {"IBIT": [0.1]}}, "[mínimo, máximo]"),
+            ({}, "nada que ajustar"),
+        ],
+    )
+    def test_pedido_infactible_es_un_error_claro_y_las_vigentes_no_cambian(
+        self, tools: NucleoTools, ctx: ToolContext, args: dict[str, object], fragmento: str
+    ) -> None:
+        assert tools.ajustar_restricciones(ctx, peso_max=0.6)["status"] == "success"
+        previa = dict(ctx.state[CLAVE_RESTRICCIONES_SESION])
+        salida = tools.ajustar_restricciones(ctx, **args)  # type: ignore[arg-type]
+        assert salida["status"] == "error" and fragmento in salida["mensaje"]
+        assert "validation error" not in salida["mensaje"]  # sin ruido de pydantic
+        assert ctx.state[CLAVE_RESTRICCIONES_SESION] == previa
+
+    def test_restablecer_vuelve_a_las_de_config(
+        self, tools: NucleoTools, config: Config, ctx: ToolContext
+    ) -> None:
+        tools.ajustar_restricciones(ctx, peso_max=0.5)
+        salida = tools.ajustar_restricciones(ctx, restablecer=True)
+        assert salida["peso_max"] == {
+            "valor": config.optimizacion.peso_max,
+            "origen": "default_config",
+        }
+        assert salida["limites_propios"] == {}
+
+
 def test_por_function_tool_los_cambios_viajan_en_el_state_delta(
     tools: NucleoTools, ctx: ToolContext
 ) -> None:

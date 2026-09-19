@@ -17,11 +17,13 @@ from tests.almacen import sembrar_gestor, universo_referencia
 TOOLS_DEL_BRIEF = {
     "resolver",
     "incorporar",
+    "retirar",
     "aceptar_prior_neutral",
     "refrescar_cap",
     "diagnosticar",
     "estimar_mercado",
     "construir_candidatos",
+    "ajustar_restricciones",
     "diagnosticar_cartera",
     "convocar_comite",
     "market_analyst",  # el sub-agente, expuesto como herramienta (mode="single_turn")

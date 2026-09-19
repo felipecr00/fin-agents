@@ -46,6 +46,7 @@ from investmentsys.portfolio import (
     optimizar_min_varianza,
     resolver_prior,
     restricciones_de_iteracion,
+    sesion_ajustada,
     sesion_por_defecto,
     validar_pesos_usuario,
 )
@@ -310,6 +311,75 @@ class NucleoTools:
             "razones_rechazo": list(reporte.razones_rechazo),
             "sugerencias": list(reporte.sugerencias),
             "advertencias": list(reporte.advertencias),
+        }
+
+    # ---------------------------------------------------- Restricciones de sesión
+    def ajustar_restricciones(
+        self,
+        tool_context: ToolContext,
+        peso_min: float | None = None,
+        peso_max: float | None = None,
+        limites_por_activo: dict[str, list[float]] | None = None,
+        restablecer: bool = False,
+    ) -> dict[str, Any]:
+        """Cambia las restricciones de la SESIÓN (piso y techo generales, o por activo).
+
+        Solo con lo que pidió el usuario: lo que no se indique queda como está. Si el pedido
+        es infactible (p. ej. los pisos suman más de 100 %), devuelve el error y las vigentes
+        no cambian. Los cortos no se pueden habilitar. Las carteras ya construidas no se
+        recalculan solas: vuelve a construirlas.
+
+        Args:
+            peso_min: piso general por activo, como fracción (0.05 = 5 %).
+            peso_max: techo general por activo, como fracción.
+            limites_por_activo: excepciones [mínimo, máximo] por activo, p. ej.
+                {"IBIT": [0.0, 0.10]}.
+            restablecer: true para volver a las de config.yaml (ignora los demás argumentos).
+        """
+        try:
+            return self._ajustar_restricciones(
+                tool_context.state, peso_min, peso_max, limites_por_activo or {}, restablecer
+            )
+        except ERRORES_DE_DOMINIO as exc:
+            return _error(exc)
+
+    def _ajustar_restricciones(
+        self,
+        estado: Estado,
+        peso_min: float | None,
+        peso_max: float | None,
+        limites_por_activo: dict[str, list[float]],
+        restablecer: bool,
+    ) -> dict[str, Any]:
+        universo = self._universo(estado)
+        if restablecer:
+            nueva = sesion_por_defecto(universo, self.config.optimizacion)
+        else:
+            if peso_min is None and peso_max is None and not limites_por_activo:
+                raise ValueError("nada que ajustar: indica peso_min, peso_max o limites_por_activo")
+            mal_formados = sorted(a for a, par in limites_por_activo.items() if len(par) != 2)
+            if mal_formados:
+                raise ValueError(
+                    f"limites_por_activo: se espera [mínimo, máximo] en {mal_formados}"
+                )
+            nueva = sesion_ajustada(
+                self._sesion(estado, universo),
+                peso_min,
+                peso_max,
+                {a: (par[0], par[1]) for a, par in limites_por_activo.items()},
+            )
+        estado[CLAVE_RESTRICCIONES_SESION] = volcar(nueva)
+        return {
+            "status": "success",
+            "universe_version": universo.version,
+            "peso_min": {"valor": nueva.peso_min.valor, "origen": nueva.peso_min.origen.value},
+            "peso_max": {"valor": nueva.peso_max.valor, "origen": nueva.peso_max.origen.value},
+            "limites_vigentes": {a: list(nueva.limites(a)) for a in nueva.activos},
+            "limites_propios": {
+                a: {"limites": [x.minimo, x.maximo], "origen": x.origen.value}
+                for a, x in nueva.limites_por_activo.items()
+            },
+            "aviso": "las carteras construidas antes de este cambio no lo reflejan",
         }
 
     # ------------------------------------------------------- Riesgo, exploratorio

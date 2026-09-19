@@ -424,19 +424,28 @@ class TestAltaConversacional:
         qqq = alta["activos"][-1]
         assert qqq["prior"]["procedencia"] == "usuario" and qqq["prior"]["cap_usd_billones"] == 22.0
 
-    def test_degradar_a_neutral_es_una_llamada_aparte_y_afecta_a_todo_el_universo(
+    def test_degradar_a_neutral_exige_un_turno_del_usuario_tras_la_advertencia(
         self, config: Config, gestor: GestorDatos, tmp_path: Path
     ) -> None:
+        """Lo que hizo Gemini en la línea base (ADR-015): elegir "c" y degradar en el acto."""
         llm = LlmPorAgente(
             director=[
                 Llamada("incorporar", ticker="QQQ"),
-                "QQQ entró con el prior pendiente. Degradar a neutral afecta a TODOS. ¿Confirmas?",
+                Llamada("aceptar_prior_neutral"),
+                _responder_con(
+                    "aceptar_prior_neutral", lambda s: f"Antes de degradar: {s['motivo']}"
+                ),
                 Llamada("aceptar_prior_neutral"),
                 "Prior neutral aceptado para todo el universo.",
             ]
         )
-        primero, segundo = _charlar(config, gestor, llm, tmp_path, ["agrega QQQ", "sí, neutral"])
-        assert primero.respuestas("incorporar")[0]["estado_prior"] == "pendiente"
+        primero, segundo = _charlar(
+            config, gestor, llm, tmp_path, ["agrega QQQ, opción c: neutral", "sí, confirmo"]
+        )
+        (rechazo,) = primero.respuestas("aceptar_prior_neutral")
+        assert rechazo["status"] == "rechazado" and "turno posterior" in rechazo["motivo"]
+        assert "todo-o-nada" in primero.textos("director")[-1]
+        assert primero.estado[CLAVE_UNIVERSO]["prior_neutral_aceptado"] is False
         assert segundo.respuestas("aceptar_prior_neutral")[0]["estado_prior"] == "neutral"
         assert gestor.universo().prior_neutral_aceptado
 
