@@ -15,6 +15,32 @@ financiera.
 | Acceso | solo autenticado (identity token, `roles/run.invoker`) | IAM de Vertex AI (access token, `roles/aiplatform.user`) |
 | Se despliega | en cada merge a `main` | a mano: Actions → deploy → Run workflow → `prod` |
 
+## Dos puntos de entrada (S8)
+
+| | `equipo` — el Director de Análisis | `pipeline` — modo comando |
+|---|---|---|
+| Qué es | conversación: entiende qué necesitas y convoca al especialista o al comité | la corrida formal completa, de una vez, sin conversar |
+| Cuándo | el día a día: consultas ("¿correlación VOOG-VB?"), mesa de trabajo, evaluar TU cartera, altas y bajas del universo, ajustar restricciones, y el comité cuando lo decidas | el ritual mensual, corridas remotas con replay (`make corrida-dev/prod`), scripts y CI |
+| Cómo | `make run-local` → http://localhost:8000 → app **equipo** | `uv run python scripts/run_pipeline.py`, o app **pipeline** en `adk web` |
+| Qué produce | respuestas EXPLORATORIAS (`validado: false` en el dato) y, solo vía comité con tu confirmación, una RECOMENDACIÓN con acta | siempre un acta en `runs/<run_id>/` |
+| Acta | `aprobacion` registra el resumen que viste y tu confirmación ([ADR-014](adr/014-gate-del-comite-en-dos-fases-y-resultados-exploratorios.md)) | `aprobacion: null` |
+
+Custodias del Director que viven en las herramientas, no en el prompt:
+- **Comité**: `convocar_comite` en dos fases. Primero te presenta el resumen (universo,
+  procedencias del prior, restricciones, material); corre solo si confirmas en tu mensaje
+  SIGUIENTE. Un cambio de universo o de restricciones entre medias invalida la solicitud.
+- **Prior neutral**: degradar TODO el prior exige ver la advertencia todo-o-nada y confirmar en
+  un turno posterior ([ADR-015](adr/015-evaluacion-del-director-con-arnes-propio-y-promocion-de-apps-equipo.md)).
+- **Obsolescencia**: tras un alta, una baja o un cambio de cap, el Director lista qué resultados
+  dejaron de valer; las herramientas los rechazan por `universe_version`.
+
+**En la nube.** dev (Cloud Run) sirve todas las apps: `equipo` está disponible allí desde el
+merge de S8. El almacén `data/` del contenedor es de solo lectura: consultar, diagnosticar y
+convocar al comité funcionan; altas, bajas y cambios de cap responden "este despliegue no admite
+cambios de universo: hazlos en local y redespliega". prod (Agent Engine) despliega UNA app y
+sigue siendo `pipeline`; promover el Director es `make deploy-prod APP=equipo …` y es una
+decisión de operación que se toma tras usarlo en dev, no un paso de este sprint.
+
 ## Ritual mensual
 
 Los primeros días de cada mes, con el mes anterior ya cerrado:
@@ -80,8 +106,9 @@ solo lectura y el CSV no podría reescribirse allí.
 
 El universo vigente vive en `data/universo.json` (diagnósticos + capitalizaciones CONGELADAS del
 prior de Black-Litterman, [ADR-013](adr/013-prior-de-equilibrio-cascada-con-procedencia-y-todo-o-nada.md));
-`config.yaml: portafolio.activos` es solo la semilla. Hasta que llegue el Director (S8), se
-gestiona con `make universo` (las caps van en US$ billones, 10^12):
+`config.yaml: portafolio.activos` es solo la semilla. Se gestiona conversando con el Director
+("agrega NVDA", "saca BNS": ver abajo) o, sin LLM, con `make universo` (las caps van en US$
+billones, 10^12):
 
 | Comando | Qué hace |
 |---|---|
@@ -92,6 +119,17 @@ gestiona con `make universo` (las caps van en US$ billones, 10^12):
 | `make universo ARGS="incorporar QQQ --aceptar-neutral"` | alta sin cap degradando TODO el prior a equiponderado (el informe llevará la advertencia) |
 | `make universo ARGS="refrescar-cap BNS --cap 0.12 --metodologia '…'"` | ÚNICA vía para cambiar una cap congelada; sin `--cap`, la pide a la fuente |
 | `make universo ARGS="aceptar-neutral"` | confirma la degradación para un universo con caps pendientes |
+| `make universo ARGS="retirar BNS"` | saca el activo del universo; su serie se conserva en `data/series/` como caché |
+
+**Alta conversacional (Director).** "agrega X" → el Director llama a `resolver` y te presenta el
+diagnóstico (desde cuándo hay datos, qué limita eso). Si la fuente trae la capitalización, la
+incorpora al confirmar e informa el valor congelado y su fecha. Si no (ETFs), hace UNA pregunta
+con tres opciones, en este orden: (a) aportas la cap del subyacente o del índice [recomendada];
+(b) el AUM como proxy débil; (c) degradar TODO el universo a prior neutral, con la advertencia
+todo-o-nada. **Alta con el prior pendiente**: el activo entra, Black-Litterman y el comité quedan
+bloqueados ("prior sin resolver: falta la cap de X") hasta que aportes la cap (`refrescar_cap`)
+o confirmes neutral; HRP, mínima varianza, las estimaciones y el diagnóstico de tu cartera
+siguen disponibles. El Director nunca propone el valor de una capitalización.
 
 - **Sin cap y sin aceptar neutral**: el activo entra, pero Black-Litterman queda *no disponible*
   (el informe y la herramienta dicen qué cap falta); HRP y mínima varianza siguen operativos.
@@ -144,7 +182,7 @@ Todo en local; nada de esto se despliega ni entra en CI salvo sus tests unitario
 
 | Comando | Qué hace | LLM | Salida |
 |---|---|---|---|
-| `make eval` | 11 casos del analista contra Gemini real; código 1 si alguno falla ([ADR-010](adr/010-evaluacion-del-analista-con-metrica-determinista-en-adk-eval.md)) | sí | `runs/evals/<id>.md` y `apps/market_analyst/.adk/eval_history/` |
+| `make eval` | los dos evalsets contra Gemini real: `eval-analista` (11 casos, `adk eval`) y `eval-director` (19 casos, arnés propio con un almacén aislado por caso, [ADR-015](adr/015-evaluacion-del-director-con-arnes-propio-y-promocion-de-apps-equipo.md)); código 1 si alguno falla ([ADR-010](adr/010-evaluacion-del-analista-con-metrica-determinista-en-adk-eval.md)) | sí | `runs/evals/<id>.md` y `apps/market_analyst/.adk/eval_history/` |
 | `make eval EVALSET=tests/eval/market_analyst.evalset.json:ambigua_bns` | un solo caso | sí | ídem |
 | `make evalset` | regenera el `.evalset.json` tras editar `tests/eval/casos_market_analyst.yaml` | no | `tests/eval/market_analyst.evalset.json` |
 | `make sensibilidad [RUN_STATE=runs/<id>/run_state.json]` | sensibilidad de la cartera a sus supuestos ([docs/sensibilidad.md](sensibilidad.md)) | no | `runs/sensibilidad/<fecha>_<hash>/` |

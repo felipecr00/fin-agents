@@ -12,7 +12,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from pathlib import Path
-from typing import TypeVar
+from typing import Any, TypeVar
 
 import numpy as np
 import pandas as pd
@@ -154,3 +154,29 @@ def sellar(contrato: M, universo: Universe) -> M:
     return type(contrato).model_validate(
         {**contrato.model_dump(), "universe_version": universo.version}
     )
+
+
+# ---------------------------------------------------------------- mundo de un caso de eval
+TICKERS_DE_EVAL = ("AAPL", "QQQ")  # AAPL: acción con cap en la fuente; QQQ: ETF sin cap
+
+
+def fuente_de_eval() -> FuenteFalsa:
+    fin = panel_referencia().index[-1]
+    return FuenteFalsa(
+        series={
+            "AAPL": serie_sintetica("AAPL", 80, fin),
+            "QQQ": serie_sintetica("QQQ", 80, fin, semilla=11),
+        },
+        caps={"AAPL": cap_fuente()},
+    )
+
+
+def mundo_director(raiz: Path, config: Config, modelo: Any = None) -> Any:
+    """Almacén aislado + Director para UN caso del evalset (ADR-015). Sin red ni ``data/``."""
+    from investmentsys.agents.director import INSTRUCCION, crear_director
+    from investmentsys.evaluacion.director import Mundo
+
+    gestor = sembrar_gestor(raiz / "almacen", config, fuente_de_eval())
+    runs = raiz / "runs"
+    director = crear_director(config, gestor.provider(), gestor, modelo, runs)
+    return Mundo(director=director, gestor=gestor, runs=runs, respaldo_fijo=(INSTRUCCION,))

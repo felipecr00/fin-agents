@@ -2,7 +2,7 @@
 
 - Fecha: 2026-09-19
 - Sprint: S8 (PR 2 de 2)
-- Estado: propuesta (pendiente de aprobación del usuario)
+- Estado: aceptada (2026-09-19, con las condiciones y decisiones registradas abajo)
 
 ## Contexto
 El PR 2 pide un evalset del Director de 12+ casos, "`make eval` y `make check` verdes (evals
@@ -74,7 +74,9 @@ Hallazgos:
 3. **Criterios** (puros, `evaluacion/criterios_director.py`): tools obligatorias / prohibidas /
    únicas permitidas por turno; argumentos exigidos o prohibidos (p. ej. `incorporar` sin
    `prior_cap`); `status` de la respuesta de una tool; grupos de texto "alguno de" y texto
-   prohibido (sin distinguir mayúsculas ni acentos); **cifras respaldadas** (todo número del
+   prohibido (sin distinguir mayúsculas ni acentos); `no_ofrece` (un término solo puede
+   aparecer en una línea que lo niega: añadido tras la primera corrida real, donde "no podemos…
+   monitoreo en tiempo real" disparó un texto prohibido); **cifras respaldadas** (todo número del
    texto aparece idéntico en una salida de tool del caso — el detector del PR 1, promovido a
    `src/`); y efectos verificados en el mundo: universo cambió / no cambió, acta creada / no.
    Umbral 1.0 por caso, como ADR-010.
@@ -82,28 +84,46 @@ Hallazgos:
    falla si cualquiera falla; `make eval-analista` y `make eval-director` por separado. Resumen
    por caso en `runs/evals/`, igual que hoy.
 5. **Promoción**: `make run-local` y `docs/operacion.md` presentan `equipo` como entrada y
-   `pipeline` como "modo comando" del ritual mensual; `make deploy-prod APP=equipo|pipeline`
-   (por defecto `equipo`); `corrida-dev`/`corrida-prod` siguen apuntando a `pipeline` (replay,
+   `pipeline` como "modo comando" del ritual mensual; `make deploy-prod APP=pipeline|equipo`
+   (el valor por defecto sigue siendo `pipeline` hasta que el usuario decida la promoción); `corrida-dev`/`corrida-prod` siguen apuntando a `pipeline` (replay,
    ADR-009). Los errores de escritura del Gestor pasan a ser errores de dominio con mensaje
    ("este despliegue no admite cambios de universo: hazlos en local y redespliega"). **No se
    ejecuta ningún despliegue en este PR** salvo que el usuario lo pida.
 
-### Decisiones que dependen del usuario
-- **A. Custodia de `aceptar_prior_neutral`** (hallazgo 2). Recomendado: la misma custodia por
-  turnos de ADR-014 — la herramienta rechaza degradar en el turno en que el activo entró o en
-  que se presentó la advertencia; exige un turno posterior del usuario. Es el endurecimiento
-  "con evidencia" que el spec permite. Alternativa: reforzar solo el cableado y dejar que el
-  eval lo vigile (más barato, sin garantía).
-- **B. Herramientas que faltan** (hallazgo 3). Recomendado: construir las dos en este PR,
-  porque el spec fuente aprobado las anuncia y el Director ya las ofrece: `retirar` en el
-  Gestor (universo nuevo sin el activo, rastro en el historial, la serie se queda en disco) y
-  `ajustar_restricciones` (una `SessionConstraints` con origen `ajuste_usuario`; la
-  factibilidad ya la valida el contrato). Alternativa: dejarlas fuera y fijar por eval que el
-  Director diga "no puedo" y no las ofrezca.
-- **C. Saludo.** Recomendado: "hola no dispara nada" = ninguna tool que calcule, cambie el
-  universo o toque el comité; `diagnosticar` (solo lectura) se admite, porque el spec fuente
-  ordena presentar el universo al inicio. Alternativa estricta: cero tools, y el universo se
-  presenta solo con los tickers que ya trae la instrucción.
+### Decisiones del usuario (2026-09-19)
+- **A. Custodia de `aceptar_prior_neutral`: por turnos, en la herramienta.** La primera llamada
+  NO degrada: registra la advertencia y responde "degradar el prior requiere confirmación
+  explícita en un turno posterior; presenta la advertencia todo-o-nada y espera", con los
+  activos afectados. Solo una llamada en una invocación POSTERIOR, sobre el mismo universo,
+  ejecuta; si el universo cambió entre medias, se advierte de nuevo. Verificado: en la
+  re-corrida del caso, Gemini volvió a llamar a `incorporar` + `aceptar_prior_neutral` en el
+  turno de "la opción c"; la herramienta lo rechazó, el Director presentó la advertencia y
+  degradó solo tras el "sí, confirmo" del turno siguiente.
+- **B. Se construyen las dos herramientas.** `GestorDatos.retirar` (universo nuevo sin el
+  activo, rastro en el historial, declara los resultados obsoletos; la serie se conserva en
+  disco como caché) y `ajustar_restricciones` (una `SessionConstraints` con origen
+  `ajuste_usuario`; un pedido infactible devuelve el error de los chequeos existentes del
+  contrato, sin ruido de pydantic, y las vigentes no cambian). Un caso del evalset
+  (`capacidades`) fija que el Director no ofrece capacidades sin herramienta.
+- **C. Saludo.** "No dispara nada" = ninguna tool que calcule, cambie el universo o toque el
+  comité; `diagnosticar` (solo lectura) se admite. El cableado aclara que presentar el
+  universo aplica al INICIO de la sesión, no a cada consulta. La instrucción aprobada
+  (`instruccion.py`) no se tocó: la aclaración es de uso de herramientas y vive en el cableado.
+- **Errores de escritura del Gestor** como errores de dominio: aprobado.
+- **Sin despliegues manuales en este PR.** La promoción a prod la decide el usuario tras
+  operar dev; `make deploy-prod` queda parametrizado (`APP=`) pero su valor por defecto NO
+  cambia.
+
+### Costo aceptado
+Un arnés propio es código que hay que mantener y que ADK no actualizará por nosotros. Se acepta
+con una condición que es parte de esta decisión: **el arnés se mantiene delgado** —
+`evaluacion/director.py` hace tres cosas y nada más: preparar el almacén del caso, correr los
+turnos sobre el `Runner` real y verificar criterios— **sin generalizarlo a framework**: sin
+plugins, sin métricas configurables, sin usuario simulado, sin DSL de aserciones más allá de los
+criterios documentados en `tests/eval/casos_director.yaml` (que describe su propio formato). Si
+un caso nuevo no cabe en esos criterios, primero se discute si el caso es el correcto; ampliar
+el arnés es la última opción y pasa por este ADR. Hoy: ~200 líneas de arnés y ~230 de criterios
+puros.
 
 ## Alternativas descartadas
 - **`adk eval` como en ADR-010**: sin aislamiento por caso, sin preparación del almacén y sin

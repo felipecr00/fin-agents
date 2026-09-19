@@ -20,8 +20,9 @@ STAGING_PROD := build/prod
 COMA := ,
 # Un caso suelto: make eval EVALSET=tests/eval/market_analyst.evalset.json:ambigua_bns
 EVALSET ?= tests/eval/market_analyst.evalset.json
+APP ?= pipeline
 
-.PHONY: install lint type test check universo update-prices run-local eval evalset sensibilidad comparar clean deploy-dev url-dev corrida-dev logs-dev deploy-prod corrida-prod
+.PHONY: install lint type test check universo update-prices run-local eval eval-analista eval-director evalset sensibilidad comparar clean deploy-dev url-dev corrida-dev logs-dev deploy-prod corrida-prod
 
 install:        ## dependencias con uv
 	$(UV) sync
@@ -46,15 +47,21 @@ update-prices:  ## paso 1 del ritual mensual: Tiingo → validar → data/series
 	$(UV) run python scripts/update_prices.py $(if $(SIMULAR),--dry-run,) \
 		$(if $(ACEPTAR_DISCREPANCIAS),--aceptar-discrepancias,)
 
-run-local:      ## UI de desarrollo de ADK (apps/: equipo, pipeline, market_analyst; credenciales en .env)
+run-local:      ## UI de ADK: elige `equipo` (el Director, entrada por defecto); `pipeline` = modo comando
 	$(UV) run adk web apps
 
-eval:           ## evalset del analista contra Gemini REAL (ADR-010); código 1 si algún caso falla
+eval: eval-analista eval-director  ## los dos evalsets contra Gemini REAL; código 1 si algún caso falla
+
+eval-analista:  ## evalset del analista con `adk eval` y métrica propia (ADR-010)
 # `adk eval` siempre termina en 0 e imprime una tabla muy ancha: el resumen por caso y el código
 # de salida los pone scripts/resumen_eval.py a partir del resultado que ADK deja en disco.
 	$(UV) run --group eval adk eval apps/market_analyst $(EVALSET) \
 		--config_file_path tests/eval/test_config.json
 	$(UV) run --group eval python scripts/resumen_eval.py apps/market_analyst
+
+eval-director:  ## evalset del Director con el arnés propio, un mundo aislado por caso (ADR-015)
+# CASOS="saludo degradar_a_neutral" corre solo esos. Casos: tests/eval/casos_director.yaml
+	$(UV) run python scripts/eval_director.py $(CASOS)
 
 evalset:        ## regenera el evalset de ADK desde tests/eval/casos_market_analyst.yaml
 	$(UV) run python scripts/generar_evalset.py
@@ -89,19 +96,22 @@ logs-dev:
 
 deploy-prod:    ## Agent Engine (prod): mismas versiones que uv.lock, sesiones administradas
 # El grupo `deploy` trae el SDK de Vertex que usa `adk deploy`; también fija su versión en prod.
+# Agent Engine despliega UNA app: APP=pipeline (modo comando, por defecto) o APP=equipo (el
+# Director). Promover `equipo` a prod es una decisión de operación (docs/operacion.md).
 	@test -n "$(PROYECTO)" || { echo "Falta PROYECTO"; exit 1; }
-	rm -rf $(STAGING_PROD) && mkdir -p $(STAGING_PROD)/pipeline
-	cp apps/pipeline/__init__.py apps/pipeline/agent.py apps/pipeline/.agent_engine_config.json \
-		$(STAGING_PROD)/pipeline/
+	@test -f apps/$(APP)/.agent_engine_config.json || { echo "APP=$(APP) no es desplegable"; exit 1; }
+	rm -rf $(STAGING_PROD) && mkdir -p $(STAGING_PROD)/$(APP)
+	cp apps/$(APP)/__init__.py apps/$(APP)/agent.py apps/$(APP)/.agent_engine_config.json \
+		$(STAGING_PROD)/$(APP)/
 	$(UV) export --locked --no-dev --group deploy --no-emit-project --no-hashes -q \
-		-o $(STAGING_PROD)/pipeline/requirements.txt
+		-o $(STAGING_PROD)/$(APP)/requirements.txt
 	$(UV) run --group deploy adk deploy agent_engine \
 		--project $(PROYECTO) --region $(REGION) \
 		--display_name $(NOMBRE_PROD) \
 		$(if $(AGENT_ENGINE_ID),--agent_engine_id $(AGENT_ENGINE_ID),) \
 		--extra_packages src/investmentsys --extra_packages config.yaml --extra_packages data \
 		--temp_folder $(CURDIR)/$(STAGING_PROD)/tmp \
-		$(STAGING_PROD)/pipeline
+		$(STAGING_PROD)/$(APP)
 
 corrida-prod:   ## corrida real contra Agent Engine (sesiones administradas) + replay local
 	@test -n "$(AGENT_ENGINE_ID)" || { echo "Falta AGENT_ENGINE_ID"; exit 1; }

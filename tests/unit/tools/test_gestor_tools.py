@@ -17,8 +17,8 @@ from investmentsys.tools import (
 )
 from investmentsys.tools.estado import CLAVE_SOLICITUD_NEUTRAL
 from investmentsys.tools.gestor import GestorTools
-from tests.unit.tools.conftest import Turnos
 from tests.almacen import FuenteFalsa, cap_fuente, panel_referencia, sembrar_gestor, serie_sintetica
+from tests.unit.tools.conftest import Turnos
 
 FIN = panel_referencia().index[-1]
 
