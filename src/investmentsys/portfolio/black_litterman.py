@@ -24,7 +24,9 @@ from investmentsys.config import MetodoOmega, OptimizacionConfig, PriorEquilibri
 from investmentsys.contracts import (
     CandidatePortfolio,
     MarketViews,
+    MetodoPrior,
     PortfolioConstraints,
+    PriorSnapshot,
     QuantEstimates,
     TecnicaOptimizacion,
     TipoView,
@@ -47,7 +49,7 @@ def optimizar_black_litterman(
     views: MarketViews,
     restricciones: PortfolioConstraints,
     optimizacion: OptimizacionConfig,
-    prior: PriorEquilibrioConfig,
+    prior: PriorEquilibrioConfig | PriorSnapshot,
 ) -> CandidatePortfolio:
     """Cartera óptima según Black-Litterman con límites por activo (ver módulo)."""
     verificar_universo(estimates, restricciones)
@@ -78,7 +80,7 @@ def optimizar_black_litterman(
             "tasa_libre_riesgo": rf,
             "metodo_omega": str(optimizacion.metodo_omega),
             "metodo_covarianza": str(optimizacion.metodo_covarianza),
-            "prior": prior.metodo,
+            "prior": str(prior.metodo),
             "n_views": len(views.views),
         },
     )
@@ -98,12 +100,14 @@ def posterior_black_litterman(
     estimates: QuantEstimates,
     views: MarketViews,
     optimizacion: OptimizacionConfig,
-    prior: PriorEquilibrioConfig,
+    prior: PriorEquilibrioConfig | PriorSnapshot,
 ) -> PosteriorBL:
     delta, tau = optimizacion.aversion_riesgo_delta, optimizacion.tau
     activos = estimates.activos
     sigma = matriz(estimates, optimizacion.metodo_covarianza)
-    pi = prior_equilibrio(sigma, pesos_mercado(prior, activos), delta)
+    if isinstance(prior, PriorSnapshot) and prior.universe_version != estimates.universe_version:
+        raise ValueError("prior y estimaciones sellados con versiones distintas del universo")
+    pi = _pi(prior, sigma, activos, delta)
     p = np.array(views.matriz_p(), dtype=float).reshape(len(views.views), len(activos))
     q = vector_q_en_exceso(views, optimizacion.tasa_libre_riesgo)
     omega = matriz_omega(p, sigma, tau, optimizacion.metodo_omega)
@@ -120,6 +124,25 @@ def pesos_optimos(
         lambda w: np.asarray(-(mu - delta * sigma_bl @ w), dtype=float),
         restricciones,
     )
+
+
+def _pi(
+    prior: PriorEquilibrioConfig | PriorSnapshot,
+    sigma: Matriz,
+    activos: tuple[str, ...],
+    delta: float,
+) -> Vector:
+    """π del prior: calculado desde las caps de config (núcleo directo, golden) o tomado tal
+    cual del ``PriorSnapshot`` resuelto por la cascada (ADR-013): lo que se reporta es lo usado."""
+    if isinstance(prior, PriorEquilibrioConfig):
+        return prior_equilibrio(sigma, pesos_mercado(prior, activos), delta)
+    if prior.tickers != activos:
+        raise ValueError("el prior no corresponde al universo de las estimaciones")
+    if prior.delta != delta:
+        raise ValueError("el prior se resolvió con otro delta")
+    if prior.metodo is MetodoPrior.SOLO_VIEWS:
+        return np.zeros(len(activos))
+    return np.array([a.pi_exceso for a in prior.activos], dtype=float)
 
 
 def pesos_mercado(prior: PriorEquilibrioConfig, activos: tuple[str, ...]) -> Vector:

@@ -25,7 +25,7 @@ from investmentsys.contracts import (
     ValidationReport,
     View,
 )
-from investmentsys.data import CSVPriceProvider
+from investmentsys.data import provider_de_config
 from investmentsys.portfolio import optimizar_black_litterman
 from investmentsys.quant import estimar
 from investmentsys.risk import validar
@@ -139,7 +139,7 @@ def imprimir_veredicto(r: ValidationReport) -> None:
 
 
 def correr(config: Config, fecha: date | None, costo_bps: float | None) -> ValidationReport:
-    provider = CSVPriceProvider(config.datos.ruta_csv)
+    provider = provider_de_config(config)
     activos = config.portafolio.activos
     precios = provider.precios(activos, hasta=fecha)
     fecha = fecha or precios.index[-1].date()

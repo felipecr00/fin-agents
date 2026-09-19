@@ -2,7 +2,7 @@
 
 from investmentsys.agents.market_analyst import crear_market_analyst
 from investmentsys.config import cargar_config
-from investmentsys.data import CSVPriceProvider
+from investmentsys.data import provider_de_config
 
 _config = cargar_config()
-root_agent = crear_market_analyst(_config, CSVPriceProvider(_config.datos.ruta_csv))
+root_agent = crear_market_analyst(_config, provider_de_config(_config))

@@ -13,3 +13,5 @@ build/
 # Respaldos locales de make update-prices (el historial del CSV ya está en git)
 data/precios_backup_*.csv
 data/.*.tmp
+data/series/.backups/
+data/series/.*.tmp

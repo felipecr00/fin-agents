@@ -25,7 +25,7 @@ from typing import Any
 
 from investmentsys.config import RAIZ_PROYECTO, cargar_config
 from investmentsys.contracts import RunState
-from investmentsys.data import CSVPriceProvider
+from investmentsys.data import provider_de_config
 from investmentsys.orchestrator import CLAVE_RUN_STATE, ResultadoReplay, persistir, repetir
 
 APP = "pipeline"
@@ -132,7 +132,7 @@ def main() -> None:
     print(f"corrida remota {corrida.run_id} ({corrida.etapa.value}) guardada en {carpeta}")
     print(f"semilla {corrida.semilla}, config_hash {corrida.config_hash[:12]}…")
     print(f"pesos: {dict(final.pesos) if final else 'sin cartera aprobada'}")
-    resultado = repetir(corrida, config, CSVPriceProvider(config.datos.ruta_csv))
+    resultado = repetir(corrida, config, provider_de_config(config))
     informar(resultado, config.reproducibilidad.tolerancia_replay)
     if not resultado.reproduce:
         sys.exit("La corrida remota NO reproduce la local.")

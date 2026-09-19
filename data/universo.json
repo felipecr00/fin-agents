@@ -1,0 +1,79 @@
+{
+  "diagnosticos": [
+    {
+      "ticker": "VOOG",
+      "nombre": "VANGUARD S&P 500 GROWTH INDEX FUND ETF SHARES",
+      "moneda": "USD",
+      "fecha_inicio_datos": "2021-09-30",
+      "fecha_fin_datos": "2026-08-31",
+      "frecuencia": "mensual",
+      "huecos": [],
+      "meses_disponibles": 60,
+      "advertencias": [],
+      "apto": true,
+      "prior_cap": 28.0,
+      "prior_provenance": "usuario",
+      "prior_fuente_detalle": "tamaño económico del subyacente, no AUM (large growth US, BNS, BTC, small caps US)",
+      "prior_as_of": "2026-09-16"
+    },
+    {
+      "ticker": "BNS",
+      "nombre": "Bank Of Nova Scotia",
+      "moneda": "USD",
+      "fecha_inicio_datos": "2021-09-30",
+      "fecha_fin_datos": "2026-08-31",
+      "frecuencia": "mensual",
+      "huecos": [],
+      "meses_disponibles": 60,
+      "advertencias": [],
+      "apto": true,
+      "prior_cap": 0.116,
+      "prior_provenance": "usuario",
+      "prior_fuente_detalle": "tamaño económico del subyacente, no AUM (large growth US, BNS, BTC, small caps US)",
+      "prior_as_of": "2026-09-16"
+    },
+    {
+      "ticker": "IBIT",
+      "nombre": "iShares Bitcoin Trust",
+      "moneda": "USD",
+      "fecha_inicio_datos": "2024-01-31",
+      "fecha_fin_datos": "2026-08-31",
+      "frecuencia": "mensual",
+      "huecos": [],
+      "meses_disponibles": 32,
+      "advertencias": [
+        "historia corta: 32 meses (desde 2024-01) frente a la ventana de 60; covarianza y backtest solo lo ven desde esa fecha",
+        "ventana corta: stress tasas_2022 no aplica (datos desde 2024-01)"
+      ],
+      "apto": true,
+      "prior_cap": 1.9,
+      "prior_provenance": "usuario",
+      "prior_fuente_detalle": "tamaño económico del subyacente, no AUM (large growth US, BNS, BTC, small caps US)",
+      "prior_as_of": "2026-09-16"
+    },
+    {
+      "ticker": "VB",
+      "nombre": "Vanguard Morningstar Small-Cap ETF",
+      "moneda": "USD",
+      "fecha_inicio_datos": "2021-09-30",
+      "fecha_fin_datos": "2026-08-31",
+      "frecuencia": "mensual",
+      "huecos": [],
+      "meses_disponibles": 60,
+      "advertencias": [],
+      "apto": true,
+      "prior_cap": 2.5,
+      "prior_provenance": "usuario",
+      "prior_fuente_detalle": "tamaño económico del subyacente, no AUM (large growth US, BNS, BTC, small caps US)",
+      "prior_as_of": "2026-09-16"
+    }
+  ],
+  "origenes": {
+    "VOOG": "config_inicial",
+    "BNS": "config_inicial",
+    "IBIT": "config_inicial",
+    "VB": "config_inicial"
+  },
+  "prior_neutral_aceptado": false,
+  "version": "2951db7cff0c8e22e4fed1ffe5e439e252fbab19ff7cc362b8cd10a97db37e95"
+}

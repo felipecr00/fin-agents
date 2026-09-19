@@ -69,7 +69,12 @@ class OptimizacionConfig(_Seccion):
 
 class PriorEquilibrioConfig(_Seccion):
     metodo: Literal["capitalizacion"]
+    degradacion: Literal["neutral", "solo_views"] = Field(
+        description="Prior cuando falta alguna cap y el usuario aceptó degradar (ADR-013)."
+    )
     capitalizacion_usd_billones: dict[Ticker, float] = Field(min_length=1)
+    as_of: date = Field(description="Fecha de las caps pinneadas del universo de referencia.")
+    metodologia: str = Field(min_length=1)
 
     @model_validator(mode="after")
     def _positivas(self) -> PriorEquilibrioConfig:
@@ -112,10 +117,21 @@ class ActualizacionConfig(_Seccion):
     directorio_resumenes: Path
 
 
+class GestorDatosConfig(_Seccion):
+    """Gestor de Datos (``data_manager``): universo vigente y reglas de aptitud."""
+
+    ruta_universo: Path
+    ruta_historial: Path
+    bolsas_usd: tuple[str, ...] = Field(min_length=1)
+    meses_minimos_apto: int = Field(ge=3)
+    usd_por_unidad_cap: float = Field(gt=0.0)
+
+
 class DatosConfig(_Seccion):
-    proveedor: Literal["csv"]
-    ruta_csv: Path
+    proveedor: Literal["series"]
+    directorio_series: Path
     ventana_covarianza_meses: int = Field(gt=0)
+    gestor: GestorDatosConfig
     tiingo: TiingoConfig
     actualizacion: ActualizacionConfig
 
