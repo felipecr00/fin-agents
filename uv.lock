@@ -1435,6 +1435,7 @@ version = "0.0.1"
 source = { editable = "." }
 dependencies = [
     { name = "google-adk" },
+    { name = "httpx" },
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
     { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "pandas" },
@@ -1464,6 +1465,7 @@ eval = [
 [package.metadata]
 requires-dist = [
     { name = "google-adk", specifier = "==2.9.1" },
+    { name = "httpx", specifier = ">=0.28" },
     { name = "numpy", specifier = ">=2.0" },
     { name = "pandas", specifier = ">=2.2.3" },
     { name = "pydantic", specifier = ">=2.12,<3" },

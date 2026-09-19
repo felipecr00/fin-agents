@@ -83,10 +83,41 @@ class EstimacionConfig(_Seccion):
     nivel_confianza: float = Field(gt=0.0, lt=1.0)
 
 
+class ReintentosHttpConfig(_Seccion):
+    """Reintentos con espera exponencial ante 429 y timeouts de una fuente de datos."""
+
+    intentos: int = Field(ge=1, description="Incluye la petición original; 1 = sin reintentos.")
+    espera_inicial_s: float = Field(gt=0.0)
+    espera_maxima_s: float = Field(gt=0.0)
+    base_exponencial: float = Field(ge=1.0)
+
+
+class TiingoConfig(_Seccion):
+    """Fuente de precios mensuales ajustados (ADR-011). La API key va por entorno."""
+
+    url_base: str = Field(pattern=r"^https://")
+    fecha_inicio: date
+    timeout_s: float = Field(gt=0.0)
+    reintentos: ReintentosHttpConfig
+
+
+class ActualizacionConfig(_Seccion):
+    """Validaciones y escritura de ``make update-prices`` (``data.actualizacion``)."""
+
+    tolerancia_continuidad: float = Field(gt=0.0, description="0.005 = 0,5 p.p. de retorno.")
+    retorno_mensual_max: float = Field(gt=0.0)
+    activos_inicio_tardio: tuple[Ticker, ...] = ()
+    backups_a_conservar: int = Field(ge=1)
+    decimales_csv: int = Field(ge=2)
+    directorio_resumenes: Path
+
+
 class DatosConfig(_Seccion):
     proveedor: Literal["csv"]
     ruta_csv: Path
     ventana_covarianza_meses: int = Field(gt=0)
+    tiingo: TiingoConfig
+    actualizacion: ActualizacionConfig
 
 
 class EscenarioStressConfig(_Seccion):
@@ -227,6 +258,10 @@ class Config(_Seccion):
         fuera = sorted(set(self.regimen.activos_referencia) - set(self.portafolio.activos))
         if fuera:
             raise ValueError(f"regimen.activos_referencia fuera del universo: {fuera}")
+        tardios = self.datos.actualizacion.activos_inicio_tardio
+        fuera = sorted(set(tardios) - set(self.portafolio.activos))
+        if fuera:
+            raise ValueError(f"actualizacion.activos_inicio_tardio fuera del universo: {fuera}")
         return self
 
 
