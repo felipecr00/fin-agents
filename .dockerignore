@@ -11,3 +11,4 @@
 **/*.pyc
 **/.env
 **/.adk/
+data/precios_backup_*.csv

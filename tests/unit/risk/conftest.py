@@ -11,7 +11,7 @@ import pytest
 from investmentsys.config import Config, cargar_config
 from investmentsys.contracts import CandidatePortfolio, MetricasExAnte, TecnicaOptimizacion
 from investmentsys.data import CSVPriceProvider
-from tests.conftest import ACTIVOS, FECHA
+from tests.conftest import ACTIVOS, CSV_REFERENCIA, FECHA
 
 PESOS_REFERENCIA = {"VOOG": 0.70, "BNS": 0.07, "IBIT": 0.02, "VB": 0.21}
 
@@ -23,12 +23,12 @@ def config() -> Config:
 
 @pytest.fixture(scope="module")
 def provider(config: Config) -> CSVPriceProvider:
-    return CSVPriceProvider(config.datos.ruta_csv)
+    return CSVPriceProvider(CSV_REFERENCIA)
 
 
 @pytest.fixture(scope="module")
 def precios_reales(provider: CSVPriceProvider) -> pd.DataFrame:
-    """Los 61 cierres mensuales de data/precios.csv hasta la fecha de decisión."""
+    """Los 61 cierres mensuales del fixture congelado hasta la fecha de decisión."""
     return provider.precios(ACTIVOS, hasta=FECHA)
 
 
