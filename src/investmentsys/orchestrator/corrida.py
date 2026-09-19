@@ -28,6 +28,7 @@ CLAVE_NOTAS = "notas_corrida"
 CLAVE_NARRATIVA = "reporte_narrativa"
 CLAVE_REPORTE = "reporte_markdown"
 CLAVE_DIRECTORIO = "directorio_corrida"
+CLAVE_APROBACION = "aprobacion_comite"  # ADR-014: la pone convocar_comite, nunca un LLM
 CLAVE_RUN_STATE = "run_state_json"  # ADR-009: el RunState final viaja también en la sesión
 
 ARCHIVO_RUN_STATE = "run_state.json"
@@ -56,6 +57,7 @@ def armar_run_state(
             "universo": estado.get(CLAVE_UNIVERSO),
             "restricciones_sesion": estado.get(CLAVE_RESTRICCIONES_SESION),
             "prior": estado.get(CLAVE_PRIOR),
+            "aprobacion": estado.get(CLAVE_APROBACION),
             "etapa": etapa,
             "restricciones": estado.get(CLAVE_RESTRICCIONES),
             "market_views": estado.get(CLAVE_MARKET_VIEWS),

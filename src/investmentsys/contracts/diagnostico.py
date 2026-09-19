@@ -9,7 +9,7 @@ en el texto que redacte un agente.
 from __future__ import annotations
 
 from datetime import date
-from typing import Literal
+from typing import Final, Literal
 
 from pydantic import Field, model_validator
 
@@ -23,7 +23,7 @@ from investmentsys.contracts.validation import (
     ValidationReport,
 )
 
-ETIQUETA_DIAGNOSTICO = "diagnostico"
+ETIQUETA_DIAGNOSTICO: Final = "diagnostico"
 
 
 class DiagnosticoCartera(ContractBase):

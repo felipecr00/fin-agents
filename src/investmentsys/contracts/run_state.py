@@ -12,6 +12,7 @@ from typing import Any
 
 from pydantic import Field, field_validator, model_validator
 
+from investmentsys.contracts.comite import AprobacionComite
 from investmentsys.contracts.common import (
     DISCLAIMER,
     ContractBase,
@@ -62,6 +63,13 @@ class RunState(ContractBase):
         description=(
             "Prior de equilibrio efectivo: w_mkt, procedencia por activo y tabla π (ADR-013). "
             "None = aún no se construyó, o Black-Litterman no estuvo disponible."
+        ),
+    )
+    aprobacion: AprobacionComite | None = Field(
+        default=None,
+        description=(
+            "Resumen presentado al usuario y su confirmación, cuando la corrida la convocó el "
+            "Director (ADR-014). None = corrida en modo comando (apps/pipeline, scripts)."
         ),
     )
     etapa: EtapaCorrida = EtapaCorrida.INICIADA
@@ -118,6 +126,15 @@ class RunState(ContractBase):
                     f"{nombre}: obsoleto, sellado con el universo {sello[:12]}… y la corrida "
                     f"usa {version[:12]}…"
                 )
+        if self.aprobacion is not None:
+            resumen = self.aprobacion.resumen
+            if resumen.universe_version != version:
+                raise ValueError(
+                    f"aprobacion: el usuario aprobó el universo {resumen.universe_version[:12]}… "
+                    f"y la corrida usa {version[:12]}…"
+                )
+            if resumen.restricciones != self.restricciones_sesion:
+                raise ValueError("aprobacion: las restricciones aprobadas no son las de la corrida")
         if self.prior is not None and self.prior.tickers != self.activos:
             raise ValueError("prior: activos u orden distintos a los de la corrida")
         for i, ronda in enumerate(self.candidatos):

@@ -33,9 +33,7 @@ class CarteraInvalidaError(ValueError):
     """Los pesos del usuario no describen una cartera evaluable sobre el universo vigente."""
 
 
-def validar_pesos_usuario(
-    pesos: Mapping[str, float], activos: tuple[str, ...]
-) -> dict[str, float]:
+def validar_pesos_usuario(pesos: Mapping[str, float], activos: tuple[str, ...]) -> dict[str, float]:
     """Pesos completos sobre ``activos`` (los omitidos valen 0), o ``CarteraInvalidaError``."""
     if not pesos:
         raise CarteraInvalidaError("cartera vacía: indica el peso de al menos un activo")
@@ -51,9 +49,7 @@ def validar_pesos_usuario(
         raise CarteraInvalidaError(f"pesos no numéricos: {no_finitos}")
     cortos = {a: p for a, p in normalizados.items() if p < 0.0}
     if cortos:
-        raise CarteraInvalidaError(
-            f"pesos negativos (posiciones cortas, no soportadas): {cortos}"
-        )
+        raise CarteraInvalidaError(f"pesos negativos (posiciones cortas, no soportadas): {cortos}")
     suma = sum(normalizados.values())
     if abs(suma - 1.0) > TOLERANCIA_NUMERICA:
         raise CarteraInvalidaError(

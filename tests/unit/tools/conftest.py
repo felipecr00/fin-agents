@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 
 import pytest
 from google.adk.agents import LlmAgent
@@ -27,17 +28,34 @@ def tools(config: Config) -> NucleoTools:
     return NucleoTools(config, CSVPriceProvider(CSV_REFERENCIA))
 
 
+Turnos = Callable[[str], ToolContext]
+
+
 @pytest.fixture
-def ctx() -> ToolContext:
-    """Contexto nuevo por test; el agente es de relleno y nunca llama a un modelo."""
+def turnos() -> Turnos:
+    """``turnos("inv-1")``: un ``ToolContext`` por invocación, todos sobre la MISMA sesión.
+
+    Cada mensaje del usuario es una invocación de ADK; el agente es de relleno y nunca llama a
+    un modelo.
+    """
     servicio = InMemorySessionService()
     # El universo es estado de la SESIÓN (lo pone `iniciar` o, en S8, el Director), no del tool.
     inicial = {CLAVE_UNIVERSO: universo_referencia().model_dump(mode="json")}
     sesion = asyncio.run(servicio.create_session(app_name="tests", user_id="tests", state=inicial))
-    invocacion = InvocationContext(
-        session_service=servicio,
-        invocation_id="inv-tests",
-        agent=LlmAgent(name="relleno"),
-        session=sesion,
-    )
-    return ToolContext(invocacion)
+
+    def turno(invocation_id: str) -> ToolContext:
+        invocacion = InvocationContext(
+            session_service=servicio,
+            invocation_id=invocation_id,
+            agent=LlmAgent(name="relleno"),
+            session=sesion,
+        )
+        return ToolContext(invocacion)
+
+    return turno
+
+
+@pytest.fixture
+def ctx(turnos: Turnos) -> ToolContext:
+    """Contexto nuevo por test, de una sola invocación."""
+    return turnos("inv-tests")

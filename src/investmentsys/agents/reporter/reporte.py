@@ -116,6 +116,36 @@ def _seccion_universo(corrida: RunState) -> list[str]:
     return [*lineas, ""]
 
 
+def _seccion_aprobacion(corrida: RunState) -> list[str]:
+    """Qué aprobó el usuario antes de correr (ADR-014); ausente en el modo comando."""
+    a = corrida.aprobacion
+    if a is None:
+        return []
+    r = a.resumen
+    procedencias = ", ".join(f"{t} ({p.value})" for t, p in r.procedencias_prior.items())
+    n_views = len(r.views_de_partida.views) if r.views_de_partida else 0
+    material = "sí (citado, sin verificar)" if r.material_usuario else "no"
+    lineas = [
+        "## Aprobación del usuario",
+        "",
+        f"El Director presentó el resumen de esta corrida el {a.solicitado_en.isoformat()} y el "
+        f"usuario lo confirmó el {a.confirmado_en.isoformat()}, en un turno posterior. Aprobó:",
+        "",
+        f"- Universo `{r.universe_version[:12]}`: {', '.join(r.activos)}.",
+        f"- Prior {r.estado_prior.value}: {procedencias}.",
+        f"- Restricciones: piso {_pct(r.restricciones.peso_min.valor)}, techo "
+        f"{_pct(r.restricciones.peso_max.valor)}"
+        + (
+            f"; límites propios en {', '.join(r.restricciones.limites_por_activo)}."
+            if r.restricciones.limites_por_activo
+            else "."
+        ),
+        f"- Views de partida: {n_views}; material aportado por el usuario: {material}.",
+        "",
+    ]
+    return lineas
+
+
 def _seccion_prior(corrida: RunState) -> list[str]:
     """SIEMPRE presente (ADR-013): la tabla π con la procedencia de cada peso, o por qué no hay."""
     lineas = ["## Prior de equilibrio (Black-Litterman)", ""]
@@ -248,6 +278,7 @@ def renderizar(corrida: RunState, narrativa: str, modelo: str, notas: tuple[str,
             *(f"| {a} | {_pct(final.pesos[a])} |" for a in corrida.activos),
             "",
         ]
+    lineas += _seccion_aprobacion(corrida)
     lineas += _seccion_universo(corrida)
     lineas += _seccion_prior(corrida)
     if corrida.market_views:

@@ -46,8 +46,7 @@ def leer_corrida(texto: str, referencia: str = "acta") -> RunState:
     crudo = json.loads(texto)
     if isinstance(crudo, dict) and not any(c in crudo for c in CAMPOS_DESDE_S7):
         raise EsquemaAnteriorError(
-            f"{referencia}: RunState de esquema anterior a S7, use el tag {TAG_PRE_S7} para "
-            "leerlo"
+            f"{referencia}: RunState de esquema anterior a S7, use el tag {TAG_PRE_S7} para leerlo"
         )
     return RunState.model_validate(crudo)
 
