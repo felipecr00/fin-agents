@@ -59,6 +59,17 @@ GUIONES: dict[str, dict[str, list[Any]]] = {
             ),
         ]
     },
+    "que_tenemos": {
+        "director": [
+            Llamada("estimar_mercado"),
+            "Resultado exploratorio del Estadístico: la correlación es alta.",
+            Llamada("consultar_mesa_trabajo"),
+            "Esto es lo que hay sobre la mesa.",
+        ]
+    },
+    "quien_esta_en_la_sala": {
+        "director": [Llamada("consultar_mesa_trabajo", vista="sala"), "Este es el equipo."]
+    },
     "cartera_del_usuario": {
         "director": [
             Llamada("diagnosticar_cartera", pesos=PESOS),
@@ -168,6 +179,16 @@ GUIONES: dict[str, dict[str, list[Any]]] = {
 
 # Conducta mala concreta → criterio que debe detectarla.
 MALOS: dict[str, tuple[dict[str, list[Any]], str]] = {
+    "que_tenemos": (  # describe la mesa de memoria, sin consultarla
+        {
+            "director": [
+                Llamada("estimar_mercado"),
+                "Exploratorio, del Estadístico.",
+                "Tenemos el universo y una estimación vigente del Estadístico.",
+            ]
+        },
+        "turno2.tools_obligatorias",
+    ),
     "saludo": (
         {"director": [Llamada("estimar_mercado"), "Hola, ya estimé VOOG. ¿Seguimos?"]},
         "turno1.tools_permitidas",

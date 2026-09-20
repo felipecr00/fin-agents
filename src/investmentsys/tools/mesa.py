@@ -48,27 +48,10 @@ from investmentsys.tools.estado import (
     leer_lista,
     volcar,
 )
+from investmentsys.tools.ficha import ATIENDE, CLAVE_ANEXO, PREFIJO_NO_VALIDADO
 from investmentsys.tools.gestor import ERRORES_DEL_GESTOR, adoptar_universo
 
 NOMBRE_TOOL = "consultar_mesa_trabajo"
-
-# Qué silla atiende cada herramienta o sub-agente del equipo. Fuente única de la atribución:
-# una herramienta sin silla no entra a la sala (``componer_sala`` falla al construir el equipo).
-ATIENDE: Mapping[str, Especialista] = {
-    NOMBRE_TOOL: Especialista.DIRECTOR,
-    "resolver": Especialista.GESTOR_DATOS,
-    "incorporar": Especialista.GESTOR_DATOS,
-    "retirar": Especialista.GESTOR_DATOS,
-    "aceptar_prior_neutral": Especialista.GESTOR_DATOS,
-    "refrescar_cap": Especialista.GESTOR_DATOS,
-    "diagnosticar": Especialista.GESTOR_DATOS,
-    "market_analyst": Especialista.ANALISTA,
-    "estimar_mercado": Especialista.ESTADISTICO,
-    "construir_candidatos": Especialista.CONSTRUCTOR,
-    "ajustar_restricciones": Especialista.CONSTRUCTOR,
-    "diagnosticar_cartera": Especialista.ESCEPTICO,
-    "convocar_comite": Especialista.COMITE,
-}
 
 REHACER = {
     CategoriaPizarra.VISTAS: "vuelve a pedirlas al analista",
@@ -85,11 +68,17 @@ NOTA_EXPLORATORIO = (
     "Vistas, estimaciones, carteras y diagnósticos de la mesa son EXPLORATORIOS: no pasaron "
     "por el comité. Lo obsoleto no se puede usar: las herramientas lo rechazan."
 )
-COMO_PRESENTAR = (
-    "Muestra `tabla` tal cual (es el inventario de la sesión; no la resumas ni le añadas "
-    "filas). Si preguntan quién está en la sala, muestra `tabla_sala` tal cual. Declara uno "
-    "por uno los `resultados_obsoletos`, si los hay."
+AVISO_OBSOLETOS = (
+    "**Atención: {n} elemento(s) obsoleto(s).** Rehazlos antes de construir carteras o de "
+    "convocar al comité."
 )
+COMO_PRESENTAR = (
+    "La tabla de la {vista} (y solo esa) se anexa SOLA al final de tu respuesta: no la copies "
+    "ni la reconstruyas; coméntala en una o dos frases y declara uno por uno los "
+    "`resultados_obsoletos`, si los hay."
+)
+VISTA_MESA = "mesa"
+VISTA_SALA = "sala"
 
 
 class SalaIncompletaError(ValueError):
@@ -187,7 +176,7 @@ def _diagnostico(d: DiagnosticoCartera) -> str:
     )
 
 
-def _restricciones(s: SessionConstraints) -> str:
+def describir_restricciones(s: SessionConstraints) -> str:
     general = (
         f"peso por activo entre {_limite(s.peso_min.valor)} "
         f"({ORIGEN_DEL_LIMITE[s.peso_min.origen]}) y {_limite(s.peso_max.valor)} "
@@ -274,7 +263,7 @@ def construir_mesa(
     items.append(
         sellado(
             CategoriaPizarra.RESTRICCION,
-            _restricciones(sesion),
+            describir_restricciones(sesion),
             Especialista.CONSTRUCTOR,
             sesion.universe_version,
         )
@@ -299,11 +288,15 @@ def renderizar_mesa(mesa: MesaDeTrabajoState) -> str:
     ]
     for item in mesa.items:
         estado = f"**Obsoleto**: {item.que_hacer}" if item.obsoleto else item.estado
+        prefijo = PREFIJO_NO_VALIDADO if item.exploratorio else ""
         filas.append(
-            f"| **{item.categoria.value}** | {_celda(item.contenido)} | "
+            f"| **{item.categoria.value}** | {prefijo}{_celda(item.contenido)} | "
             f"{item.origen.value} | {_celda(estado)} |"
         )
-    return "\n".join([*filas, "", NOTA_EXPLORATORIO])
+    pie = [NOTA_EXPLORATORIO]
+    if mesa.obsoletos:
+        pie.insert(0, AVISO_OBSOLETOS.format(n=len(mesa.obsoletos)))
+    return "\n".join([*filas, "", *pie])
 
 
 def renderizar_sala(sala: Iterable[Silla]) -> str:
@@ -327,15 +320,26 @@ class MesaTools:
     config: Config
     sala: tuple[Silla, ...]
 
-    def consultar_mesa_trabajo(self, tool_context: ToolContext) -> dict[str, Any]:
-        """La mesa de trabajo de la sesión y quién está en la sala. No calcula ni modifica nada.
+    def consultar_mesa_trabajo(
+        self, tool_context: ToolContext, vista: str = VISTA_MESA
+    ) -> dict[str, Any]:
+        """La mesa de trabajo de la sesión o quién está en la sala. No calcula ni modifica nada.
 
-        Úsala para abrir la sesión (presenta el universo) y cuando pregunten «¿qué tenemos?»,
-        «muestra la mesa» o «¿quién está en la sala?». ``tabla`` es el inventario ya redactado:
-        universo, vistas, estimaciones, carteras, diagnósticos y restricciones, con el
-        especialista que puso cada elemento y si sigue vigente u obsoleto (elemento por
-        elemento, por su sello de universo). ``tabla_sala`` es el roster real del equipo.
+        Úsala para abrir la sesión (presenta el universo) y cuando pregunten «¿qué tenemos?» o
+        «muestra la mesa» (vista="mesa"), o «¿quién está en la sala?» (vista="sala"). La mesa es
+        el inventario de la sesión: universo, vistas, estimaciones, carteras, diagnósticos y
+        restricciones, con el especialista que puso cada elemento y si sigue vigente u obsoleto
+        (elemento por elemento, por su sello de universo). La sala es el roster real del equipo.
+
+        Args:
+            vista: "mesa" (por defecto) o "sala".
         """
+        if vista not in (VISTA_MESA, VISTA_SALA):
+            return {
+                "status": "error",
+                "tipo": "ValueError",
+                "mensaje": f"vista desconocida '{vista}': usa '{VISTA_MESA}' o '{VISTA_SALA}'",
+            }
         try:
             universo = self.gestor.universo()
             obsoletos = adoptar_universo(tool_context.state, universo)
@@ -343,16 +347,16 @@ class MesaTools:
         except ERRORES_DEL_GESTOR as exc:
             return {"status": "error", "tipo": type(exc).__name__, "mensaje": str(exc)}
         mesa = construir_mesa(tool_context.state, universo, self.config, informe)
+        tabla = renderizar_mesa(mesa) if vista == VISTA_MESA else renderizar_sala(self.sala)
         return {
             "status": "success",
             "universe_version": mesa.universe_version,
-            "tabla": renderizar_mesa(mesa),
-            "tabla_sala": renderizar_sala(self.sala),
             "mesa": volcar(mesa),
             "sala": [volcar(s) for s in self.sala],
             "universo": informe.model_dump(mode="json"),
             "resultados_obsoletos": obsoletos,
-            "como_presentar": COMO_PRESENTAR,
+            CLAVE_ANEXO: tabla,
+            "como_presentar": COMO_PRESENTAR.format(vista=vista),
         }
 
     def function_tools(self) -> list[FunctionTool]:

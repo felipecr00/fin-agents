@@ -15,6 +15,7 @@ from investmentsys.tools import CLAVE_UNIVERSO
 from tests.almacen import sembrar_gestor, universo_referencia
 
 TOOLS_DEL_BRIEF = {
+    "consultar_mesa_trabajo",  # S9: la pizarra y el roster
     "resolver",
     "incorporar",
     "retirar",

@@ -196,7 +196,16 @@ def test_mesa_de_trabajo_analista_y_constructor_en_un_turno(
     )
     (candidatos,) = turno.respuestas("construir_candidatos")
     assert candidatos["validado"] is False and candidatos["recomendado"] == "hrp"
-    assert cifras_sin_respaldo(turno.textos("director")[-1], [candidatos]) == []
+    # S9: la respuesta lleva anexadas las fichas de origen de las TRES consultas del turno.
+    respuesta = turno.textos("director")[-1]
+    respaldo = [*turno.respuestas("estimar_mercado"), views, candidatos]
+    assert cifras_sin_respaldo(respuesta, respaldo) == []
+    for fuente, tool in (
+        ("Estadístico", "estimar_mercado"),
+        ("Analista de Mercado", "market_analyst"),
+        ("Constructor de Carteras", "construir_candidatos"),
+    ):
+        assert f"- Fuente: **{fuente}** · herramienta `{tool}`" in respuesta
     # El material pegado viaja CITADO en la conversación; nunca entra a una instrucción.
     (sistema_analista,) = llm.instrucciones("analista")
     assert INYECCION not in sistema_analista

@@ -42,6 +42,17 @@ class CategoriaPizarra(StrEnum):
     RESTRICCION = "Restricción"
 
 
+EXPLORATORIAS = frozenset(
+    {
+        CategoriaPizarra.VISTAS,
+        CategoriaPizarra.ESTIMACION,
+        CategoriaPizarra.CARTERAS,
+        CategoriaPizarra.DIAGNOSTICO,
+    }
+)
+"""Lo que en la mesa es hipótesis de trabajo (``validado: false``); el resto son parámetros."""
+
+
 class ItemPizarra(ContractBase):
     categoria: CategoriaPizarra
     contenido: str = Field(min_length=1, description="Descripción legible; la redacta el código.")
@@ -89,6 +100,11 @@ class ItemPizarra(ContractBase):
             obsoleto=obsoleto,
             que_hacer=que_hacer if obsoleto else None,
         )
+
+    @property
+    def exploratorio(self) -> bool:
+        """Todo resultado sobre la mesa es ``validado: false``: solo el comité valida (ADR-014)."""
+        return self.categoria in EXPLORATORIAS
 
     @property
     def estado(self) -> str:

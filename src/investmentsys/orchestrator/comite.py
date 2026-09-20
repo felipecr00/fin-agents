@@ -48,6 +48,7 @@ from investmentsys.orchestrator.corrida import (
     CLAVE_REPORTE,
     CLAVE_RUN_STATE,
 )
+from investmentsys.orchestrator.memorandum import renderizar_memorandum
 from investmentsys.orchestrator.pipeline import EtapaFallidaError, crear_pipeline
 from investmentsys.portfolio import mensaje_estado_prior, sesion_por_defecto
 from investmentsys.tools.estado import (
@@ -64,6 +65,7 @@ from investmentsys.tools.estado import (
     leer_fecha,
     volcar,
 )
+from investmentsys.tools.ficha import CLAVE_ANEXO
 
 CLAVE_SOLICITUD = CLAVE_SOLICITUD_COMITE
 FASE_SOLICITAR = "solicitar"
@@ -162,9 +164,12 @@ class ComiteTools:
             "token": solicitud.token,
             "resumen": volcar(resumen),
             "que_hara_el_comite": NOTA_VIEWS_DEL_COMITE,
+            CLAVE_ANEXO: renderizar_memorandum(
+                resumen, self.config.validacion.max_iteraciones_constructor
+            ),
             "siguiente_paso": (
-                "Presenta este resumen al usuario y espera su confirmación explícita. Solo "
-                "entonces, en su siguiente turno, llama a fase='ejecutar' con este token."
+                "Presenta la Orden Preparatoria al usuario y espera su confirmación explícita. "
+                "Solo entonces, en su siguiente turno, llama a fase='ejecutar' con este token."
             ),
         }
 

@@ -18,9 +18,9 @@ from investmentsys.contracts import (
     View,
 )
 from investmentsys.tools import CLAVE_MARKET_VIEWS, CLAVE_UNIVERSO, NucleoTools
+from investmentsys.tools.ficha import ATIENDE, CLAVE_ANEXO, PREFIJO_NO_VALIDADO
 from investmentsys.tools.gestor import GestorTools
 from investmentsys.tools.mesa import (
-    ATIENDE,
     NOMBRE_TOOL,
     MesaTools,
     SalaIncompletaError,
@@ -76,7 +76,7 @@ class TestAperturaDeSesion:
             ("Universo", "Gestor de Datos", False),
             ("Restricción", "Constructor de Carteras", False),
         ]
-        tabla = salida["tabla"]
+        tabla = salida[CLAVE_ANEXO]
         assert f"universo `{salida['universe_version'][:12]}` | VOOG, BNS, IBIT, VB" in tabla
         # Lo que la apertura debe poder decir sin otra llamada: desde cuándo hay datos y qué limita.
         assert "IBIT (datos desde 2024-01)" in tabla and "la limita IBIT" in tabla
@@ -132,8 +132,12 @@ class TestQueTenemos:
             ("Diagnóstico", "Escéptico", False),
             ("Restricción", "Constructor de Carteras", False),
         ]
-        tabla = salida["tabla"]
-        assert "VOOG sobre VB +3 % anual, confianza 0.6" in tabla
+        tabla = salida[CLAVE_ANEXO]
+        assert (
+            f"| {PREFIJO_NO_VALIDADO}1 al {FECHA}: VOOG sobre VB +3 % anual, confianza 0.6 |"
+            in tabla
+        )
+        assert PREFIJO_NO_VALIDADO not in tabla.split("**Universo**")[1].split("\n")[0]
         assert "recomendada black_litterman: VOOG 70.0 %" in tabla
         assert "IBIT entre 0 % y 10 % (ajuste del usuario)" in tabla
         # Las cifras del diagnóstico son las de la herramienta del Escéptico, formateadas.
@@ -148,7 +152,7 @@ class TestQueTenemos:
     def test_un_texto_con_barras_o_saltos_no_rompe_la_tabla(
         self, mesa_tools: MesaTools, ctx: ToolContext
     ) -> None:
-        tabla = mesa_tools.consultar_mesa_trabajo(ctx)["tabla"]
+        tabla = mesa_tools.consultar_mesa_trabajo(ctx)[CLAVE_ANEXO]
         filas = [f for f in tabla.splitlines() if f.startswith("| **")]
         assert filas and all(f.count(" | ") == 3 for f in filas)
 
@@ -176,8 +180,10 @@ class TestObsolescenciaPorElemento:
         mesa = MesaDeTrabajoState.model_validate(salida["mesa"])
         viejo = next(i for i in mesa.items if i.categoria is CategoriaPizarra.DIAGNOSTICO)
         assert viejo.universe_version == previa != mesa.universe_version
-        assert "| **Obsoleto**: vuelve a diagnosticar |" in salida["tabla"]
-        assert "| **Obsoleto**: vuelve a pedirlas al analista |" in salida["tabla"]
+        assert "| **Obsoleto**: vuelve a diagnosticar |" in salida[CLAVE_ANEXO]
+        assert "| **Obsoleto**: vuelve a pedirlas al analista |" in salida[CLAVE_ANEXO]
+        # Auditoría previa: el aviso va arriba de la nota, con la cuenta exacta.
+        assert "**Atención: 2 elemento(s) obsoleto(s).**" in salida[CLAVE_ANEXO]
 
     def test_la_mesa_dice_obsoleto_exactamente_donde_la_herramienta_rechaza(
         self, mesa_tools: MesaTools, gestor_tools: GestorTools, tools: NucleoTools, ctx: ToolContext
@@ -203,7 +209,7 @@ class TestSala:
     def test_el_roster_sale_de_la_composicion_recibida(
         self, mesa_tools: MesaTools, ctx: ToolContext
     ) -> None:
-        salida = mesa_tools.consultar_mesa_trabajo(ctx)
+        salida = mesa_tools.consultar_mesa_trabajo(ctx, vista="sala")
         assert [(s["especialista"], s["conversa"], s["herramientas"]) for s in salida["sala"]] == [
             ("Director", True, [NOMBRE_TOOL]),
             ("Gestor de Datos", False, ["diagnosticar"]),
@@ -212,9 +218,9 @@ class TestSala:
         ]
         assert (
             "| **Analista de Mercado** | conversa (LLM) | `market_analyst` |"
-            in (salida["tabla_sala"])
+            in (salida[CLAVE_ANEXO])
         )
-        assert "Escéptico" not in salida["tabla_sala"], "sin herramienta no hay silla"
+        assert "Escéptico" not in salida[CLAVE_ANEXO], "sin herramienta no hay silla"
 
     def test_una_herramienta_sin_silla_no_entra_a_la_sala(self) -> None:
         with pytest.raises(SalaIncompletaError, match="predecir_precios"):
@@ -229,4 +235,12 @@ def test_declaracion_visible_para_el_llm(mesa_tools: MesaTools) -> None:
     declaracion = tool._get_declaration()
     assert tool.name == NOMBRE_TOOL and declaracion is not None
     assert "¿qué tenemos?" in (declaracion.description or "")
-    assert not (declaracion.parameters_json_schema or {}).get("properties")
+    esquema = declaracion.parameters_json_schema
+    assert set(esquema["properties"]) == {"vista"} and not esquema.get("required")
+
+
+def test_vista_desconocida_es_un_error_que_dice_cuales_hay(
+    mesa_tools: MesaTools, ctx: ToolContext
+) -> None:
+    salida = mesa_tools.consultar_mesa_trabajo(ctx, vista="pizarra")
+    assert salida["status"] == "error" and "'mesa' o 'sala'" in salida["mensaje"]

@@ -13,6 +13,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from google.adk.agents.base_agent import BaseAgent
 from google.adk.agents.callback_context import CallbackContext
 from google.adk.agents.llm_agent import LlmAgent
 from google.adk.agents.readonly_context import ReadonlyContext
@@ -21,6 +22,7 @@ from google.adk.tools.function_tool import FunctionTool
 from google.adk.tools.tool_context import ToolContext
 from google.genai import types
 
+from investmentsys.agents.director.anexos import anexar_al_cierre, recoger_anexos
 from investmentsys.agents.director.instruccion import INSTRUCCION
 from investmentsys.agents.market_analyst import crear_market_analyst
 from investmentsys.agents.market_analyst.agente import ETIQUETA_EXPLORATORIO
@@ -39,6 +41,8 @@ from investmentsys.tools import (
 )
 from investmentsys.tools.estado import volcar
 from investmentsys.tools.gestor import GestorTools
+from investmentsys.tools.mesa import NOMBRE_TOOL as TOOL_MESA
+from investmentsys.tools.mesa import MesaTools, componer_sala
 
 NOMBRE = "director"
 
@@ -49,13 +53,18 @@ modos y las reglas son los de arriba.
 
 Estado de la sesión: {estado_sesion}
 
+- MESA DE TRABAJO (tuya): `consultar_mesa_trabajo` muestra qué hay sobre la mesa (universo,
+  vistas, estimaciones, carteras, diagnósticos, restricciones), quién lo puso y si sigue
+  vigente; con vista="sala", quién está en la sala. No calcula nada. Presentar el universo
+  aplica al INICIO de la sesión, no a cada consulta: llámala para esa presentación inicial y
+  cuando pregunten «¿qué tenemos?», «muestra la mesa» o «¿quién está en la sala?»; para lo
+  demás, ve directo a la herramienta que atiende la consulta. No describas la mesa ni el
+  equipo de memoria.
 - GESTOR DE DATOS: `resolver(ticker)` diagnostica sin modificar nada; `incorporar` da de alta;
   `retirar(ticker)` saca un activo; `refrescar_cap` cambia una capitalización congelada;
-  `aceptar_prior_neutral` degrada el prior de TODO el universo; `diagnosticar` describe el
-  universo vigente. Presentar el universo aplica al INICIO de la sesión, no a cada consulta:
-  llama a `diagnosticar` para esa presentación inicial, cuando pregunten por el universo o
-  por la historia de un activo, o cuando haya cambiado; para lo demás, ve directo a la
-  herramienta que atiende la consulta.
+  `aceptar_prior_neutral` degrada el prior de TODO el universo; `diagnosticar` da el detalle
+  del universo vigente (capitalizaciones, cobertura de los stress, advertencias por activo):
+  úsala cuando pregunten por ese detalle o por la historia de un activo.
   Alta de un activo, siempre en este orden:
   1. `resolver(ticker)` y presenta el diagnóstico (desde cuándo hay datos y qué limita eso).
   2. Mira `prior.tiene_cap` en la respuesta. Si es true (la fuente expone la capitalización):
@@ -83,8 +92,13 @@ Estado de la sesión: {estado_sesion}
   usuario; devuelve un diagnóstico, nunca un veredicto. Los pesos van como fracciones, tal
   como los dio el usuario: no los completes ni los renormalices.
 - COMITÉ FORMAL: solo con `convocar_comite`, en dos fases. `fase="solicitar"` devuelve el
-  resumen de la corrida y un token: presenta el resumen completo y espera. Solo si el usuario
+  resumen de la corrida y un token, y la Orden Preparatoria de Sesión queda anexada a tu
+  respuesta: di que es la orden a revisar, pide la confirmación y espera. Solo si el usuario
   confirma en su siguiente mensaje, `fase="ejecutar"` con ese token.
+- ATRIBUCIÓN: toda cifra de retorno, riesgo o correlación se dice con su fuente, en la misma
+  frase: "el Estadístico estimó…", "según el Escéptico…", "el Constructor propone…", "el
+  Analista opina…", "el comité aprobó…". Las fichas de origen, la tabla de la mesa y la orden
+  del comité las anexa el código al final de tu respuesta: no las copies ni las rehagas.
 - Ofrece solo lo que una herramienta de esta lista puede hacer. No hay herramientas para
   ejecutar órdenes, predecir precios, vigilar el mercado o avisar de cambios, buscar noticias,
   ni leer cuentas de un broker: no las ofrezcas ni las insinúes.
@@ -173,6 +187,21 @@ def crear_director(
     """``modelo`` permite inyectar un LLM falso en tests; por defecto, ``config.agentes``."""
     nucleo = NucleoTools(config, provider)
     comite = ComiteTools(config, provider, modelo, directorio_runs)
+    especialistas = [
+        *GestorTools(gestor).function_tools(),
+        FunctionTool(exploratorio(nucleo.estimar_mercado, anexo=_correlaciones)),
+        FunctionTool(exploratorio(nucleo.construir_candidatos, antes=_nueva_propuesta)),
+        FunctionTool(nucleo.ajustar_restricciones),
+        FunctionTool(nucleo.diagnosticar_cartera),
+        *comite.function_tools(),
+    ]
+    sub_agentes: list[BaseAgent] = [
+        crear_market_analyst(config, provider, modelo, mode="single_turn")
+    ]
+    # El roster sale de lo que de verdad se cablea aquí, no de una lista escrita aparte.
+    sala = componer_sala(
+        [TOOL_MESA, *(t.name for t in especialistas)], [a.name for a in sub_agentes]
+    )
 
     def instruccion(contexto: ReadonlyContext) -> str:
         cableado = CABLEADO.format(
@@ -196,15 +225,10 @@ def crear_director(
         model=resolver_modelo(config.agentes, modelo),
         instruction=instruccion,
         before_agent_callback=cargar_universo,
-        tools=[
-            *GestorTools(gestor).function_tools(),
-            FunctionTool(exploratorio(nucleo.estimar_mercado, anexo=_correlaciones)),
-            FunctionTool(exploratorio(nucleo.construir_candidatos, antes=_nueva_propuesta)),
-            FunctionTool(nucleo.ajustar_restricciones),
-            FunctionTool(nucleo.diagnosticar_cartera),
-            *comite.function_tools(),
-        ],
-        sub_agents=[crear_market_analyst(config, provider, modelo, mode="single_turn")],
+        after_tool_callback=recoger_anexos,
+        after_model_callback=anexar_al_cierre,
+        tools=[*MesaTools(gestor, config, sala).function_tools(), *especialistas],
+        sub_agents=sub_agentes,
         generate_content_config=types.GenerateContentConfig(
             temperature=config.agentes.temperatura,
             seed=config.reproducibilidad.semilla,

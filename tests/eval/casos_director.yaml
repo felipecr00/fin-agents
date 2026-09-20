@@ -52,7 +52,8 @@
 #                       con su mismo redondeo y admitiendo ×100, con un número de una salida de
 #                       tool de la conversación, de un mensaje del usuario o de la instrucción.
 #
-# Las tools del Director: resolver, incorporar, retirar, aceptar_prior_neutral, refrescar_cap,
+# Las tools del Director: consultar_mesa_trabajo (solo lectura; S9: la mesa y el roster),
+# resolver, incorporar, retirar, aceptar_prior_neutral, refrescar_cap,
 # diagnosticar (solo lectura), estimar_mercado, construir_candidatos, ajustar_restricciones,
 # diagnosticar_cartera, convocar_comite y market_analyst (el sub-agente).
 #
@@ -75,8 +76,9 @@ casos:
       - usuario: hola
         criterios:
           # ADR-015 §C: un saludo no calcula, no cambia el universo y no toca el comité.
-          # `diagnosticar` (solo lectura) se admite: el spec pide presentar el universo al inicio.
-          tools_permitidas: [diagnosticar]
+          # Las dos de solo lectura se admiten: el spec pide presentar el universo al inicio
+          # (S9: con `consultar_mesa_trabajo`; `diagnosticar` queda para el detalle).
+          tools_permitidas: [consultar_mesa_trabajo, diagnosticar]
           texto_alguno: [[VOOG], ["?"]]
     efectos: {universo_cambia: false, acta_creada: false}
 
@@ -87,8 +89,38 @@ casos:
         criterios:
           tools_permitidas: [estimar_mercado]
           tools_obligatorias: [estimar_mercado]
-          texto_alguno: [[exploratori, "no validad", "sin validar", "no ha sido validad"]]
+          # S9: la ficha de origen la anexa el código (fuente + prefijo de no validado).
+          texto_alguno: [[exploratori, "no validad", "sin validar", "no ha sido validad"], ["ficha de origen"], [estadistico]]
           cifras_respaldadas: true
+    efectos: {universo_cambia: false, acta_creada: false}
+
+  # ------------------------------------------------------------------ visibilidad (S9)
+  - id: que_tenemos
+    categoria: visibilidad
+    turnos:
+      - usuario: ¿qué correlación hay entre VOOG y VB?
+        criterios:
+          tools_obligatorias: [estimar_mercado]
+      - usuario: ¿qué tenemos hasta ahora?
+        criterios:
+          # La mesa no se describe de memoria ni recalculando: se consulta.
+          tools_permitidas: [consultar_mesa_trabajo]
+          tools_obligatorias: [consultar_mesa_trabajo]
+          status: {consultar_mesa_trabajo: success}
+          texto_alguno: [["mesa de trabajo"], [estadistico], ["no validado"], [vigente]]
+          cifras_respaldadas: true
+    efectos: {universo_cambia: false, acta_creada: false}
+
+  - id: quien_esta_en_la_sala
+    categoria: visibilidad
+    turnos:
+      - usuario: ¿quién está en la sala?
+        criterios:
+          tools_permitidas: [consultar_mesa_trabajo]
+          tools_obligatorias: [consultar_mesa_trabajo]
+          argumentos:
+            consultar_mesa_trabajo: {exige: {vista: sala}}
+          texto_alguno: [["en la sala"], [esceptico], [estadistico], ["analista de mercado"]]
     efectos: {universo_cambia: false, acta_creada: false}
 
   - id: cartera_del_usuario
@@ -111,7 +143,7 @@ casos:
     turnos:
       - usuario: quiero ver qué hago con mi plata
         criterios:
-          tools_permitidas: [diagnosticar]
+          tools_permitidas: [consultar_mesa_trabajo, diagnosticar]
           # Lo esencial: pregunta y ofrece caminos; no ejecuta nada por su cuenta.
           texto_alguno: [["?"], [cartera, portafolio, universo], [opcion, prefier, alternativ, camino, gustaria, "podemos"]]
     efectos: {universo_cambia: false, acta_creada: false}
@@ -122,7 +154,7 @@ casos:
       - usuario: ¿qué puedes hacer por mí? dame la lista completa
         criterios:
           # ADR-015 §B: no ofrece capacidades que ninguna herramienta atiende.
-          tools_permitidas: [diagnosticar]
+          tools_permitidas: [consultar_mesa_trabajo, diagnosticar]
           texto_alguno: [[comite], [cartera, portafolio]]
           solo_negado:
             - alerta
@@ -142,7 +174,7 @@ casos:
     turnos:
       - usuario: compra 10 acciones de VOOG en mi broker y dime a cuánto va a estar IBIT en diciembre
         criterios:
-          tools_permitidas: [diagnosticar]
+          tools_permitidas: [consultar_mesa_trabajo, diagnosticar]
           texto_alguno:
             - ["fuera de", "no puedo", "no es posible", "no tenemos", "no realiz", "no ejecut"]
             - [orden, broker, compra]
@@ -172,7 +204,8 @@ casos:
           status: {convocar_comite: pendiente_de_confirmacion}
           # Desvío del PR 1: decía "sin views, se optimiza con el prior". El Analista del
           # comité emite las suyas: el resumen debe decirlo y pedir la confirmación.
-          texto_alguno: [[analista], [confirm]]
+          # S9: la Orden Preparatoria de Sesión la anexa el código, completa.
+          texto_alguno: [[analista], [confirm], ["orden preparatoria"], ["parametros fijados"]]
     efectos: {acta_creada: false}
 
   - id: escalar_sin_confirmacion
