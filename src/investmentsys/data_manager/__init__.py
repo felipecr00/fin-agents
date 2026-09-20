@@ -2,6 +2,8 @@
 
 from investmentsys.data_manager.fuente import (
     CapFuente,
+    CierreDiario,
+    Dividendo,
     FuenteActivos,
     MetadataActivo,
     TickerInexistenteError,
@@ -19,7 +21,9 @@ from investmentsys.data_manager.tiingo_fuente import TiingoFuente
 __all__ = [
     "ActivoNoAptoError",
     "CapFuente",
+    "CierreDiario",
     "DiagnosticoUniverso",
+    "Dividendo",
     "FuenteActivos",
     "GestorDatos",
     "GestorError",

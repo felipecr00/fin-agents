@@ -33,11 +33,11 @@ from investmentsys.tools.estado import (
     CLAVE_UNIVERSO,
     volcar,
 )
+from investmentsys.tools.exploratorio import ETIQUETA_EXPLORATORIO
 
 CLAVE_BORRADOR = "market_views_borrador"
 CLAVE_ERROR_VIEWS = "market_views_error"
 NOMBRE = "market_analyst"
-ETIQUETA_EXPLORATORIO = "exploratorio"
 
 INSTRUCCION = """\
 Eres el Analista de Mercados de un sistema de construcción de portafolios.

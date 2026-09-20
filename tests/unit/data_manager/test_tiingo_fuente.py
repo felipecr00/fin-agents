@@ -58,8 +58,25 @@ ERROR_DOW30 = {
 }
 
 
+# S10: `tiingo/daily/<t>/prices` diario, copiado del servicio real el 2026-09-20 (recortado).
+DIARIO_BNS = [
+    {"date": "2026-07-06T00:00:00.000Z", "close": 90.10, "adjClose": 89.31, "divCash": 0.0},
+    {"date": "2026-07-07T00:00:00.000Z", "close": 89.55, "adjClose": 89.55, "divCash": 0.803},
+    {"date": "2026-09-17T00:00:00.000Z", "close": 93.80, "adjClose": 93.80, "divCash": 0.0},
+    {"date": "2026-09-18T00:00:00.000Z", "close": 94.07, "adjClose": 94.07, "divCash": 0.0},
+]
+PEDIDOS_DIARIOS: list[str] = []
+
+
 def _manejador(request: httpx.Request) -> httpx.Response:
     ruta = request.url.path
+    if ruta.endswith("/prices"):
+        ticker = ruta.split("/")[3]
+        PEDIDOS_DIARIOS.append(f"{ticker} desde {request.url.params['startDate']}")
+        if ticker != "BNS":
+            return httpx.Response(404, json={"detail": "Not found."})
+        desde = request.url.params["startDate"]
+        return httpx.Response(200, json=[f for f in DIARIO_BNS if f["date"][:10] >= desde])
     if ruta == "/tiingo/fundamentals/meta":
         pedido = request.url.params["tickers"].upper()
         return httpx.Response(200, json=[FICHAS[pedido]] if pedido in FICHAS else [])
@@ -143,3 +160,33 @@ def test_la_key_viaja_en_la_cabecera_nunca_en_la_url(config: TiingoConfig) -> No
     _fuente(config, espia).capitalizacion("AAPL")
     assert all(r.headers["Authorization"] == "Token llave" for r in vistas)
     assert all("llave" not in str(r.url) for r in vistas)
+
+
+# ------------------------------------------------------------ datos diarios (S10, ADR-020)
+def test_dividendos_son_los_dias_con_div_cash_en_orden(config: TiingoConfig) -> None:
+    (pago,) = _fuente(config).dividendos("BNS", date(2026, 1, 1))
+    assert pago.fecha_ex == date(2026, 7, 7) and pago.monto_usd_por_accion == 0.803
+    assert _fuente(config).dividendos("BNS", date(2026, 8, 1)) == ()
+
+
+def test_ultimo_cierre_crudo_y_ajustado(config: TiingoConfig) -> None:
+    cierre = _fuente(config).ultimo_cierre("BNS")
+    assert cierre is not None and cierre.fecha == date(2026, 9, 18)
+    assert cierre.cierre == 94.07 and cierre.cierre_ajustado == 94.07
+
+
+def test_una_sola_descarga_diaria_por_ticker_si_la_ventana_ya_esta_cubierta(
+    config: TiingoConfig,
+) -> None:
+    """Cuota: 50 peticiones/hora. Pedir cierres tras dividendos no vuelve a la red."""
+    PEDIDOS_DIARIOS.clear()
+    fuente = _fuente(config)
+    fuente.dividendos("BNS", date(2026, 1, 1))
+    fuente.ultimo_cierre("BNS")
+    fuente.dividendos("BNS", date(2026, 6, 1))
+    assert PEDIDOS_DIARIOS == ["BNS desde 2026-01-01"]
+
+
+def test_datos_diarios_de_un_ticker_inexistente(config: TiingoConfig) -> None:
+    with pytest.raises(TickerInexistenteError, match="NOEXISTE"):
+        _fuente(config).dividendos("NOEXISTE", date(2026, 1, 1))

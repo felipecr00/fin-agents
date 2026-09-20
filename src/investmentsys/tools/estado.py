@@ -21,10 +21,14 @@ CLAVE_VALIDACIONES = "validaciones"
 CLAVE_UNIVERSO = "universo"
 CLAVE_RESTRICCIONES_SESION = "restricciones_sesion"
 CLAVE_PRIOR = "prior"
+CLAVE_RUN_STATE = "run_state_json"  # ADR-009: el RunState final viaja también en la sesión
 # Exploratorio (S8): fuera de todo lo que lee RunState; nunca es una validación del comité.
 CLAVE_DIAGNOSTICOS_CARTERA = "diagnosticos_cartera"
 CLAVE_SOLICITUD_NEUTRAL = "solicitud_prior_neutral"  # custodia por turnos (ADR-015 §A)
 CLAVE_SOLICITUD_COMITE = "solicitud_comite"  # gate del comité (ADR-014): resumen + token
+# S10 (ADR-019): pesos que el usuario le dio al Director para el Escéptico; los pone un callback
+# del Director y los lee la tool de la persona, sin pasar por el LLM de la persona.
+CLAVE_PESOS_EN_CONSULTA = "pesos_en_consulta"
 
 M = TypeVar("M", bound=BaseModel)
 

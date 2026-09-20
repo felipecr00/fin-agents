@@ -48,6 +48,9 @@ ENCABEZADO_DE_BLOQUE = re.compile(
     r"^#{1,6}\s.*(mesa de trabajo|en la sala|orden preparatoria|ficha de origen)", re.MULTILINE
 )
 FILA_O_VINETA = re.compile(r"^(?:[*\-•|>]|\d+[.)])\s?")
+# La marca invisible con la que ``agents/anexos.py`` abre lo que anexa el código (un test fija
+# que sean la misma): lo que va antes es lo que redactó el Director.
+MARCA_ANEXO = "\u2063\u2063"
 TOLERANCIA_ARGUMENTOS = 1e-9  # punto flotante al serializar argumentos, no un parámetro
 
 
@@ -105,8 +108,19 @@ class Criterios(_Modelo):
     cifras_atribuidas: bool = Field(
         default=False,
         description=(
-            "Toda cifra de retorno, riesgo o correlación nombra al especialista fuente en su "
-            "párrafo (S9)."
+            "Toda cifra de retorno, riesgo o correlación que diga EL DIRECTOR nombra al "
+            "especialista fuente en su párrafo (S9). La voz de una persona ya es su atribución."
+        ),
+    )
+    habla: tuple[str, ...] = Field(
+        default=(),
+        description="Personas (sub-agentes) que le hablaron al usuario en el turno (S10).",
+    )
+    no_repite_cifras: bool = Field(
+        default=False,
+        description=(
+            "El Director no repite las cifras que ya dijo una persona en el turno: coordina, "
+            "no re-narra (S10, ADR-019)."
         ),
     )
 
@@ -119,6 +133,13 @@ class TurnoObservado:
     texto: str = ""
     respaldo_previo: tuple[str, ...] = field(default=())
     """Salidas de tools y mensajes del usuario de los turnos ANTERIORES (respaldan cifras)."""
+    voces: tuple[tuple[str, str], ...] = ()
+    """(persona, texto): lo que dijeron al usuario los sub-agentes con voz propia (S10)."""
+
+    @property
+    def leido(self) -> str:
+        """Todo lo que el usuario leyó en el turno: las personas primero, luego el Director."""
+        return "\n".join([*(t for _, t in self.voces), self.texto])
 
 
 def normalizar(texto: str) -> str:
@@ -291,7 +312,7 @@ def evaluar(criterios: Criterios, turno: TurnoObservado, prefijo: str) -> list[R
                 f"status: {estados or 'ninguna'}",
             )
         )
-    plano = normalizar(turno.texto)
+    plano = normalizar(turno.leido)
     if criterios.texto_alguno:
         ausentes = [
             list(grupo)
@@ -317,7 +338,7 @@ def evaluar(criterios: Criterios, turno: TurnoObservado, prefijo: str) -> list[R
     if criterios.solo_negado:
         afirmados = [
             f"'{termino}' en «{linea.strip()[:120]}»"
-            for linea in lineas_no_negadas(turno.texto)
+            for linea in lineas_no_negadas(turno.leido)
             for termino in criterios.solo_negado
             if normalizar(termino) in linea
         ]
@@ -330,7 +351,7 @@ def evaluar(criterios: Criterios, turno: TurnoObservado, prefijo: str) -> list[R
             turno.usuario,
             *(json.dumps(r, ensure_ascii=False) for _, r in turno.respuestas),
         ]
-        huerfanas = cifras_sin_respaldo(turno.texto, fuentes)
+        huerfanas = cifras_sin_respaldo(turno.leido, fuentes)
         resultados.append(
             _resultado(
                 f"{prefijo}.cifras_respaldadas",
@@ -341,7 +362,7 @@ def evaluar(criterios: Criterios, turno: TurnoObservado, prefijo: str) -> list[R
             )
         )
     if criterios.sin_bloques_imitados:
-        encabezados = [m.group(0) for m in ENCABEZADO_DE_BLOQUE.finditer(normalizar(turno.texto))]
+        encabezados = [m.group(0) for m in ENCABEZADO_DE_BLOQUE.finditer(normalizar(turno.leido))]
         anexados = sum(1 for _, r in turno.respuestas if "anexo" in r)
         resultados.append(
             _resultado(
@@ -359,6 +380,31 @@ def evaluar(criterios: Criterios, turno: TurnoObservado, prefijo: str) -> list[R
                 f"{prefijo}.cifras_atribuidas",
                 [f"cifras sin especialista fuente: {sin_fuente}"] if sin_fuente else [],
                 "toda cifra de retorno, riesgo o correlación nombra a su fuente",
+            )
+        )
+    if criterios.habla:
+        hablaron = {persona for persona, texto in turno.voces if texto.strip()}
+        mudas = [p for p in criterios.habla if p not in hablaron]
+        resultados.append(
+            _resultado(
+                f"{prefijo}.habla",
+                [f"no le hablaron al usuario: {mudas} (hablaron: {sorted(hablaron)})"]
+                if mudas
+                else [],
+                f"hablaron: {sorted(hablaron)}",
+            )
+        )
+    if criterios.no_repite_cifras:
+        de_personas = {c.strip() for _, texto in turno.voces for c in CIFRA.findall(texto)}
+        propio = turno.texto.split(MARCA_ANEXO)[0]  # el anexo va al final del último texto
+        repetidas = sorted({c.strip() for c in CIFRA.findall(propio)} & de_personas)
+        resultados.append(
+            _resultado(
+                f"{prefijo}.no_repite_cifras",
+                [f"el Director repitió cifras que ya dijo una persona: {repetidas}"]
+                if repetidas
+                else [],
+                "el Director no re-narra a la persona",
             )
         )
     return resultados

@@ -12,23 +12,23 @@ from investmentsys.agents.director import INSTRUCCION, MARCADORES, crear_directo
 from investmentsys.config import Config, cargar_config
 from investmentsys.contracts import DISCLAIMER
 from investmentsys.tools import CLAVE_UNIVERSO
+from investmentsys.tools.fintual import OPERACIONES
 from tests.almacen import sembrar_gestor, universo_referencia
 
+# Ruteo jerárquico (S10, ADR-020): 8 entradas en vez de las 13 planas de S8-S9.
 TOOLS_DEL_BRIEF = {
     "consultar_mesa_trabajo",  # S9: la pizarra y el roster
-    "resolver",
-    "incorporar",
-    "retirar",
-    "aceptar_prior_neutral",
-    "refrescar_cap",
-    "diagnosticar",
-    "estimar_mercado",
+    "gestionar_datos_y_fricciones",  # el Gestor-Fintual: transaccional, sin persona
     "construir_candidatos",
     "ajustar_restricciones",
-    "diagnosticar_cartera",
     "convocar_comite",
-    "market_analyst",  # el sub-agente, expuesto como herramienta (mode="single_turn")
+    # Las personas: sub-agentes expuestos como herramienta (mode="single_turn").
+    "market_analyst",
+    "estadistico",
+    "esceptico",
 }
+# La herramienta de cada persona es SUYA: el Director ya no la ve.
+TOOLS_DE_LAS_PERSONAS = {"estadistico": ["estimar_mercado"], "esceptico": ["diagnosticar_cartera"]}
 
 
 @pytest.fixture(scope="module")
@@ -76,6 +76,28 @@ def test_el_cableado_nombra_solo_herramientas_que_existen(director: LlmAgent) ->
     for nombre in TOOLS_DEL_BRIEF:
         assert f"`{nombre}" in cableado, nombre
     assert "validar_candidato" not in nombres  # el veredicto es solo del comité
+    for operacion in OPERACIONES:  # el cableado explica cada operación del Gestor
+        assert f'"{operacion}"' in cableado, operacion
+
+
+def test_las_personas_son_thin_una_herramienta_y_sin_transferencias(director: LlmAgent) -> None:
+    personas = {a.name: a for a in director.sub_agents if a.name in TOOLS_DE_LAS_PERSONAS}
+    assert set(personas) == set(TOOLS_DE_LAS_PERSONAS)
+    for nombre, persona in personas.items():
+        assert isinstance(persona, LlmAgent) and persona.mode == "single_turn"
+        assert [t.name for t in persona.tools] == TOOLS_DE_LAS_PERSONAS[nombre]  # type: ignore[union-attr]
+        assert persona.disallow_transfer_to_parent and persona.disallow_transfer_to_peers
+        assert persona.input_schema is not None and "pregunta" in persona.input_schema.model_fields
+        assert not set(TOOLS_DE_LAS_PERSONAS[nombre]) & {t.name for t in director.tools}  # type: ignore[union-attr]
+
+
+def test_la_temperatura_de_las_personas_sale_de_config(director: LlmAgent, config: Config) -> None:
+    for persona in director.sub_agents:
+        if isinstance(persona, LlmAgent):
+            assert persona.generate_content_config is not None
+            assert (
+                persona.generate_content_config.temperature == config.agentes.temperatura_personas
+            )
 
 
 def test_la_instruccion_refleja_el_universo_de_la_sesion(director: LlmAgent) -> None:

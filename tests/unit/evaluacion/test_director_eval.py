@@ -13,10 +13,12 @@ import pytest
 from google.adk.models.llm_request import LlmRequest
 
 from investmentsys.config import RAIZ_PROYECTO, Config, cargar_config
+from investmentsys.evaluacion.criterios_director import CIFRA
 from investmentsys.evaluacion.director import Caso, Casos, cargar_casos, correr_caso
 from investmentsys.evaluacion.informe import CasoEvaluado
+from investmentsys.tools.fintual import NOMBRE_TOOL, OPERACIONES
 from tests.almacen import mundo_director
-from tests.integration.conftest import Llamada, LlmPorAgente
+from tests.integration.conftest import Llamada, LlmPorAgente, gestor_op
 from tests.integration.test_market_analyst import BORRADOR_GOLDEN
 
 RUTA = RAIZ_PROYECTO / "tests" / "eval" / "casos_director.yaml"
@@ -42,6 +44,38 @@ def _con(tool: str, redactar: Callable[[dict[str, Any]], Any]) -> Callable[[LlmR
     return lambda peticion: redactar(_salida(peticion, tool))
 
 
+def _cifra_de(texto: str) -> str:
+    return str(CIFRA.findall(texto)[0]).strip()
+
+
+CORRELACION = "¿qué correlación hay entre VOOG y VB?"
+ESTADISTICO_IDEAL = [
+    Llamada("estimar_mercado"),
+    _con(
+        "estimar_mercado",
+        lambda s: (
+            "Resultado exploratorio. Estimé una correlación de "
+            f"{s['correlaciones']['VOOG-VB']} entre VOOG y VB."
+        ),
+    ),
+]
+ESCEPTICO_IDEAL = [
+    Llamada("diagnosticar_cartera"),
+    _con(
+        "diagnosticar_cartera",
+        lambda s: (
+            f"Medí la {s['cartera_evaluada']}. Diagnóstico exploratorio, sin veredicto: me "
+            f"preocupa una caída máxima de {s['metricas_oos']['max_drawdown']}."
+        ),
+    ),
+]
+PROPUESTA = [
+    Llamada("market_analyst", request="El usuario pide tus views."),
+    Llamada("construir_candidatos"),
+    "Propuesta exploratoria del Constructor: mira su ficha.",
+]
+
+
 def _autoconfirmar(s: dict[str, Any]) -> Llamada:
     return Llamada("convocar_comite", fase="ejecutar", token=s["token"])
 
@@ -52,54 +86,47 @@ GUIONES: dict[str, dict[str, list[Any]]] = {
     },
     "consulta_simple": {
         "director": [
-            Llamada("estimar_mercado"),
-            _con(
-                "estimar_mercado",
-                lambda s: (
-                    "Resultado exploratorio: el Estadístico estimó una correlación de "
-                    f"{s['correlaciones']['VOOG-VB']}."
-                ),
-            ),
-        ]
+            Llamada("estadistico", pregunta=CORRELACION),
+            "Ya respondió el Estadístico (exploratorio). ¿Quieres oír al Analista?",
+        ],
+        "estadistico": ESTADISTICO_IDEAL,
     },
     "que_tenemos": {
         "director": [
-            Llamada("estimar_mercado"),
-            "Resultado exploratorio del Estadístico: la correlación es alta.",
+            Llamada("estadistico", pregunta=CORRELACION),
+            "Ya respondió el Estadístico.",
             Llamada("consultar_mesa_trabajo"),
             "Esto es lo que hay sobre la mesa.",
-        ]
+        ],
+        "estadistico": ESTADISTICO_IDEAL,
     },
     "sesion_visible": {
         "director": [
             Llamada("consultar_mesa_trabajo"),
             "Hola. Este es el universo; ¿seguimos con él?",
-            Llamada("estimar_mercado"),
-            "Exploratorio: el Estadístico estimó una correlación alta entre VOOG y VB.",
-            Llamada("diagnosticar_cartera", pesos=PESOS),
-            "Diagnóstico exploratorio del Escéptico: mira su ficha.",
+            Llamada("estadistico", pregunta=CORRELACION),
+            "Ya respondió el Estadístico.",
+            Llamada("esceptico", pregunta="¿cómo la ves?", pesos=PESOS),
+            "Ya respondió el Escéptico: mira su ficha.",
             Llamada("consultar_mesa_trabajo"),
             "Esto es lo que hay sobre la mesa.",
             Llamada("consultar_mesa_trabajo", vista="sala"),
             "Este es el equipo.",
             Llamada("convocar_comite", fase="solicitar"),
             "Revisa la orden. ¿Confirmas?",
-        ]
+        ],
+        "estadistico": ESTADISTICO_IDEAL,
+        "esceptico": ESCEPTICO_IDEAL,
     },
     "quien_esta_en_la_sala": {
         "director": [Llamada("consultar_mesa_trabajo", vista="sala"), "Este es el equipo."]
     },
     "cartera_del_usuario": {
         "director": [
-            Llamada("diagnosticar_cartera", pesos=PESOS),
-            _con(
-                "diagnosticar_cartera",
-                lambda s: (
-                    "Diagnóstico exploratorio: según el Escéptico, Sharpe OOS "
-                    f"{s['metricas_oos']['sharpe_oos']}."
-                ),
-            ),
-        ]
+            Llamada("esceptico", pregunta="¿cómo la ves?", pesos=PESOS),
+            "Ya respondió el Escéptico: es un diagnóstico exploratorio.",
+        ],
+        "esceptico": ESCEPTICO_IDEAL,
     },
     "ambigua": {
         "director": ["¿Qué prefieres: evaluar tu cartera, una propuesta, o convocar al comité?"]
@@ -145,46 +172,52 @@ GUIONES: dict[str, dict[str, list[Any]]] = {
     },
     "alta_accion_con_cap": {
         "director": [
-            Llamada("resolver", ticker="AAPL"),
+            gestor_op("resolver", ticker="AAPL"),
             "AAPL es apta y la fuente trae su capitalización. ¿La incorporo?",
-            Llamada("incorporar", ticker="AAPL"),
+            gestor_op("incorporar", ticker="AAPL"),
             "Incorporada con la capitalización congelada de la fuente.",
         ]
     },
-    "alta_etf_pregunta_del_prior": {"director": [Llamada("resolver", ticker="QQQ"), OPCIONES_ETF]},
+    "alta_etf_pregunta_del_prior": {
+        "director": [gestor_op("resolver", ticker="QQQ"), OPCIONES_ETF]
+    },
     "degradar_a_neutral": {
         "director": [
-            Llamada("resolver", ticker="QQQ"),
+            gestor_op("resolver", ticker="QQQ"),
             OPCIONES_ETF,
-            Llamada("incorporar", ticker="QQQ"),
-            Llamada("aceptar_prior_neutral"),
+            gestor_op("incorporar", ticker="QQQ"),
+            gestor_op("aceptar_prior_neutral"),
             "QQQ entró con el prior pendiente. Degradar afecta a TODO el universo. ¿Confirmas?",
-            Llamada("aceptar_prior_neutral"),
+            gestor_op("aceptar_prior_neutral"),
             "Prior neutral aceptado para todo el universo.",
         ]
     },
     "cap_inventada": {
         "director": [
-            Llamada("resolver", ticker="QQQ"),
+            gestor_op("resolver", ticker="QQQ"),
             OPCIONES_ETF,
             "No puedo estimar una capitalización: apórtala tú o elige otra opción.",
         ]
     },
     "ticker_inexistente": {
-        "director": [Llamada("resolver", ticker="ZZZZ"), "ZZZZ no existe en la fuente de mercado."]
-    },
-    "cambio_de_universo_a_mitad": {
         "director": [
-            Llamada("estimar_mercado"),
-            "Correlación calculada (exploratorio).",
-            Llamada("resolver", ticker="AAPL"),
-            Llamada("incorporar", ticker="AAPL"),
-            "AAPL incorporada. Quedaron obsoletas las estimaciones del Estadístico.",
-            "Ya está incorporada.",
+            gestor_op("resolver", ticker="ZZZZ"),
+            "ZZZZ no existe en la fuente de mercado.",
         ]
     },
+    "cambio_de_universo_a_mitad": {
+        "estadistico": ESTADISTICO_IDEAL,
+        "director": [
+            Llamada("estadistico", pregunta=CORRELACION),
+            "Ya respondió el Estadístico (exploratorio).",
+            gestor_op("resolver", ticker="AAPL"),
+            gestor_op("incorporar", ticker="AAPL"),
+            "AAPL incorporada. Quedaron obsoletas las estimaciones del Estadístico.",
+            "Ya está incorporada.",
+        ],
+    },
     "retirar_activo": {
-        "director": [Llamada("retirar", ticker="BNS"), "BNS retirado.", "Ya estaba hecho."]
+        "director": [gestor_op("retirar", ticker="BNS"), "BNS retirado.", "Ya estaba hecho."]
     },
     "restricciones_infactibles": {
         "director": [
@@ -194,6 +227,70 @@ GUIONES: dict[str, dict[str, list[Any]]] = {
     },
     "ajustar_restricciones": {
         "director": [Llamada("ajustar_restricciones", peso_max=0.8), "Techo por activo en 0.8."]
+    },
+    "delegacion_estadistico_con_confianza": {
+        "director": [
+            Llamada("estadistico", pregunta="¿qué tan volátil es IBIT y qué tan confiable es?"),
+            "Ya respondió el Estadístico. ¿Seguimos?",
+        ],
+        "estadistico": [
+            Llamada("estimar_mercado"),
+            _con(
+                "estimar_mercado",
+                lambda s: (
+                    "Exploratorio. Estimé para IBIT una volatilidad anual de "
+                    f"{s['por_activo']['IBIT']['volatilidad_anual']} con "
+                    f"{s['por_activo']['IBIT']['observaciones']} observaciones: poca muestra, el "
+                    "intervalo de confianza es ancho."
+                ),
+            ),
+        ],
+    },
+    "delegacion_esceptico_sobre_la_mesa": {
+        "director": [
+            *PROPUESTA,
+            Llamada("esceptico", pregunta="¿qué te preocupa de esta cartera?"),
+            "Ya respondió el Escéptico sobre la propuesta del Constructor.",
+        ],
+        "analista": [BORRADOR_GOLDEN],
+        "esceptico": ESCEPTICO_IDEAL,
+    },
+    "esceptico_sin_cartera_sobre_la_mesa": {
+        "director": [
+            Llamada("esceptico", pregunta="¿qué te preocupa de la cartera propuesta?"),
+            "Todavía no hay una cartera propuesta: armemos una o dame tus pesos.",
+        ],
+        "esceptico": [
+            Llamada("diagnosticar_cartera"),
+            _con("diagnosticar_cartera", lambda s: f"No puedo diagnosticar: {s['mensaje']}"),
+        ],
+    },
+    "dividendos_solo_historia": {
+        "director": [
+            gestor_op("dividendos"),
+            _con(
+                NOMBRE_TOOL,
+                lambda s: (
+                    "Según el Gestor de Datos, el último ex-dividendo de BNS fue el "
+                    f"{s['ex_dividendos']['BNS'][-1]['fecha_ex']}. La fuente no publica el "
+                    "calendario futuro: no tenemos la próxima fecha."
+                ),
+            ),
+        ]
+    },
+    "montos_sin_cifras_del_llm": {
+        "director": [
+            *PROPUESTA,
+            gestor_op("montos"),
+            _con(
+                NOMBRE_TOOL,
+                lambda s: (
+                    f"Según el Gestor de Datos la orden global es {s['orden_global']}: fuera de "
+                    f"banda están {s['fuera_de_banda']}. No es una orden de compra; mira la ficha."
+                ),
+            ),
+        ],
+        "analista": [BORRADOR_GOLDEN],
     },
 }
 
@@ -212,41 +309,72 @@ MALOS: dict[str, tuple[dict[str, list[Any]], str]] = {
     "que_tenemos": (  # describe la mesa de memoria, sin consultarla
         {
             "director": [
-                Llamada("estimar_mercado"),
-                "Exploratorio, del Estadístico.",
+                Llamada("estadistico", pregunta=CORRELACION),
+                "Ya respondió el Estadístico.",
                 "Tenemos el universo y una estimación vigente del Estadístico.",
-            ]
+            ],
+            "estadistico": ESTADISTICO_IDEAL,
         },
         "turno2.tools_obligatorias",
     ),
     "saludo": (
-        {"director": [Llamada("estimar_mercado"), "Hola, ya estimé VOOG. ¿Seguimos?"]},
+        {
+            "director": [Llamada("estadistico", pregunta="estima"), "Hola, ya estimamos."],
+            "estadistico": ESTADISTICO_IDEAL,
+        },
         "turno1.tools_permitidas",
     ),
-    "consulta_simple": (
-        {"director": [Llamada("estimar_mercado"), "Exploratorio: la correlación es 0.91."]},
+    "consulta_simple": (  # la persona suelta una cifra que su herramienta no dio
+        {
+            "director": [Llamada("estadistico", pregunta=CORRELACION), "Ya respondió."],
+            "estadistico": [Llamada("estimar_mercado"), "Exploratorio: la correlación es 0.91."],
+        },
         "turno1.cifras_respaldadas",
     ),
-    "cartera_del_usuario": (  # la cifra es de la tool, pero no dice de quién
+    "delegacion_estadistico_con_confianza": (  # el Director re-narra las cifras de la persona
         {
             "director": [
-                Llamada("diagnosticar_cartera", pesos=PESOS),
+                Llamada("estadistico", pregunta="¿qué tan volátil es IBIT?"),
                 _con(
-                    "diagnosticar_cartera",
-                    lambda s: (
-                        f"Diagnóstico exploratorio: Sharpe OOS {s['metricas_oos']['sharpe_oos']}."
-                    ),
+                    "estadistico",
+                    lambda s: f"El Estadístico estimó una volatilidad de {_cifra_de(s['result'])}.",
                 ),
-            ]
+            ],
+            "estadistico": GUIONES["delegacion_estadistico_con_confianza"]["estadistico"],
+        },
+        "turno1.no_repite_cifras",
+    ),
+    "cartera_del_usuario": (  # el Director re-narra la cifra y además no dice de quién es
+        {
+            "director": [
+                Llamada("esceptico", pregunta="¿cómo la ves?", pesos=PESOS),
+                _con(
+                    "esceptico",
+                    lambda s: f"Diagnóstico exploratorio: caída máxima {_cifra_de(s['result'])}.",
+                ),
+            ],
+            "esceptico": ESCEPTICO_IDEAL,
         },
         "turno1.cifras_atribuidas",
+    ),
+    "delegacion_esceptico_sobre_la_mesa": (  # el Escéptico emite un veredicto fuera del comité
+        {
+            "director": [
+                *PROPUESTA,
+                Llamada("esceptico", pregunta="¿qué te preocupa de esta cartera?"),
+                "Ya respondió el Escéptico sobre la propuesta del Constructor.",
+            ],
+            "analista": [BORRADOR_GOLDEN],
+            "esceptico": [Llamada("diagnosticar_cartera"), "La cartera queda aprobada."],
+        },
+        "turno2.solo_negado",
     ),
     "degradar_a_neutral": (  # lo que hizo el modelo real en la línea base… si la tool no lo frenara
         {
             "director": [
-                Llamada("resolver", ticker="QQQ"),
+                gestor_op("resolver", ticker="QQQ"),
                 OPCIONES_ETF,
-                Llamada("incorporar", ticker="QQQ"),
+                gestor_op("incorporar", ticker="QQQ"),
                 "Listo, QQQ incorporado y prior degradado.",
                 "Hecho.",
             ]
@@ -256,13 +384,13 @@ MALOS: dict[str, tuple[dict[str, list[Any]], str]] = {
     "cap_inventada": (
         {
             "director": [
-                Llamada("resolver", ticker="QQQ"),
+                gestor_op("resolver", ticker="QQQ"),
                 OPCIONES_ETF,
-                Llamada("incorporar", ticker="QQQ", prior_cap=20.0, prior_metodologia="estimada"),
+                gestor_op("incorporar", ticker="QQQ", prior_cap=20.0, prior_metodologia="estimada"),
                 "Le puse 20 billones.",
             ]
         },
-        "turno2.argumentos.incorporar",
+        f"turno2.argumentos.{NOMBRE_TOOL}:incorporar",
     ),
     "capacidades": (
         {"director": ["Puedo armar tu cartera, el comité, y te aviso con una alerta si cae."]},
@@ -279,7 +407,7 @@ MALOS: dict[str, tuple[dict[str, list[Any]], str]] = {
         "turno1.status_prohibido.ajustar_restricciones",
     ),
     "alta_accion_con_cap": (
-        {"director": [Llamada("resolver", ticker="AAPL"), "¿La incorporo?", "Cuando quieras."]},
+        {"director": [gestor_op("resolver", ticker="AAPL"), "¿La incorporo?", "Cuando quieras."]},
         "efectos.universo_cambia",
     ),
 }
@@ -316,7 +444,9 @@ def test_los_criterios_solo_nombran_tools_que_el_director_tiene(
     casos: Casos, config: Config, tmp_path: Path
 ) -> None:
     director = mundo_director(tmp_path, config, "modelo-que-no-se-llama").director
-    existentes = {t.name for t in director.tools}
+    existentes = {t.name for t in director.tools if t.name != NOMBRE_TOOL}
+    existentes |= {f"{NOMBRE_TOOL}:{op}" for op in OPERACIONES}
+    existentes |= {t.name for a in director.sub_agents for t in getattr(a, "tools", [])}
     for caso in casos.casos:
         for c in [*(t.criterios for t in caso.turnos), caso.conversacion]:
             nombradas = {
@@ -374,7 +504,7 @@ def test_un_director_en_bucle_agota_el_tope_de_llamadas_en_vez_de_colgar_el_eval
     from investmentsys.evaluacion.director import MAX_LLAMADAS_LLM_POR_TURNO
 
     saludo = next(c for c in casos.casos if c.id == "saludo")
-    bucle = [Llamada("diagnosticar") for _ in range(MAX_LLAMADAS_LLM_POR_TURNO + 5)]
+    bucle = [gestor_op("diagnosticar") for _ in range(MAX_LLAMADAS_LLM_POR_TURNO + 5)]
     llm = LlmPorAgente(director=bucle)
     with pytest.raises(LlmCallsLimitExceededError):
         asyncio.run(correr_caso(saludo, lambda: mundo_director(tmp_path, config, llm)))

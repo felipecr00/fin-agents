@@ -21,6 +21,7 @@ from investmentsys.tools.estado import (
     CLAVE_VALIDACIONES,
     EstadoLegible,
 )
+from investmentsys.tools.estado import CLAVE_RUN_STATE as CLAVE_RUN_STATE  # se define allí
 
 CLAVE_RUN_ID = "run_id"
 CLAVE_CREADO_EN = "creado_en"
@@ -29,7 +30,6 @@ CLAVE_NARRATIVA = "reporte_narrativa"
 CLAVE_REPORTE = "reporte_markdown"
 CLAVE_DIRECTORIO = "directorio_corrida"
 CLAVE_APROBACION = "aprobacion_comite"  # ADR-014: la pone convocar_comite, nunca un LLM
-CLAVE_RUN_STATE = "run_state_json"  # ADR-009: el RunState final viaja también en la sesión
 
 ARCHIVO_RUN_STATE = "run_state.json"
 ARCHIVO_REPORTE = "reporte.md"

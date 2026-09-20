@@ -17,7 +17,14 @@ from investmentsys.tools import (
 )
 from investmentsys.tools.estado import CLAVE_SOLICITUD_NEUTRAL
 from investmentsys.tools.gestor import GestorTools
-from tests.almacen import FuenteFalsa, cap_fuente, panel_referencia, sembrar_gestor, serie_sintetica
+from tests.almacen import (
+    FuenteFalsa,
+    cap_fuente,
+    diagnosticar,
+    panel_referencia,
+    sembrar_gestor,
+    serie_sintetica,
+)
 from tests.unit.tools.conftest import Turnos
 
 FIN = panel_referencia().index[-1]
@@ -45,23 +52,6 @@ def _resultados(salida: dict[str, object]) -> list[str]:
     obsoletos = salida["resultados_obsoletos"]
     assert isinstance(obsoletos, list)
     return [o["resultado"] for o in obsoletos]
-
-
-def test_declaraciones_visibles_para_el_llm(gestor_tools: GestorTools) -> None:
-    declaraciones = {t.name: t._get_declaration() for t in gestor_tools.function_tools()}
-    assert list(declaraciones) == [
-        "resolver",
-        "incorporar",
-        "retirar",
-        "aceptar_prior_neutral",
-        "refrescar_cap",
-        "diagnosticar",
-    ]
-    incorporar = declaraciones["incorporar"]
-    assert incorporar is not None and incorporar.description
-    esquema = incorporar.parameters_json_schema
-    assert set(esquema["properties"]) == {"ticker", "prior_cap", "prior_metodologia"}
-    assert esquema["required"] == ["ticker"]  # degradar a neutral NO es un argumento del alta
 
 
 class TestResolver:
@@ -105,7 +95,7 @@ class TestCambiosDeUniverso:
         assert ctx.state[CLAVE_QUANT_ESTIMATES]["universe_version"] == previa
         assert ctx.state[CLAVE_RESTRICCIONES_SESION] is None
         assert ctx.state[CLAVE_SOLICITUD] is None
-        rechazo = tools.diagnosticar_cartera({"AAPL": 1.0}, ctx)
+        rechazo = diagnosticar(tools, {"AAPL": 1.0}, ctx)
         assert rechazo["tipo"] == "ResultadoObsoletoError"
 
     def test_sin_resultados_previos_no_hay_nada_obsoleto(

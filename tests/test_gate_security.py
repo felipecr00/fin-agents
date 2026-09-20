@@ -25,7 +25,7 @@ from investmentsys.config import Config, cargar_config
 from investmentsys.data_manager import GestorDatos
 from investmentsys.orchestrator import CLAVE_RUN_STATE, CLAVE_SOLICITUD, ViolacionGateError
 from tests.almacen import sembrar_gestor
-from tests.integration.conftest import Corrida, Llamada, LlmPorAgente, conversar
+from tests.integration.conftest import Corrida, Llamada, LlmPorAgente, conversar, gestor_op
 from tests.integration.test_market_analyst import BORRADOR_GOLDEN
 
 VIOLACION = ViolacionGateError.__name__
@@ -110,6 +110,31 @@ def test_adk_un_invocation_id_por_turno_del_usuario_y_eventos_en_orden(
     assert len(orden_c) == 3 and orden_c[0] == id_a and orden_c[-1] == id_c
 
 
+def test_una_persona_consultada_en_el_turno_no_abre_otra_invocacion(
+    config: Config, gestor: GestorDatos, tmp_path: Path
+) -> None:
+    """S10 (ADR-019): un sub-agente ``single_turn`` corre DENTRO del turno del usuario.
+
+    Si abriera otra invocación, consultar al Estadístico entre ``solicitar`` y ``ejecutar``
+    haría pasar por "turno posterior" lo que el usuario nunca confirmó.
+    """
+    guion = [
+        Llamada("convocar_comite", fase="solicitar"),
+        Llamada("estadistico", pregunta="¿correlación?"),
+        _ejecutar_con_el_token,
+        "No puedo ejecutar sin tu confirmación.",
+    ]
+    persona = [Llamada("estimar_mercado"), "Exploratorio: correlación alta."]
+    (turno,) = _correr(
+        config, gestor, tmp_path / "runs", guion, ["convoca y ejecuta"], estadistico=persona
+    )
+    assert len({e.invocation_id for e in turno.eventos}) == 1
+    assert turno.textos("estadistico"), "la persona sí corrió, en su rama"
+    (rechazo,) = _rechazos(turno)
+    assert rechazo["tipo"] == VIOLACION
+    assert _sin_acta(turno, tmp_path / "runs")
+
+
 # ------------------------------------------------------------- violaciones del gate
 def test_ejecutar_sin_haber_solicitado_es_una_violacion_controlada(
     config: Config, gestor: GestorDatos, tmp_path: Path
@@ -169,7 +194,7 @@ def test_un_cambio_de_universo_invalida_el_token(
     guion = [
         Llamada("convocar_comite", fase="solicitar"),
         recordar,
-        Llamada("retirar", ticker="BNS"),
+        gestor_op("retirar", ticker="BNS"),
         lambda _: Llamada("convocar_comite", fase="ejecutar", token=token[0]),
         "El universo cambió: hay que volver a solicitar.",
     ]

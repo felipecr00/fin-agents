@@ -91,6 +91,8 @@ class Mundo:
     runs: Path
     respaldo_fijo: tuple[str, ...] = ()
     """Textos cuyas cifras el Director conoce sin llamar a nada (su instrucción)."""
+    personas: tuple[str, ...] = ()
+    """Sub-agentes con voz propia: su texto también lo lee el usuario (S10, ADR-019)."""
 
 
 def preparar(gestor: GestorDatos, operaciones: tuple[str, ...]) -> None:
@@ -101,30 +103,59 @@ def preparar(gestor: GestorDatos, operaciones: tuple[str, ...]) -> None:
         getattr(gestor, accion)(ticker.strip())
 
 
+def nombre_observado(tool: str, args: dict[str, Any]) -> str:
+    """``tool:operacion`` cuando la tool despacha por ``operacion`` (el Gestor-Fintual, S10).
+
+    Los criterios por tool (permitidas, status, argumentos…) distinguen así ``incorporar`` de
+    ``resolver`` aunque el Director llame a una sola herramienta.
+    """
+    operacion = args.get("operacion")
+    return f"{tool}:{operacion}" if isinstance(operacion, str) and operacion else tool
+
+
 def observar(
-    usuario: str, eventos: list[Event], respaldo_previo: tuple[str, ...], autor: str
+    usuario: str,
+    eventos: list[Event],
+    respaldo_previo: tuple[str, ...],
+    autor: str,
+    personas: tuple[str, ...] = (),
 ) -> TurnoObservado:
-    """``autor``: solo su texto final es lo que el usuario lee como respuesta del turno."""
+    """``autor`` es el Director; ``personas``, los sub-agentes con voz propia (ADR-019).
+
+    El usuario lee el texto de ambos. Las llamadas y respuestas son las de TODAS las ramas:
+    también las de la herramienta de cada persona.
+    """
     llamadas: list[tuple[str, dict[str, Any]]] = []
     respuestas: list[tuple[str, dict[str, Any]]] = []
     textos: list[str] = []
+    voces: list[tuple[str, str]] = []
+    nombres: dict[str | None, str] = {}
     for evento in eventos:
         for parte in (evento.content.parts or []) if evento.content else []:
             if parte.function_call:
-                llamadas.append(
-                    (parte.function_call.name or "", dict(parte.function_call.args or {}))
-                )
+                args = dict(parte.function_call.args or {})
+                nombre = nombre_observado(parte.function_call.name or "", args)
+                nombres[parte.function_call.id] = nombre
+                llamadas.append((nombre, args))
             elif parte.function_response:
                 respuesta = parte.function_response.response or {}
-                respuestas.append((parte.function_response.name or "", dict(respuesta)))
-            elif parte.text and not parte.thought and evento.author == autor:
-                textos.append(parte.text)
+                nombre = nombres.get(parte.function_response.id, parte.function_response.name or "")
+                # Lo que una persona le devuelve al Director es su TEXTO: no es la salida de una
+                # herramienta y no puede respaldar las cifras que ella misma dijo.
+                if parte.function_response.name not in personas:
+                    respuestas.append((nombre, dict(respuesta)))
+            elif parte.text and not parte.thought:
+                if evento.author == autor:
+                    textos.append(parte.text)
+                elif evento.author in personas:
+                    voces.append((evento.author, parte.text))
     return TurnoObservado(
         usuario=usuario,
         llamadas=tuple(llamadas),
         respuestas=tuple(respuestas),
         texto="\n".join(textos),
         respaldo_previo=respaldo_previo,
+        voces=tuple(voces),
     )
 
 
@@ -145,7 +176,7 @@ async def conversar(mundo: Mundo, mensajes: tuple[str, ...]) -> list[TurnoObserv
                 run_config=RunConfig(max_llm_calls=MAX_LLAMADAS_LLM_POR_TURNO),
             )
         ]
-        turno = observar(mensaje, eventos, respaldo, mundo.director.name)
+        turno = observar(mensaje, eventos, respaldo, mundo.director.name, mundo.personas)
         turnos.append(turno)
         respaldo = (
             *respaldo,
@@ -191,6 +222,7 @@ def juzgar(
         respuestas=tuple(r for t in turnos for r in t.respuestas),
         texto="\n".join(t.texto for t in turnos),
         respaldo_previo=mundo.respaldo_fijo,
+        voces=tuple(v for t in turnos for v in t.voces),
     )
     resultados += evaluar(caso.conversacion, todo, "conversacion")
     return [*resultados, *_efectos(caso, version_inicial, mundo)]

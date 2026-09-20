@@ -55,9 +55,9 @@ NOMBRE_TOOL = "consultar_mesa_trabajo"
 
 REHACER = {
     CategoriaPizarra.VISTAS: "vuelve a pedirlas al analista",
-    CategoriaPizarra.ESTIMACION: "vuelve a llamar a estimar_mercado",
+    CategoriaPizarra.ESTIMACION: "pídesela de nuevo al Estadístico",
     CategoriaPizarra.CARTERAS: "vuelve a construirlas",
-    CategoriaPizarra.DIAGNOSTICO: "vuelve a diagnosticar",
+    CategoriaPizarra.DIAGNOSTICO: "pídeselo de nuevo al Escéptico",
     CategoriaPizarra.RESTRICCION: "vuelve a indicarlas; rigen las de config.yaml",
 }
 ORIGEN_DEL_LIMITE = {

@@ -27,7 +27,8 @@ from investmentsys.evaluacion.criterios_director import (
     fuentes_atribuibles,
 )
 from tests.almacen import sembrar_gestor
-from tests.integration.conftest import Llamada, LlmPorAgente, conversar
+from tests.integration.conftest import Llamada, LlmPorAgente, conversar, gestor_op
+from tests.integration.test_market_analyst import BORRADOR_GOLDEN
 
 PESOS = {"VOOG": 0.5, "VB": 0.3, "BNS": 0.2}
 
@@ -98,65 +99,89 @@ def test_el_criterio_del_evalset_reporta_las_lineas_culpables() -> None:
 
 
 # ------------------------------------------------- respuestas del Director (Runner real)
+# S10: las cifras del Estadístico y del Escéptico las dicen ELLOS (su autoría es la atribución).
+# El Director sigue narrando al Constructor, al Gestor y al comité: ahí se le exige la fuente.
+PROPUESTA = [Llamada("market_analyst", request="views de partida"), Llamada("construir_candidatos")]
+PERSONAS: dict[str, list[Any]] = {
+    "estadistico": [Llamada("estimar_mercado"), "Exploratorio: estimé una correlación alta."],
+    "esceptico": [Llamada("diagnosticar_cartera"), "Exploratorio: me preocupa la concentración."],
+}
+
+
 def _responder(
-    config: Config, gestor: GestorDatos, runs: Path, guion: list[Any], mensaje: str
+    config: Config,
+    gestor: GestorDatos,
+    runs: Path,
+    guion: list[Any],
+    mensaje: str,
+    **otros: list[Any],
 ) -> str:
-    llm = LlmPorAgente(director=guion)
+    llm = LlmPorAgente(director=guion, analista=[BORRADOR_GOLDEN], **otros)
     (turno,) = conversar(crear_director(config, gestor.provider(), gestor, llm, runs), [mensaje])
     assert llm.pendientes() == {}
-    (texto,) = turno.textos("director")
-    return texto
+    return turno.textos("director")[-1]
 
 
-def _salida(peticion: LlmRequest, tool: str) -> dict[str, Any]:
-    return next(
+def _recomendada(peticion: LlmRequest) -> dict[str, Any]:
+    salida = next(
         dict(p.function_response.response or {})
         for c in reversed(peticion.contents)
         for p in c.parts or []
-        if p.function_response and p.function_response.name == tool
+        if p.function_response and p.function_response.name == "construir_candidatos"
     )
+    cartera: dict[str, Any] = salida["candidatos"][salida["recomendado"]]
+    return cartera
 
 
 def test_el_director_que_suelta_la_cifra_sin_fuente_falla_aunque_lleve_la_ficha(
     config: Config, gestor: GestorDatos, tmp_path: Path
 ) -> None:
     def sin_fuente(peticion: LlmRequest) -> str:
-        c = _salida(peticion, "estimar_mercado")["correlaciones"]["VOOG-VB"]
-        return f"Exploratorio: la correlación entre VOOG y VB es {c:.4f}."
+        c = _recomendada(peticion)
+        return f"Exploratorio: el retorno esperado es {c['retorno_esperado_anual'] * 100:.2f} %."
 
-    texto = _responder(
-        config, gestor, tmp_path, [Llamada("estimar_mercado"), sin_fuente], "¿correlación?"
-    )
-    assert "Ficha de origen" in texto and "**Estadístico**" in texto, "la ficha está…"
+    texto = _responder(config, gestor, tmp_path, [*PROPUESTA, sin_fuente], "propón una cartera")
+    assert "Ficha de origen" in texto and "**Constructor de Carteras**" in texto, "la ficha está…"
     (linea,) = cifras_sin_atribuir(texto)
-    assert linea.startswith("exploratorio: la correlacion"), "…pero la NARRACIÓN no atribuye"
+    assert linea.startswith("exploratorio: el retorno esperado"), "…pero la NARRACIÓN no atribuye"
 
 
 def test_el_director_que_nombra_al_especialista_pasa(
     config: Config, gestor: GestorDatos, tmp_path: Path
 ) -> None:
     def con_fuente(peticion: LlmRequest) -> str:
-        m = _salida(peticion, "diagnosticar_cartera")["metricas_oos"]
+        c = _recomendada(peticion)
         return (
-            f"Diagnóstico exploratorio. Según el Escéptico, el Sharpe OOS es {m['sharpe_oos']:.2f} "
-            f"y la caída máxima {m['max_drawdown'] * 100:.1f} %."
+            "Propuesta exploratoria. El Constructor propone una cartera con retorno esperado de "
+            f"{c['retorno_esperado_anual'] * 100:.2f} % y Sharpe {c['sharpe']:.2f}."
         )
 
-    guion = [Llamada("diagnosticar_cartera", pesos=PESOS), con_fuente]
-    assert cifras_sin_atribuir(_responder(config, gestor, tmp_path, guion, "¿cómo la ves?")) == []
+    texto = _responder(config, gestor, tmp_path, [*PROPUESTA, con_fuente], "propón una cartera")
+    assert cifras_sin_atribuir(texto) == []
 
 
 def test_los_bloques_que_redacta_el_codigo_siempre_atribuyen(
     config: Config, gestor: GestorDatos, tmp_path: Path
 ) -> None:
-    """Fichas de tres especialistas y la mesa con sus resultados: ninguna cifra huérfana."""
+    """Fichas de las personas y del Constructor, y la mesa: ninguna cifra huérfana."""
     guion = [
-        Llamada("estimar_mercado"),
-        Llamada("diagnosticar_cartera", pesos=PESOS),
+        Llamada("estadistico", pregunta="estima"),
+        Llamada("esceptico", pregunta="diagnostica", pesos=PESOS),
+        *PROPUESTA,
+        gestor_op("montos"),
         Llamada("consultar_mesa_trabajo"),
         "Listo.",
     ]
-    texto = _responder(config, gestor, tmp_path, guion, "estima, diagnostica y muestra la mesa")
-    for bloque in ("### Mesa de trabajo", "**Estadístico**", "**Escéptico**", "NO VALIDADO"):
+    texto = _responder(
+        config, gestor, tmp_path, guion, "estima, diagnostica, propón y muestra", **PERSONAS
+    )
+    for bloque in (
+        "### Mesa de trabajo",
+        "**Estadístico**",
+        "**Escéptico**",
+        "**Constructor de Carteras**",
+        "**Gestor de Datos** · herramienta `gestionar_datos_y_fricciones`",
+        "NO VALIDADO",
+    ):
         assert bloque in texto
     assert cifras_sin_atribuir(texto) == []

@@ -4,6 +4,9 @@ Endpoints verificados contra el servicio real el 2026-09-19 (tier gratuito; ver 
 
 - ``GET tiingo/daily/<ticker>`` → ``ticker, name, startDate, endDate, exchangeCode``; 404 si no
   existe. No trae moneda ni capitalización.
+- ``GET tiingo/daily/<ticker>/prices?startDate=…`` → diario: ``close, adjClose, divCash,
+  splitFactor``… (verificado el 2026-09-20, S10). ``divCash > 0`` marca la fecha ex-dividendo.
+  Solo historia: la fuente no publica dividendos futuros.
 - ``GET tiingo/fundamentals/meta?tickers=<t>`` → lista; solo acciones (un ETF no aparece):
   ``isActive, isADR, reportingCurrency``.
 - ``GET tiingo/fundamentals/<ticker>/daily?startDate=…`` → ``[{date, marketCap, …}]`` en US$.
@@ -31,7 +34,13 @@ from investmentsys.data.tiingo_provider import (
     TiingoTickerError,
     ultimo_mes_cerrado,
 )
-from investmentsys.data_manager.fuente import CapFuente, MetadataActivo, TickerInexistenteError
+from investmentsys.data_manager.fuente import (
+    CapFuente,
+    CierreDiario,
+    Dividendo,
+    MetadataActivo,
+    TickerInexistenteError,
+)
 
 RUTA_FUNDAMENTALS_META = "tiingo/fundamentals/meta"
 MONEDA_REPORTE_ADMITIDA = "usd"
@@ -56,6 +65,7 @@ class TiingoFuente:
         self._cliente = cliente
         self._dormir = dormir
         self._http = ClienteTiingo(config, api_key, dormir)
+        self._diarios: dict[str, tuple[date, list[dict[str, Any]]]] = {}
 
     def metadata(self, ticker: str) -> MetadataActivo:
         try:
@@ -114,6 +124,41 @@ class TiingoFuente:
             dormir=self._dormir,
         )
         return proveedor.precios([ticker])[ticker]
+
+    def dividendos(self, ticker: str, desde: date) -> tuple[Dividendo, ...]:
+        return tuple(
+            Dividendo(date.fromisoformat(str(f["date"])[:10]), float(f["divCash"]))
+            for f in self._diario(ticker, desde)
+            if _positivo(f.get("divCash"))
+        )
+
+    def ultimo_cierre(self, ticker: str) -> CierreDiario | None:
+        filas = self._diario(ticker, self._hoy - timedelta(days=DIAS_BUSQUEDA_CAP))
+        validas = [f for f in filas if _positivo(f.get("close")) and _positivo(f.get("adjClose"))]
+        if not validas:
+            return None
+        ultima = max(validas, key=lambda f: str(f["date"]))
+        return CierreDiario(
+            fecha=date.fromisoformat(str(ultima["date"])[:10]),
+            cierre=float(ultima["close"]),
+            cierre_ajustado=float(ultima["adjClose"]),
+        )
+
+    def _diario(self, ticker: str, desde: date) -> list[dict[str, Any]]:
+        """Filas diarias desde la más antigua pedida; una sola descarga por ticker."""
+        previo = self._diarios.get(ticker)
+        if previo is None or desde < previo[0]:
+            try:
+                filas = self._get(
+                    f"tiingo/daily/{ticker}/prices",
+                    {"startDate": desde.isoformat(), "endDate": self._hoy.isoformat()},
+                    ticker,
+                )
+            except TiingoTickerError as exc:
+                raise TickerInexistenteError(f"{ticker}: la fuente (Tiingo) no lo conoce") from exc
+            previo = (desde, [f for f in filas or [] if isinstance(f, dict) and f.get("date")])
+            self._diarios[ticker] = previo
+        return [f for f in previo[1] if str(f["date"])[:10] >= desde.isoformat()]
 
     @property
     def ultimo_mes_cerrado(self) -> pd.Timestamp:

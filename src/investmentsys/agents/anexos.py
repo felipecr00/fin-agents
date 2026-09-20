@@ -1,11 +1,14 @@
 """Bloques que el CÓDIGO anexa a la respuesta del Director (S9): fichas, mesa y memorándum.
 
-Tres callbacks de ADK sobre el Director:
+Tres callbacks de ADK:
 
 - ``recoger_anexos`` (``after_tool_callback``): tras cada herramienta —también el sub-agente
   ``market_analyst``, que ADK expone como tool— arma la ficha de origen de todo resultado con
   ``validado`` y retira de la salida el bloque ya redactado (``anexo_usuario``: la mesa, el
   memorándum de convocatoria). El LLM recibe los datos, no el bloque: no hay nada que copiar mal.
+  Desde S10 (ADR-019) es también el callback de las PERSONAS thin: el Director solo recibe el
+  texto de la persona, así que la ficha la recoge quien ve la salida de la herramienta. Estado
+  e ``invocation_id`` son los del turno, y el Director la anexa al cierre igual que las suyas.
 - ``anexar_al_cierre`` (``after_model_callback``): cuando el modelo cierra el turno (respuesta
   final, sin llamadas pendientes), pega los bloques del turno al final del texto.
 - ``ocultar_anexos_al_modelo`` (``before_model_callback``): recorta esos bloques del historial

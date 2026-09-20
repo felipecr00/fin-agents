@@ -17,6 +17,7 @@ from investmentsys.tools.ficha import (
     PREFIJO_NO_VALIDADO,
     construir_ficha,
 )
+from tests.almacen import diagnosticar
 
 VERSION = "c" * 64
 PESOS_USUARIO = {"VOOG": 0.5, "BNS": 0.3, "VB": 0.2}
@@ -45,7 +46,7 @@ def _comite(validado: bool) -> dict[str, Any]:
 def test_diagnostico_del_esceptico_fuente_herramienta_sello_etiqueta_y_prefijo(
     tools: NucleoTools, ctx: ToolContext
 ) -> None:
-    salida = tools.diagnosticar_cartera(PESOS_USUARIO, ctx)
+    salida = diagnosticar(tools, PESOS_USUARIO, ctx)
     ficha = construir_ficha("diagnosticar_cartera", salida)
     assert ficha is not None
     cabecera, fuente, *cifras = ficha.splitlines()

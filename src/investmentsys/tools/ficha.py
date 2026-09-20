@@ -1,7 +1,7 @@
 """Ficha de origen (S9): quién produjo una cifra, con qué herramienta y sobre qué universo.
 
 La redacta el CÓDIGO a partir de la salida de una herramienta; el Director no la escribe ni la
-puede omitir (la anexa un callback a su respuesta, ver ``agents/director/anexos.py``). Todo dato
+puede omitir (la anexa un callback a su respuesta, ver ``agents/anexos.py``). Todo dato
 con ``validado: false`` lleva ``PREFIJO_NO_VALIDADO``: la advertencia sobrevive a la narración
 porque no depende de ella. El especialista sale de ``ATIENDE``, la misma fuente que el roster.
 """
@@ -17,6 +17,7 @@ PREFIJO_NO_VALIDADO = "⚠ NO VALIDADO · "
 ETIQUETA_FICHA_EXPLORATORIA = "EXPLORATORIO (no pasó por el comité)"
 ETIQUETA_FICHA_COMITE = "COMITÉ FORMAL (validado; consta en el acta)"
 ETIQUETA_FICHA_COMITE_SIN_APROBAR = "COMITÉ FORMAL — SIN CARTERA APROBADA"
+ETIQUETA_FICHA_OPERATIVA = "ESTIMACIÓN OPERATIVA sobre una cartera aprobada por el comité"
 CLAVE_ANEXO = "anexo_usuario"
 """Clave de la salida de una herramienta con un bloque YA redactado para el usuario."""
 
@@ -24,16 +25,13 @@ CLAVE_ANEXO = "anexo_usuario"
 # una herramienta sin silla no entra a la sala (``componer_sala`` falla al construir el equipo).
 ATIENDE: Mapping[str, Especialista] = {
     "consultar_mesa_trabajo": Especialista.DIRECTOR,
-    "resolver": Especialista.GESTOR_DATOS,
-    "incorporar": Especialista.GESTOR_DATOS,
-    "retirar": Especialista.GESTOR_DATOS,
-    "aceptar_prior_neutral": Especialista.GESTOR_DATOS,
-    "refrescar_cap": Especialista.GESTOR_DATOS,
-    "diagnosticar": Especialista.GESTOR_DATOS,
+    "gestionar_datos_y_fricciones": Especialista.GESTOR_DATOS,
     "market_analyst": Especialista.ANALISTA,
+    "estadistico": Especialista.ESTADISTICO,
     "estimar_mercado": Especialista.ESTADISTICO,
     "construir_candidatos": Especialista.CONSTRUCTOR,
     "ajustar_restricciones": Especialista.CONSTRUCTOR,
+    "esceptico": Especialista.ESCEPTICO,
     "diagnosticar_cartera": Especialista.ESCEPTICO,
     "convocar_comite": Especialista.COMITE,
 }
@@ -73,8 +71,9 @@ def _construir_candidatos(s: Mapping[str, Any]) -> list[str]:
 
 def _diagnosticar_cartera(s: Mapping[str, Any]) -> list[str]:
     m = s["metricas_oos"]
+    origen = f" ({s['cartera_evaluada']})" if s.get("cartera_evaluada") else ""
     return [
-        f"cartera evaluada: {pesos(s['pesos_evaluados'])}",
+        f"cartera evaluada{origen}: {pesos(s['pesos_evaluados'])}",
         f"fuera de muestra: Sharpe {m['sharpe_oos']:.2f}, retorno anualizado "
         f"{pct(m['retorno_anualizado'])}, volatilidad {pct(m['volatilidad_anualizada'])}, "
         f"caída máxima {pct(m['max_drawdown'])}",
@@ -107,12 +106,28 @@ def _convocar_comite(s: Mapping[str, Any]) -> list[str]:
     return lineas
 
 
+def _montos(s: Mapping[str, Any]) -> list[str]:
+    """Solo ``montos`` trae ``validado``: las demás operaciones del Gestor no llevan ficha."""
+    lineas = [
+        f"{s['cartera_objetivo']} sobre US$ {s['valor_cartera_usd']:.2f}: orden global "
+        f"{s['orden_global']}"
+    ]
+    for a, d in s["por_activo"].items():
+        lineas.append(
+            f"{a}: {d['orden']} · objetivo {pct(d['peso_objetivo'], 1)} (US$ "
+            f"{d['monto_objetivo_usd']:.2f}), actual {pct(d['peso_actual'], 1)}, desviación "
+            f"{d['desviacion'] * 100:+.1f} p.p. (banda ±{d['banda'] * 100:.1f} p.p.)"
+        )
+    return lineas
+
+
 CIFRAS_CLAVE: Mapping[str, Callable[[Mapping[str, Any]], list[str]]] = {
     "estimar_mercado": _estimar_mercado,
     "construir_candidatos": _construir_candidatos,
     "diagnosticar_cartera": _diagnosticar_cartera,
     "market_analyst": _market_analyst,
     "convocar_comite": _convocar_comite,
+    "gestionar_datos_y_fricciones": _montos,
 }
 
 
@@ -128,6 +143,8 @@ def construir_ficha(
     validado: bool = salida["validado"]
     if herramienta == "convocar_comite":
         etiqueta = ETIQUETA_FICHA_COMITE if validado else ETIQUETA_FICHA_COMITE_SIN_APROBAR
+    elif validado:  # montos sobre la cartera del comité: la cartera está validada, el plan no
+        etiqueta = ETIQUETA_FICHA_OPERATIVA
     else:
         etiqueta = ETIQUETA_FICHA_EXPLORATORIA
     sello = salida.get("universe_version") or sello_vigente

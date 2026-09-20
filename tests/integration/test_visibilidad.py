@@ -12,12 +12,12 @@ from typing import Any
 import pytest
 from google.adk.models.llm_request import LlmRequest
 
-from investmentsys.agents.director import crear_director
-from investmentsys.agents.director.anexos import (
+from investmentsys.agents.anexos import (
     CLAVE_ANEXOS_TURNO,
     MARCA_ANEXO,
 )
-from investmentsys.agents.director.anexos import SEPARADOR as SEPARADOR_DE_BLOQUES
+from investmentsys.agents.anexos import SEPARADOR as SEPARADOR_DE_BLOQUES
+from investmentsys.agents.director import crear_director
 from investmentsys.config import Config
 from investmentsys.data_manager import GestorDatos
 from investmentsys.tools.ficha import (
@@ -39,10 +39,18 @@ def gestor(tmp_path: Path, config: Config) -> GestorDatos:
     return sembrar_gestor(tmp_path / "almacen", config)
 
 
+ESTADISTICO = [Llamada("estimar_mercado"), "Exploratorio: estimé una correlación alta."]
+
+
 def _charlar(
-    config: Config, gestor: GestorDatos, tmp_path: Path, guion: list[Any], mensajes: list[str]
+    config: Config,
+    gestor: GestorDatos,
+    tmp_path: Path,
+    guion: list[Any],
+    mensajes: list[str],
+    **personas: list[Any],
 ) -> tuple[list[Corrida], LlmPorAgente]:
-    llm = LlmPorAgente(director=guion)
+    llm = LlmPorAgente(director=guion, **personas)
     director = crear_director(config, gestor.provider(), gestor, llm, tmp_path / "runs")
     turnos = conversar(director, mensajes)
     assert llm.pendientes() == {}
@@ -86,8 +94,13 @@ def test_apertura_con_mesa_la_tabla_llega_aunque_el_director_no_la_copie(
 def test_consulta_con_ficha_la_etiqueta_sobrevive_a_una_narracion_que_la_omite(
     config: Config, gestor: GestorDatos, tmp_path: Path
 ) -> None:
-    guion = [Llamada("estimar_mercado"), "La correlación entre VOOG y VB es alta."]
-    (turno,), _ = _charlar(config, gestor, tmp_path, guion, ["¿correlación VOOG-VB?"])
+    """S10: la ficha la recoge la PERSONA (el Director solo recibe su texto) y llega igual."""
+    guion = [Llamada("estadistico", pregunta="¿correlación VOOG-VB?"), "Ya respondió."]
+    persona = [Llamada("estimar_mercado"), "La correlación entre VOOG y VB es alta."]
+    (turno,), _ = _charlar(
+        config, gestor, tmp_path, guion, ["¿correlación VOOG-VB?"], estadistico=persona
+    )
+    assert "exploratori" not in turno.textos("estadistico")[0].lower(), "la persona NO etiqueta"
     (respuesta,) = turno.textos("director")
     (salida,) = turno.respuestas("estimar_mercado")
     assert "exploratori" not in respuesta.split(SEPARADOR)[0].lower(), "el guion NO etiqueta"
@@ -109,11 +122,15 @@ def test_quien_esta_en_la_sala_es_la_composicion_real_del_director(
     sala = turno.textos("director")[0].split(SEPARADOR)[1]
     director = crear_director(config, gestor.provider(), gestor, "sin-llamar", tmp_path)
     reales = {t.name for t in director.tools}  # type: ignore[union-attr]
-    assert reales == set(ATIENDE), "toda herramienta del Director tiene silla, y viceversa"
+    reales |= {t.name for a in director.sub_agents for t in getattr(a, "tools", [])}
+    assert reales == set(ATIENDE), "toda herramienta del equipo tiene silla, y viceversa"
     for nombre in reales:
         assert f"`{nombre}`" in sala
     assert "| **Analista de Mercado** | conversa (LLM) | `market_analyst` |" in sala
-    assert "| **Escéptico** | herramientas deterministas | `diagnosticar_cartera` |" in sala
+    # S10: el Estadístico y el Escéptico ya son personas; el Gestor sigue sin voz propia.
+    assert "| **Escéptico** | conversa (LLM) | `esceptico`, `diagnosticar_cartera` |" in sala
+    assert "| **Estadístico** | conversa (LLM) | `estadistico`, `estimar_mercado` |" in sala
+    assert "| **Gestor de Datos** | herramientas deterministas | `gestionar_datos_y_" in sala
 
 
 def test_la_orden_preparatoria_se_anexa_al_solicitar_y_no_se_repite_despues(
@@ -133,9 +150,11 @@ def test_la_orden_preparatoria_se_anexa_al_solicitar_y_no_se_repite_despues(
 def test_un_resultado_con_error_no_anexa_ficha(
     config: Config, gestor: GestorDatos, tmp_path: Path
 ) -> None:
-    guion = [Llamada("diagnosticar_cartera", pesos={"VOOG": 0.9}), "Los pesos no suman 1."]
-    (turno,), _ = _charlar(config, gestor, tmp_path, guion, ["90 % VOOG"])
-    assert turno.textos("director") == ["Los pesos no suman 1."]
+    guion = [Llamada("esceptico", pregunta="¿y 90 %?", pesos={"VOOG": 0.9}), "No suman 1."]
+    persona = [Llamada("diagnosticar_cartera"), "No puedo: los pesos no suman 1."]
+    (turno,), _ = _charlar(config, gestor, tmp_path, guion, ["90 % VOOG"], esceptico=persona)
+    assert turno.respuestas("diagnosticar_cartera")[0]["status"] == "error"
+    assert turno.textos("director") == ["No suman 1."]
 
 
 def test_el_modelo_no_ve_en_su_historial_los_bloques_que_anexo_el_codigo(
@@ -150,8 +169,14 @@ def test_el_modelo_no_ve_en_su_historial_los_bloques_que_anexo_el_codigo(
         )
         return "De nada."
 
-    guion = [Llamada("estimar_mercado"), "El Estadístico estimó la correlación.", espiar]
-    (primero, _), _ = _charlar(config, gestor, tmp_path, guion, ["¿correlación?", "gracias"])
+    guion = [
+        Llamada("estadistico", pregunta="¿correlación?"),
+        "El Estadístico estimó la correlación.",
+        espiar,
+    ]
+    (primero, _), _ = _charlar(
+        config, gestor, tmp_path, guion, ["¿correlación?", "gracias"], estadistico=ESTADISTICO
+    )
     assert "Ficha de origen" in primero.textos("director")[0], "el usuario SÍ la vio"
     (propio,) = historial
     assert propio == "El Estadístico estimó la correlación.", "ni bloques ni notas que imitar"
