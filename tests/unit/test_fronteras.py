@@ -61,6 +61,24 @@ def test_lo_nuevo_de_s10_en_el_nucleo_puro_esta_bajo_vigilancia() -> None:
         assert (PAQUETE / relativo).is_file(), relativo
 
 
+def test_lo_nuevo_de_s11_en_el_nucleo_puro_esta_bajo_vigilancia() -> None:
+    """El plan de compra y el filtro tributario son Nivel 3; sus contratos, puros."""
+    for relativo in (
+        "contracts/hitos_comite.py",
+        "contracts/plan_compra.py",
+        "fintual/cash_flow_alloc.py",
+        "fintual/tax_filter.py",
+    ):
+        assert (PAQUETE / relativo).is_file(), relativo
+
+
+def test_fintual_no_lee_el_reloj_ni_el_disco() -> None:
+    """Misma entrada = misma salida: la hora y el acta en disco son de ``tools/``."""
+    for archivo in sorted((PAQUETE / "fintual").rglob("*.py")):
+        importados = {n.split(".")[0] for n in _importados(archivo)}
+        assert not importados & {"datetime", "time", "pathlib", "os", "random", "uuid"}, archivo
+
+
 def test_las_personas_no_importan_el_nucleo_puro_solo_tools() -> None:
     """Un LlmAgent nunca produce cifras: a la matemática se llega solo vía ``tools/``."""
     puros = tuple(f"investmentsys.{m}" for m in ("quant", "portfolio", "risk", "fintual"))

@@ -8,11 +8,14 @@ del Director con UNA tool, ``gestionar_datos_y_fricciones``, y su fragmento de c
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from google.adk.tools.function_tool import FunctionTool
 
 from investmentsys.config import Config
 from investmentsys.data_manager import GestorDatos
 from investmentsys.tools.fintual import NOMBRE_TOOL, GestorFintualTools
+from investmentsys.tools.plan_operativo import PlanOperativoTools
 
 CABLEADO = f"""\
 - GESTOR DE DATOS Y FINTUAL (transaccional, sin voz propia: lo narras tú, atribuyéndole sus
@@ -26,9 +29,23 @@ CABLEADO = f"""\
   "montos" traduce la cartera objetivo que está sobre la mesa a montos en US$ y la compara con
   la cartera actual bajo las bandas de inercia: dentro de banda la orden es HOLD obligatorio;
   FUERA_DE_BANDA solo señala que un activo quedó sobreponderado o subponderado: NO es una orden.
-  Nunca le digas al usuario que compre o venda algo, ni cuánto: eso todavía no lo calcula nadie
-  del equipo. "montos" no lleva argumentos: los pesos no se pasan; si no hay cartera sobre la
-  mesa, la herramienta lo rechaza y dice qué falta.
+  A partir de "montos" no le digas al usuario que compre o venda algo, ni cuánto. "montos" no
+  lleva argumentos: los pesos no se pasan; si no hay cartera sobre la mesa, la herramienta lo
+  rechaza y dice qué falta.
+  "plan_compra" (aporte_usd, dividendos_usd opcional) es para cuando el usuario trae DINERO
+  NUEVO (un aporte, dividendos acreditados): asigna el flujo 100 % a los activos bajo su
+  objetivo, en US$ fraccionados y SIN ventas, con las bandas de inercia activas y el filtro
+  tributario consultivo. El monto debe ser el que el usuario escribió: si no lo dio, pregúntalo;
+  nunca lo estimes. El plan, sus escenarios fiscales («Costo fiscal estimado: $X CLP»), los
+  supuestos y el disclaimer se anexan solos: coméntalos, no los copies. Los escenarios con
+  venta son información, no recomendaciones ni prohibiciones: no aconsejes vender ni no vender;
+  una venta con pérdida es tax-loss harvesting, una estrategia legítima. No es asesoría
+  tributaria: recuérdale validar con su contador. El sistema no ejecuta órdenes: el plan lo
+  ejecuta el usuario en la app.
+  "forzar_orden" (escenario, token) es el Override: SOLO si el usuario, después de ver el plan
+  y la advertencia, pide explícitamente forzar un escenario con venta. Va en el turno
+  siguiente al plan, con el id del escenario y el token del plan; nunca por iniciativa tuya ni
+  en el mismo turno. Queda registrado en el acta operativa con la advertencia que cruzó.
   "dividendos" y "cierres" son consultas puntuales, cuando el usuario pregunta: el Gestor no
   vigila el mercado ni avisa de dividendos o precios; no lo ofrezcas como seguimiento.
   Cambian el universo: "incorporar", "retirar" (ticker), "refrescar_cap" (cambia una
@@ -53,5 +70,8 @@ CABLEADO = f"""\
 """
 
 
-def crear_gestor_fintual(config: Config, gestor: GestorDatos) -> list[FunctionTool]:
-    return GestorFintualTools(gestor, config).function_tools()
+def crear_gestor_fintual(
+    config: Config, gestor: GestorDatos, directorio_runs: Path | None = None
+) -> list[FunctionTool]:
+    operativo = PlanOperativoTools(config, directorio_runs)
+    return GestorFintualTools(gestor, config, operativo).function_tools()

@@ -100,7 +100,18 @@ def test_una_sola_declaracion_con_las_operaciones_enumeradas(
     declaracion = tool._get_declaration()
     assert declaracion is not None and declaracion.name == NOMBRE_TOOL
     esquema = declaracion.parameters_json_schema
-    assert set(esquema["properties"]) == {"operacion", "ticker", "prior_cap", "prior_metodologia"}
+    assert set(esquema["properties"]) == {
+        "operacion",
+        "ticker",
+        "prior_cap",
+        "prior_metodologia",
+        # S11: el flujo nuevo es del USUARIO y se verifica su procedencia (test_plan_operativo);
+        # el override viaja como id de escenario + token, nunca como monto.
+        "aporte_usd",
+        "dividendos_usd",
+        "escenario",
+        "token",
+    }
     assert esquema["required"] == ["operacion"]
     assert esquema["properties"]["operacion"]["enum"] == list(OPERACIONES)
     assert set(ARGUMENTOS) == set(OPERACIONES)

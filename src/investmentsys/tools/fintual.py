@@ -5,7 +5,8 @@ operaciones heredadas son las de ``GestorTools`` (mismo código, mismas custodia
 obsoletos, prior neutral en dos turnos); las nuevas son de solo lectura. Un argumento que no
 corresponde a la operación se RECHAZA: una firma única no puede tipar por operación, así que lo
 custodia el código. ``montos`` no recibe cifras: la cartera objetivo sale de la mesa y la
-cartera actual de ``config.yaml``.
+cartera actual de ``config.yaml``. S11 añade ``plan_compra`` y ``forzar_orden``
+(``tools/plan_operativo.py``, ADR-022).
 """
 
 from __future__ import annotations
@@ -28,6 +29,11 @@ from investmentsys.tools.estado import (
 )
 from investmentsys.tools.gestor import ERRORES_DEL_GESTOR, GestorTools, _error
 from investmentsys.tools.objetivo import cartera_objetivo
+from investmentsys.tools.plan_operativo import (
+    FlujoSinProcedenciaError,
+    OverrideRechazadoError,
+    PlanOperativoTools,
+)
 
 ERRORES_DE_LECTURA = (*ERRORES_DEL_GESTOR, FaltaEnEstadoError, ResultadoObsoletoError, LookupError)
 NOMBRE_TOOL = "gestionar_datos_y_fricciones"
@@ -43,6 +49,8 @@ Operacion = Literal[
     "dividendos",
     "cierres",
     "montos",
+    "plan_compra",
+    "forzar_orden",
 ]
 OPERACIONES: tuple[str, ...] = get_args(Operacion)
 
@@ -57,6 +65,8 @@ ARGUMENTOS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "dividendos": ((), ("ticker",)),
     "cierres": ((), ("ticker",)),
     "montos": ((), ()),
+    "plan_compra": (("aporte_usd",), ("dividendos_usd",)),
+    "forzar_orden": (("escenario", "token"), ()),
 }
 
 NOTA_DIVIDENDOS = (
@@ -71,8 +81,8 @@ NOTA_MONTOS = (
     "Dentro de su banda de inercia la orden de un activo es HOLD obligatorio. FUERA_DE_BANDA "
     "solo SEÑALA que el peso actual se alejó del objetivo más que la banda (sobreponderado o "
     "subponderado): NO es una orden. No le digas al usuario que compre ni que venda nada, ni "
-    "cuánto: este equipo todavía no calcula cómo corregir una desviación (se hará con aportes "
-    "nuevos, sin ventas), y una venta tiene costo tributario que aquí no se estimó. Los montos "
+    "cuánto, a partir de esta comparación: una desviación se corrige con flujos nuevos, sin "
+    "ventas, y eso lo calcula operacion='plan_compra' cuando el usuario trae un aporte. Los montos "
     "objetivo son la cartera objetivo expresada en US$ sobre el valor de cartera de config.yaml."
 )
 SIN_ORDEN = "ninguna: solo se señala la desviación; no indiques comprar ni vender"
@@ -134,6 +144,7 @@ def resumir_plan(plan: PlanInercia) -> dict[str, Any]:
 class GestorFintualTools:
     gestor: GestorDatos
     config: Config
+    operativo: PlanOperativoTools | None = None  # por defecto, el de ``config``
 
     def gestionar_datos_y_fricciones(
         self,
@@ -142,6 +153,10 @@ class GestorFintualTools:
         ticker: str | None = None,
         prior_cap: float | None = None,
         prior_metodologia: str | None = None,
+        aporte_usd: float | None = None,
+        dividendos_usd: float | None = None,
+        escenario: str | None = None,
+        token: str | None = None,
     ) -> dict[str, Any]:
         """Gestor de Datos y Fintual: universo de trabajo, datos de mercado y fricciones.
 
@@ -156,6 +171,16 @@ class GestorFintualTools:
         - "montos": la cartera objetivo que está sobre la mesa traducida a montos en US$ (2
           decimales) y comparada con la cartera actual bajo las bandas de inercia (No-Trade
           Zones): HOLD obligatorio dentro de banda. No lleva argumentos: los pesos NO se pasan.
+        - "plan_compra" (aporte_usd, dividendos_usd?): el usuario trae dinero nuevo (un aporte,
+          dividendos acreditados). Devuelve el Plan de Compra Neta: el flujo va 100 % a los
+          activos bajo su objetivo, en US$ fraccionados, CERO ventas, con las bandas de inercia
+          antes y después y el filtro tributario CONSULTIVO (escenarios con su «Costo fiscal
+          estimado» en CLP). No ejecuta nada: es el plan que el usuario ejecuta en la app.
+        Operación que REGISTRA una decisión del usuario:
+        - "forzar_orden" (escenario, token): el Override. Solo si el usuario, tras VER el plan
+          y la advertencia del escenario, pide explícitamente forzarlo. En un turno posterior
+          al del plan, con el id del escenario y el token de ese plan. Queda en el acta
+          operativa con la advertencia que cruzó. Nunca la llames por iniciativa propia.
         Operaciones que CAMBIAN el universo (otra ``universe_version``; la respuesta lista en
         ``resultados_obsoletos`` lo que dejó de valer):
         - "incorporar" (ticker, prior_cap?, prior_metodologia?): alta de un activo.
@@ -172,6 +197,10 @@ class GestorFintualTools:
             prior_cap: capitalización que APORTA EL USUARIO, en US$ billones (10^12). Nunca la
                 estimes tú.
             prior_metodologia: obligatoria con prior_cap: de dónde sale, en palabras del usuario.
+            aporte_usd: monto en US$ que el usuario ESCRIBIÓ como aporte nuevo. Nunca lo estimes.
+            dividendos_usd: ídem, dividendos en US$ ya acreditados que el usuario informa.
+            escenario: id de un escenario fiscal del plan, p. ej. "VOOG:vender_hasta_banda".
+            token: el que devolvió "plan_compra".
         """
         if operacion not in ARGUMENTOS:
             return _rechazo(
@@ -181,6 +210,10 @@ class GestorFintualTools:
             "ticker": ticker,
             "prior_cap": prior_cap,
             "prior_metodologia": prior_metodologia,
+            "aporte_usd": aporte_usd,
+            "dividendos_usd": dividendos_usd,
+            "escenario": escenario,
+            "token": token,
         }
         obligatorios, opcionales = ARGUMENTOS[operacion]
         faltan = [a for a in obligatorios if dados[a] in (None, "")]
@@ -220,12 +253,20 @@ class GestorFintualTools:
                 activos = _activos_pedidos(universo, ticker)
                 lectura = self._dividendos if operacion == "dividendos" else self._cierres
                 return lectura(universo, activos)
-            return self._montos(ctx)
+            if operacion == "montos":
+                return self._montos(ctx)
+            operativo = self.operativo or PlanOperativoTools(self.config)
+            if operacion == "plan_compra":
+                return operativo.plan_compra(ctx, args["aporte_usd"], args["dividendos_usd"])
+            return operativo.forzar_orden(ctx, args["escenario"], args["token"])
+        except (OverrideRechazadoError, FlujoSinProcedenciaError) as exc:
+            return _rechazo(type(exc).__name__, str(exc))
         except (
             *ERRORES_DEL_GESTOR,
             FaltaEnEstadoError,
             ResultadoObsoletoError,
             LookupError,
+            ValueError,
         ) as exc:
             return _error(exc)
 
