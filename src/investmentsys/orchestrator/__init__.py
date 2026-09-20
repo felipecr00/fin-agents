@@ -1,6 +1,11 @@
 """Orquestación de la corrida completa y persistencia de ``RunState``."""
 
-from investmentsys.orchestrator.comite import CLAVE_SOLICITUD, ComiteTools, GateComiteError
+from investmentsys.orchestrator.comite import (
+    CLAVE_SOLICITUD,
+    ComiteTools,
+    GateComiteError,
+    ViolacionGateError,
+)
 from investmentsys.orchestrator.corrida import (
     ARCHIVO_REPORTE,
     ARCHIVO_RUN_STATE,
@@ -27,6 +32,7 @@ __all__ = [
     "EtapaFallidaError",
     "GateComiteError",
     "ResultadoReplay",
+    "ViolacionGateError",
     "armar_run_state",
     "crear_pipeline",
     "persistir",

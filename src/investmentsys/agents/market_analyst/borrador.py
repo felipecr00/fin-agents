@@ -2,7 +2,7 @@
 
 ``MarketViews`` no sirve directamente como ``output_schema``: google-genai 2.24 rechaza
 ``exclusiveMinimum`` y ``patternProperties`` (el ``dict[Ticker, float]`` de ``View``) al
-construir la petición (ADR-006). El borrador usa solo construcciones que Gemini acepta y
+construir la petición (ADR-006). El borrador usa solo construcciones que el proveedor acepta y
 deja fuera lo que el LLM no decide: la fecha de decisión y el universo los pone el código.
 El borrador no cruza fronteras entre agentes; al estado solo llega el contrato validado.
 """
@@ -15,11 +15,11 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from investmentsys.contracts import MarketViews, TipoView, View
 
-CONFIANZA_MINIMA = 0.01  # el contrato exige confianza > 0; Gemini no admite cotas exclusivas
+CONFIANZA_MINIMA = 0.01  # el contrato exige confianza > 0; el proveedor no admite cotas exclusivas
 
 
 class _Borrador(BaseModel):
-    # Sin extra="forbid": genera `additionalProperties`, que la Gemini API rechaza con un 400
+    # Sin extra="forbid": genera `additionalProperties`, que la API de AI Studio rechaza con un 400
     # aunque el conversor local de google-genai lo acepte. Un campo de más se ignora; lo que
     # importa se valida al construir el contrato.
     model_config = ConfigDict(frozen=True)

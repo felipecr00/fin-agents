@@ -15,3 +15,6 @@ data/precios_backup_*.csv
 data/.*.tmp
 data/series/.backups/
 data/series/.*.tmp
+
+# Ajustes locales del asistente de código
+.claude/

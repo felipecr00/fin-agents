@@ -1,4 +1,4 @@
-"""Demo del DoD de S8: una sesión completa con el Director contra Gemini REAL.
+"""Demo del DoD de S8: una sesión completa con el Director contra el modelo REAL.
 
     uv run python scripts/demo_director.py
 

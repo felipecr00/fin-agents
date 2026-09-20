@@ -4,7 +4,7 @@ from scipy.optimize import minimize
 
 # ============ 1. CARGAR SERIES ============
 fechas, data = [], {"VOOG": [], "BNS": [], "VB": [], "IBIT": []}
-with open("/home/claude/data/precios.csv") as f:
+with open("data/precios.csv") as f:
     for row in csv.DictReader(f):
         fechas.append(row["fecha"])
         for k in data:

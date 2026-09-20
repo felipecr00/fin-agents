@@ -81,7 +81,9 @@ def crear_pipeline(
     destino = directorio_runs or RAIZ_PROYECTO / config.corridas.directorio
     maximo = config.validacion.max_iteraciones_constructor
     nombre_modelo = (
-        modelo.model if isinstance(modelo, BaseLlm) else (modelo or config.agentes.modelo)
+        modelo.model
+        if isinstance(modelo, BaseLlm)
+        else (modelo or config.inferencia.nivel_1.modelo)
     )
 
     def iniciar(ctx: Context) -> str:

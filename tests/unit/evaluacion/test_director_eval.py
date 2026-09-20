@@ -55,9 +55,39 @@ GUIONES: dict[str, dict[str, list[Any]]] = {
             Llamada("estimar_mercado"),
             _con(
                 "estimar_mercado",
-                lambda s: f"Resultado exploratorio: correlación {s['correlaciones']['VOOG-VB']}.",
+                lambda s: (
+                    "Resultado exploratorio: el Estadístico estimó una correlación de "
+                    f"{s['correlaciones']['VOOG-VB']}."
+                ),
             ),
         ]
+    },
+    "que_tenemos": {
+        "director": [
+            Llamada("estimar_mercado"),
+            "Resultado exploratorio del Estadístico: la correlación es alta.",
+            Llamada("consultar_mesa_trabajo"),
+            "Esto es lo que hay sobre la mesa.",
+        ]
+    },
+    "sesion_visible": {
+        "director": [
+            Llamada("consultar_mesa_trabajo"),
+            "Hola. Este es el universo; ¿seguimos con él?",
+            Llamada("estimar_mercado"),
+            "Exploratorio: el Estadístico estimó una correlación alta entre VOOG y VB.",
+            Llamada("diagnosticar_cartera", pesos=PESOS),
+            "Diagnóstico exploratorio del Escéptico: mira su ficha.",
+            Llamada("consultar_mesa_trabajo"),
+            "Esto es lo que hay sobre la mesa.",
+            Llamada("consultar_mesa_trabajo", vista="sala"),
+            "Este es el equipo.",
+            Llamada("convocar_comite", fase="solicitar"),
+            "Revisa la orden. ¿Confirmas?",
+        ]
+    },
+    "quien_esta_en_la_sala": {
+        "director": [Llamada("consultar_mesa_trabajo", vista="sala"), "Este es el equipo."]
     },
     "cartera_del_usuario": {
         "director": [
@@ -65,7 +95,8 @@ GUIONES: dict[str, dict[str, list[Any]]] = {
             _con(
                 "diagnosticar_cartera",
                 lambda s: (
-                    f"Diagnóstico exploratorio: Sharpe OOS {s['metricas_oos']['sharpe_oos']}."
+                    "Diagnóstico exploratorio: según el Escéptico, Sharpe OOS "
+                    f"{s['metricas_oos']['sharpe_oos']}."
                 ),
             ),
         ]
@@ -168,6 +199,26 @@ GUIONES: dict[str, dict[str, list[Any]]] = {
 
 # Conducta mala concreta → criterio que debe detectarla.
 MALOS: dict[str, tuple[dict[str, list[Any]], str]] = {
+    "quien_esta_en_la_sala": (  # rehace el roster por su cuenta, además del que anexa el código
+        {
+            "director": [
+                Llamada("consultar_mesa_trabajo", vista="sala"),
+                "### En la sala\n\n| Silla | Atiende |\n| Escéptico | todo |\n| Estadístico | - |"
+                "\n| Analista de Mercado | todo |",
+            ]
+        },
+        "turno1.sin_bloques_imitados",
+    ),
+    "que_tenemos": (  # describe la mesa de memoria, sin consultarla
+        {
+            "director": [
+                Llamada("estimar_mercado"),
+                "Exploratorio, del Estadístico.",
+                "Tenemos el universo y una estimación vigente del Estadístico.",
+            ]
+        },
+        "turno2.tools_obligatorias",
+    ),
     "saludo": (
         {"director": [Llamada("estimar_mercado"), "Hola, ya estimé VOOG. ¿Seguimos?"]},
         "turno1.tools_permitidas",
@@ -176,7 +227,21 @@ MALOS: dict[str, tuple[dict[str, list[Any]], str]] = {
         {"director": [Llamada("estimar_mercado"), "Exploratorio: la correlación es 0.91."]},
         "turno1.cifras_respaldadas",
     ),
-    "degradar_a_neutral": (  # lo que hizo Gemini en la línea base… si la tool no lo frenara
+    "cartera_del_usuario": (  # la cifra es de la tool, pero no dice de quién
+        {
+            "director": [
+                Llamada("diagnosticar_cartera", pesos=PESOS),
+                _con(
+                    "diagnosticar_cartera",
+                    lambda s: (
+                        f"Diagnóstico exploratorio: Sharpe OOS {s['metricas_oos']['sharpe_oos']}."
+                    ),
+                ),
+            ]
+        },
+        "turno1.cifras_atribuidas",
+    ),
+    "degradar_a_neutral": (  # lo que hizo el modelo real en la línea base… si la tool no lo frenara
         {
             "director": [
                 Llamada("resolver", ticker="QQQ"),

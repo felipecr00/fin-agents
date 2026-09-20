@@ -169,7 +169,7 @@ class ValidacionConfig(_Seccion):
 
 
 class ReintentosModeloConfig(_Seccion):
-    """Reintentos HTTP del cliente de Gemini ante errores transitorios (espera exponencial)."""
+    """Reintentos HTTP del cliente del LLM ante errores transitorios (espera exponencial)."""
 
     intentos: int = Field(ge=1, description="Incluye la petición original; 1 = sin reintentos.")
     espera_inicial_s: float = Field(gt=0.0)
@@ -179,7 +179,6 @@ class ReintentosModeloConfig(_Seccion):
 
 
 class AgentesConfig(_Seccion):
-    modelo: str = Field(min_length=1, description="Id fijo de Gemini (ADR-005).")
     temperatura: float = Field(ge=0.0, le=2.0)
     max_intentos_analista: int = Field(ge=1)
     horizonte_views_meses: int = Field(gt=0)
@@ -190,12 +189,53 @@ class AgentesConfig(_Seccion):
     )
     reintentos_modelo: ReintentosModeloConfig
 
+
+NombreNivel = Literal["nivel_1", "nivel_2", "nivel_3"]
+
+
+class NivelLLM(_Seccion):
+    """Asignación real de un nivel de inferencia servido por un LLM (ADR-018)."""
+
+    cliente: str = Field(
+        pattern=r"^[\w.]+:\w+$", description='Clase de ADK que sirve el modelo: "módulo:Clase".'
+    )
+    modelo: str = Field(min_length=1, description="Id fijo del modelo (ADR-005).")
+    secreto_llave: str | None = Field(
+        default=None, description="Secreto de Secret Manager con la llave (despliegue de dev)."
+    )
+
     @field_validator("modelo")
     @classmethod
     def _id_fijo(cls, v: str) -> str:
         if v.endswith("-latest"):
             raise ValueError("usa un id de modelo fijo, no un alias -latest (ADR-005)")
         return v
+
+
+class InferenciaConfig(_Seccion):
+    """Niveles de inferencia y qué nivel atiende a cada agente. Único lugar con nombres reales.
+
+    Nivel 1: Frontier LLM. Nivel 2: Edge/cuantizado (NLP local). Nivel 3: determinista, sin LLM.
+    """
+
+    nivel_1: NivelLLM
+    nivel_2: NivelLLM | None = None
+    nivel_3: Literal["determinista"]
+    asignaciones: dict[str, NombreNivel] = Field(min_length=1)
+    nombres_vetados: tuple[str, ...] = Field(min_length=1)
+    excepciones_de_tooling: tuple[str, ...] = ()
+
+    def de(self, agente: str) -> NivelLLM:
+        """El nivel con LLM asignado a ``agente``; error claro si no tiene uno utilizable."""
+        nombre = self.asignaciones.get(agente)
+        if nombre is None:
+            raise ValueError(f"inferencia.asignaciones: falta el agente '{agente}'")
+        nivel = getattr(self, nombre)
+        if not isinstance(nivel, NivelLLM):
+            raise ValueError(
+                f"inferencia: '{agente}' está asignado a {nombre}, que no tiene un LLM asignado"
+            )
+        return nivel
 
 
 class EvaluacionConfig(_Seccion):
@@ -258,6 +298,7 @@ class Config(_Seccion):
     regimen: RegimenConfig
     datos: DatosConfig
     validacion: ValidacionConfig
+    inferencia: InferenciaConfig
     agentes: AgentesConfig
     evaluacion: EvaluacionConfig
     sensibilidad: SensibilidadConfig

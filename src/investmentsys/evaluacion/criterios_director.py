@@ -17,6 +17,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from investmentsys.contracts import Especialista
 from investmentsys.evaluacion.criterios import ResultadoCriterio
 
 # Una "cifra" es un número con decimales o un porcentaje: lo que un lector tomaría por un dato.
@@ -26,6 +27,27 @@ NUMERO = re.compile(r"-?\d+(?:\.\d+)?(?:[eE]-?\d+)?")
 PORCENTAJE = 100.0
 VINETA = re.compile(r"^(?:[*\-•]|\d+[.)])\s")
 NEGACIONES = ("no ", "ni ", "sin ", "fuera de", "tampoco", "nunca")
+# S9 — atribución: una cifra de retorno, riesgo o correlación se dice con su fuente.
+TERMINOS_DE_CIFRA_ATRIBUIBLE = (
+    "retorno",
+    "rentabilidad",
+    "rendimiento",
+    "volatilidad",
+    "riesgo",
+    "sharpe",
+    "drawdown",
+    "caida",
+    "perdida",
+    "correlaci",
+    "covarianza",
+    "var ",
+    "cvar",
+)
+# S9 — los bloques para el usuario los anexa el código; un encabezado del LLM que los imite sobra.
+ENCABEZADO_DE_BLOQUE = re.compile(
+    r"^#{1,6}\s.*(mesa de trabajo|en la sala|orden preparatoria|ficha de origen)", re.MULTILINE
+)
+FILA_O_VINETA = re.compile(r"^(?:[*\-•|>]|\d+[.)])\s?")
 TOLERANCIA_ARGUMENTOS = 1e-9  # punto flotante al serializar argumentos, no un parámetro
 
 
@@ -72,6 +94,20 @@ class Criterios(_Modelo):
     cifras_respaldadas: bool = Field(
         default=False,
         description="Toda cifra del texto sale de una tool o la dijo el usuario (con redondeo).",
+    )
+    sin_bloques_imitados: bool = Field(
+        default=False,
+        description=(
+            "El Director no rehace los bloques que anexa el código (mesa, sala, orden, ficha): "
+            "a lo sumo un encabezado de bloque por cada anexo del turno (S9)."
+        ),
+    )
+    cifras_atribuidas: bool = Field(
+        default=False,
+        description=(
+            "Toda cifra de retorno, riesgo o correlación nombra al especialista fuente en su "
+            "párrafo (S9)."
+        ),
     )
 
 
@@ -134,6 +170,41 @@ def cifras_sin_respaldo(texto: str, fuentes: Iterable[str]) -> list[str]:
         if not any(round(c, decimales) == round(objetivo, decimales) for c in candidatos):
             sin_respaldo.append(cifra.strip())
     return sin_respaldo
+
+
+def fuentes_atribuibles() -> tuple[str, ...]:
+    """Cómo se nombra a quien produce cifras: "Estadístico", "el comité", "Gestor de Datos"…
+
+    Sale de ``Especialista`` (la fuente única de la sala); el Director coordina, no calcula.
+    """
+    nombres = [normalizar(e.value) for e in Especialista if e is not Especialista.DIRECTOR]
+    return tuple(dict.fromkeys([*nombres, *(n.split()[0] for n in nombres)]))
+
+
+def cifras_sin_atribuir(texto: str) -> list[str]:
+    """Líneas con una cifra de retorno, riesgo o correlación cuyo párrafo no nombra la fuente.
+
+    Tosco a propósito: la unidad es el párrafo, y una lista o tabla sin nombre propio hereda la
+    atribución del párrafo que la encabeza ("Según el Estadístico:" y debajo las viñetas).
+    """
+    fuentes = fuentes_atribuibles()
+    huerfanas: list[str] = []
+    encabezado_atribuye = False
+    for parrafo in re.split(r"\n\s*\n", normalizar(texto)):
+        lineas = [ln.strip() for ln in parrafo.splitlines() if ln.strip()]
+        if not lineas or all(set(ln) <= set("-*_ ") for ln in lineas):
+            continue  # separador: no corta la herencia del encabezado
+        es_lista = all(FILA_O_VINETA.match(ln) for ln in lineas)
+        atribuye = any(f in parrafo for f in fuentes) or (es_lista and encabezado_atribuye)
+        if not atribuye:
+            huerfanas += [
+                ln
+                for ln in lineas
+                if CIFRA.search(ln) and any(t in f"{ln} " for t in TERMINOS_DE_CIFRA_ATRIBUIBLE)
+            ]
+        if not es_lista:
+            encabezado_atribuye = atribuye
+    return huerfanas
 
 
 def coincide(real: Any, esperado: Any) -> bool:
@@ -267,6 +338,27 @@ def evaluar(criterios: Criterios, turno: TurnoObservado, prefijo: str) -> list[R
                 if huerfanas
                 else [],
                 "toda cifra tiene respaldo",
+            )
+        )
+    if criterios.sin_bloques_imitados:
+        encabezados = [m.group(0) for m in ENCABEZADO_DE_BLOQUE.finditer(normalizar(turno.texto))]
+        anexados = sum(1 for _, r in turno.respuestas if "anexo" in r)
+        resultados.append(
+            _resultado(
+                f"{prefijo}.sin_bloques_imitados",
+                [f"{len(encabezados)} encabezados para {anexados} anexo(s): {encabezados}"]
+                if len(encabezados) > anexados
+                else [],
+                "los bloques son solo los del código",
+            )
+        )
+    if criterios.cifras_atribuidas:
+        sin_fuente = cifras_sin_atribuir(turno.texto)
+        resultados.append(
+            _resultado(
+                f"{prefijo}.cifras_atribuidas",
+                [f"cifras sin especialista fuente: {sin_fuente}"] if sin_fuente else [],
+                "toda cifra de retorno, riesgo o correlación nombra a su fuente",
             )
         )
     return resultados

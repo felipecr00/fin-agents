@@ -28,6 +28,7 @@ from investmentsys.orchestrator import (
     CLAVE_SOLICITUD,
     ComiteTools,
 )
+from investmentsys.orchestrator.memorandum import renderizar_memorandum
 from investmentsys.tools import (
     CLAVE_CANDIDATOS,
     CLAVE_QUANT_ESTIMATES,
@@ -35,6 +36,7 @@ from investmentsys.tools import (
     CLAVE_VALIDACIONES,
     NucleoTools,
 )
+from investmentsys.tools.ficha import CLAVE_ANEXO
 from tests.almacen import universo_referencia
 from tests.conftest import ACTIVOS, CSV_REFERENCIA
 from tests.integration.conftest import Llamada, LlmPorAgente
@@ -100,6 +102,43 @@ class TestSolicitar:
         assert resumen.views_de_partida is None and resumen.material_usuario == MATERIAL
         assert ctx.state[CLAVE_SOLICITUD]["invocacion"] == "inv-1"
         assert not list(tmp_path.iterdir()), "solicitar no corre nada"
+
+    def test_renderiza_la_orden_preparatoria_desde_el_resumen(
+        self, config: Config, turnos: Turnos, tmp_path: Path
+    ) -> None:
+        """S9: parámetros fijados, qué hará el comité y solicitud de confirmación; por código."""
+        salida = _convocar(
+            _comite(config, tmp_path), turnos("inv-1"), "solicitar", material=MATERIAL
+        )
+        orden = salida[CLAVE_ANEXO]
+        resumen = ResumenComite.model_validate(salida["resumen"])
+        assert orden == renderizar_memorandum(
+            resumen, config.validacion.max_iteraciones_constructor
+        )
+        assert orden.startswith("### Orden Preparatoria de Sesión — Comité formal")
+        assert "Comité listo para sesionar. Parámetros fijados:" in orden
+        assert f"VOOG, BNS, IBIT, VB (sello `{resumen.universe_version[:12]}`)" in orden
+        assert "IBIT desde 2024-01" in orden
+        assert "equilibrio por capitalización; procedencia de cada cap: VOOG (usuario)" in orden
+        assert "entre 2 % (por defecto de config.yaml) y 70 %" in orden
+        assert "**Fecha de decisión:** último cierre" in orden
+        assert "**Qué hará el comité.**" in orden and "poder de veto" in orden
+        assert f"hasta {config.validacion.max_iteraciones_constructor} iteraciones" in orden
+        assert orden.endswith("¿Confirmas la convocatoria formal para iniciar la deliberación?")
+        # El material del usuario NO se transcribe en la orden: solo consta que existe.
+        assert MATERIAL not in orden and f"{len(MATERIAL)} caracteres, citados" in orden
+
+    def test_la_orden_de_un_prior_neutral_lo_dice_para_todo_el_universo(
+        self, config: Config, turnos: Turnos, tmp_path: Path
+    ) -> None:
+        pendiente = _sin_cap("IBIT")
+        ctx = turnos("inv-1")
+        ctx.state[CLAVE_UNIVERSO] = Universe.crear(
+            pendiente.diagnosticos, pendiente.origenes, True
+        ).model_dump(mode="json")
+        orden = _convocar(_comite(config, tmp_path), ctx, "solicitar")[CLAVE_ANEXO]
+        assert "neutral equiponderado, aceptado para TODO el universo" in orden
+        assert "**Material del usuario:** ninguno" in orden
 
     def test_con_el_prior_pendiente_se_rechaza_diciendo_que_falta(
         self, config: Config, turnos: Turnos, tmp_path: Path

@@ -124,7 +124,7 @@ conversacionales, la elicitación interactiva de caps (S8).
 - make check verde; ADR redactado con la decisión y sus consecuencias; Estado
   actualizado; PR.
 
-## Prompt de arranque (sesión nueva de Claude Code)
+## Prompt de arranque (sesión nueva de el asistente de código)
 
 > Lee CLAUDE.md. El sprint activo es S7 (docs/sprints/S7-universo-dinamico.md) —
 > léelo COMPLETO incluida la §4, que contiene una decisión de diseño ya tomada

@@ -60,18 +60,18 @@ class FaltaEnEstadoError(LookupError):
     """Un tool necesita una clave que ninguna etapa anterior escribió."""
 
 
-def leer(estado: Estado, clave: str, modelo: type[M]) -> M:
+def leer(estado: EstadoLegible, clave: str, modelo: type[M]) -> M:
     crudo = estado.get(clave)
     if crudo is None:
         raise FaltaEnEstadoError(f"falta '{clave}' en el estado: ejecuta antes la etapa previa")
     return modelo.model_validate(crudo)
 
 
-def leer_lista(estado: Estado, clave: str, modelo: type[M]) -> tuple[M, ...]:
+def leer_lista(estado: EstadoLegible, clave: str, modelo: type[M]) -> tuple[M, ...]:
     return tuple(modelo.model_validate(c) for c in estado.get(clave) or ())
 
 
-def leer_fecha(estado: Estado) -> date | None:
+def leer_fecha(estado: EstadoLegible) -> date | None:
     crudo = estado.get(CLAVE_FECHA_DECISION)
     return date.fromisoformat(crudo) if crudo else None
 

@@ -1,4 +1,4 @@
-"""Corrida REAL completa contra Gemini (necesita credenciales; ver `.env.example`).
+"""Corrida REAL completa contra el modelo real (necesita credenciales; ver `.env.example`).
 
     uv run python scripts/run_pipeline.py ["contexto opcional para el analista"]
 
@@ -56,7 +56,7 @@ async def correr(mensaje: str) -> str:
 def main() -> None:
     load_dotenv(RAIZ_PROYECTO / ".env")
     if not any(os.environ.get(v) for v in VARIABLES):
-        sys.exit("Sin credenciales de Gemini en el entorno ni en .env (ver .env.example).")
+        sys.exit("Sin credenciales del modelo en el entorno ni en .env (ver .env.example).")
     mensaje = sys.argv[1] if len(sys.argv) > 1 else "Analiza el mercado y propón una cartera."
     print(f"\nCorrida guardada en: {asyncio.run(correr(mensaje))}")
 

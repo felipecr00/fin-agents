@@ -217,7 +217,7 @@ quedó, porque es la memoria de por qué se hizo cada cosa.
   propuesta exploratoria fallaba con "la iteración 1 aún no se ha validado".
 
 ### Hallazgos de la prueba manual (materia prima del evalset del PR 2)
-Corrida real contra `gemini-3.5-flash` (3 turnos: "hola", "¿qué correlación hay entre VOOG y
+Corrida real contra el modelo de Nivel 1 (3 turnos: "hola", "¿qué correlación hay entre VOOG y
 VB?", "convoca al comité"). Ruteo correcto en los tres; las cifras citadas (0.7571, 19.29 %,
 18.95 %) coinciden con la salida de la herramienta. Desvíos observados, textuales:
 1. Ante "hola" llamó a `diagnosticar` antes de responder. Es de solo lectura y el spec fuente
@@ -247,10 +247,10 @@ VB?", "convoca al comité"). Ruteo correcto en los tres; las cifras citadas (0.7
   (`evaluacion/director.py`: preparar almacén, correr turnos, verificar criterios; ADR-015 con
   el costo aceptado): un mundo aislado por caso, y el MISMO código en `make check` (LLM
   guionado: conducta ideal de los 19 casos + 7 conductas malas que su criterio debe detectar) y
-  en `make eval-director` contra Gemini. `make eval` = `eval-analista` + `eval-director`.
+  en `make eval-director` contra el modelo real. `make eval` = `eval-analista` + `eval-director`.
 - **Custodia por turnos de `aceptar_prior_neutral`** (decisión A): la primera llamada nunca
   degrada; devuelve el mensaje instructivo con los activos afectados. Tests de secuencia mala y
-  buena. Re-corrida del caso `degradar_a_neutral`: Gemini volvió a intentar degradar en el turno
+  buena. Re-corrida del caso `degradar_a_neutral`: el modelo volvió a intentar degradar en el turno
   de "la opción c"; la herramienta lo rechazó, el Director presentó la advertencia y degradó
   solo tras el "sí, confirmo". El caso pasó en todas las corridas posteriores.
 - **Herramientas nuevas** (decisión B): `retirar` (Gestor + tool + `make universo
@@ -272,7 +272,7 @@ VB?", "convoca al comité"). Ruteo correcto en los tres; las cifras citadas (0.7
   dev.**
 - `make check` verde: 585 tests.
 
-### Evidencia de `make eval` (gemini-3.5-flash, temperatura 0.2, 2026-09-19)
+### Evidencia de `make eval` (modelo de Nivel 1, temperatura 0.2, 2026-09-19)
 - Analista: 11/11.
 - Director, con los criterios definitivos: **19/19, 19/19, 19/19** en tres corridas completas
   consecutivas. Entre la primera y la segunda hubo una corrida inválida (0/19 "sin evaluación"):
@@ -296,7 +296,7 @@ VB?", "convoca al comité"). Ruteo correcto en los tres; las cifras citadas (0.7
 - "hola" produce conversación, no una corrida: fijado por el caso `saludo` (solo admite
   `diagnosticar`; efectos: universo sin cambios, sin acta).
 
-### Demo del DoD (`uv run python scripts/demo_director.py`, Gemini real, almacén aislado)
+### Demo del DoD (`uv run python scripts/demo_director.py`, modelo real, almacén aislado)
 Sesión de 9 turnos: saludo → A (`estimar_mercado`, exploratorio) → B (`market_analyst` +
 `construir_candidatos`, ambos `validado: false`) → alta de AAPL (`resolver` → confirmación →
 `incorporar`, cap de la fuente) → alta de QQQ (`resolver` → pregunta del prior → `incorporar` con

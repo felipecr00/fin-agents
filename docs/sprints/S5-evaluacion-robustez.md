@@ -79,7 +79,7 @@ Cerrado el 2026-09-18 (rama `sprint/S5-evaluacion-robustez`, PR contra `main`).
   ya produce el contrato) y presentar el reparto BNS/VB como rango en el informe.
 - Rúbrica con LLM-juez para "reconoce la contradicción en la justificación" (no verificable de
   forma determinista) y evalsets para el constructor y el reporter.
-- Búsqueda para el analista (de S3) y reevaluar `gemini-3.8-flash` con `make eval`.
+- Búsqueda para el analista (de S3) y reevaluar la versión siguiente del modelo de Nivel 1 con `make eval`.
 - El clasificador de régimen necesita 24 observaciones: 2022 queda `INDETERMINADO`, y etiqueta
   "lateral" un fondo de mercado con tendencia plana (2022-12, drawdown 24 %). Es descriptivo.
 - Siguen abiertos de S2-S4: intervalos de confianza de las métricas OOS; validar la técnica con

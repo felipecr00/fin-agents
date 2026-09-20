@@ -1,7 +1,7 @@
-"""Un 429 de Gemini se reintenta con ``agentes.reintentos_modelo`` en vez de tumbar la corrida.
+"""Un 429 del modelo se reintenta con ``agentes.reintentos_modelo`` en vez de tumbar la corrida.
 
 Servidor HTTP local que imita a la API: N respuestas 429 y después una correcta. Se ejerce el
-``Gemini`` real que entrega ``resolver_modelo`` (sin red externa ni credenciales).
+cliente real que entrega ``resolver_modelo`` (sin red externa ni credenciales).
 """
 
 from __future__ import annotations
@@ -14,12 +14,12 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Any, ClassVar
 
 import pytest
-from google.adk.models.google_llm import Gemini
+from google.adk.models.base_llm import BaseLlm
 from google.adk.models.llm_request import LlmRequest
 from google.genai import types
 
 from investmentsys.agents.modelo import VARIABLES_VERTEX, resolver_modelo
-from investmentsys.config import AgentesConfig, Config
+from investmentsys.config import Config
 
 AGOTADO = {"error": {"code": 429, "message": "Resource exhausted", "status": "RESOURCE_EXHAUSTED"}}
 CORRECTA = {
@@ -63,19 +63,20 @@ def api(monkeypatch: pytest.MonkeyPatch) -> Iterator[str]:
     servidor.shutdown()
 
 
-def _agentes(config: Config, intentos: int) -> AgentesConfig:
+def _agentes(config: Config, intentos: int) -> Config:
     reintentos = config.agentes.reintentos_modelo.model_copy(
         update={"intentos": intentos, "espera_inicial_s": ESPERA_DE_PRUEBA_S}
     )
-    return config.agentes.model_copy(update={"reintentos_modelo": reintentos})
+    agentes = config.agentes.model_copy(update={"reintentos_modelo": reintentos})
+    return config.model_copy(update={"agentes": agentes})
 
 
-def _preguntar(agentes: AgentesConfig, url: str) -> str | None:
-    modelo = resolver_modelo(agentes)
-    assert isinstance(modelo, Gemini)
+def _preguntar(config: Config, url: str) -> str | None:
+    modelo: Any = resolver_modelo(config, "director")
+    assert isinstance(modelo, BaseLlm)
     modelo.base_url = url
     contenido = types.Content(role="user", parts=[types.Part(text="hola")])
-    peticion = LlmRequest(model=agentes.modelo, contents=[contenido])
+    peticion = LlmRequest(model=config.inferencia.nivel_1.modelo, contents=[contenido])
 
     async def _una() -> str | None:
         async for respuesta in modelo.generate_content_async(peticion):

@@ -25,11 +25,11 @@ Cerrado el 2026-09-17 (rama `sprint/S3-agentes-adk`, PR contra `main`).
 - **`Workflow` en lugar de `SequentialAgent`/`ParallelAgent`/`LoopAgent`**: en google-adk
   2.9.1 los tres están `@deprecated`. Misma topología, otra clase (ADR-005, ADR-007).
 - **`output_schema=MarketViewsBorrador`, no `MarketViews`**: google-genai rechaza el contrato
-  (`exclusiveMinimum`, `patternProperties`) y la Gemini API rechaza `additionalProperties`.
+  (`exclusiveMinimum`, `patternProperties`) y la API de AI Studio rechaza `additionalProperties`.
   El LLM emite un borrador y el código construye y valida el contrato (ADR-006).
 
 ### Logrado
-- ADR-005: `google-adk==2.9.1` fijo, `gemini-3.5-flash` con id fijo en `config.yaml`
+- ADR-005: `google-adk==2.9.1` fijo, el modelo de Nivel 1 con id fijo en `config.yaml`
   (`agentes.*`), credenciales solo por entorno/`.env` (`.env.example`).
 - `tools/`: `NucleoTools` con `estimar_mercado`, `construir_candidatos(recomendado,
   peso_max_por_activo)` y `validar_candidato`. Contratos por el estado de sesión, errores de
@@ -49,7 +49,7 @@ Cerrado el 2026-09-17 (rama `sprint/S3-agentes-adk`, PR contra `main`).
   aprobada a la primera con los pesos del golden, rechazo → segunda iteración aprobada,
   iteraciones agotadas → informe sin cartera, red de seguridad del constructor. Además
   `test_fronteras.py`: el núcleo puro no importa ADK ni capas de agentes.
-- DoD: dos corridas reales completas con `gemini-3.5-flash` (documentadas en el PR): una
+- DoD: dos corridas reales completas con el modelo de Nivel 1 (documentadas en el PR): una
   aprobada a la primera (70/2/5/23) y otra, vía `adk web`, rechazada por HHI en la
   iteración 1 y aprobada en la 2 tras bajar el constructor el máximo de VOOG a 50 %.
 
@@ -57,7 +57,7 @@ Cerrado el 2026-09-17 (rama `sprint/S3-agentes-adk`, PR contra `main`).
 - S4: comprobar que Agent Engine despliega un `Workflow` raíz (plan B: workflow agents
   clásicos, ejercidos en el spike de ADR-005). Persistir corridas que fallan por excepción.
 - S5: búsqueda para el analista (hoy `fuente` = "conocimiento general del modelo, sin
-  verificar"); reevaluar `gemini-3.8-flash` con evalsets; validar la técnica con `reestimada`.
+  verificar"); reevaluar la versión siguiente del modelo de Nivel 1 con evalsets; validar la técnica con `reestimada`.
 - A decidir por el usuario: con los umbrales actuales el validador APRUEBA una cartera con
   62 % en IBIT (view IBIT +90 %): HHI 0.50 < 0.55 y drawdown < 35 % porque IBIT solo cotiza
   desde 2024 (limitación ya anotada en S2). Un tope específico para IBIT o un HHI más

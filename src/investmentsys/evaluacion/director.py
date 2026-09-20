@@ -2,8 +2,8 @@
 
 Deliberadamente delgado: tres pasos y nada más. No es un framework de evaluación — no hay
 plugins, ni métricas configurables, ni usuario simulado. El MISMO código corre en ``make check``
-con un LLM guionado y en ``make eval`` contra Gemini; quien llama decide el modelo y construye
-el ``Mundo`` de cada caso (un almacén aislado: ningún caso ve los cambios de otro).
+con un LLM guionado y en ``make eval`` contra el modelo real; quien llama decide el modelo y
+construye el ``Mundo`` de cada caso (un almacén aislado: ningún caso ve los cambios de otro).
 
 Los casos viven en ``tests/eval/casos_director.yaml``, que documenta su propio formato.
 """
