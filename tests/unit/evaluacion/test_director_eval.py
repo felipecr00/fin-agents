@@ -70,6 +70,22 @@ GUIONES: dict[str, dict[str, list[Any]]] = {
             "Esto es lo que hay sobre la mesa.",
         ]
     },
+    "sesion_visible": {
+        "director": [
+            Llamada("consultar_mesa_trabajo"),
+            "Hola. Este es el universo; ¿seguimos con él?",
+            Llamada("estimar_mercado"),
+            "Exploratorio: el Estadístico estimó una correlación alta entre VOOG y VB.",
+            Llamada("diagnosticar_cartera", pesos=PESOS),
+            "Diagnóstico exploratorio del Escéptico: mira su ficha.",
+            Llamada("consultar_mesa_trabajo"),
+            "Esto es lo que hay sobre la mesa.",
+            Llamada("consultar_mesa_trabajo", vista="sala"),
+            "Este es el equipo.",
+            Llamada("convocar_comite", fase="solicitar"),
+            "Revisa la orden. ¿Confirmas?",
+        ]
+    },
     "quien_esta_en_la_sala": {
         "director": [Llamada("consultar_mesa_trabajo", vista="sala"), "Este es el equipo."]
     },
@@ -183,6 +199,16 @@ GUIONES: dict[str, dict[str, list[Any]]] = {
 
 # Conducta mala concreta → criterio que debe detectarla.
 MALOS: dict[str, tuple[dict[str, list[Any]], str]] = {
+    "quien_esta_en_la_sala": (  # rehace el roster por su cuenta, además del que anexa el código
+        {
+            "director": [
+                Llamada("consultar_mesa_trabajo", vista="sala"),
+                "### En la sala\n\n| Silla | Atiende |\n| Escéptico | todo |\n| Estadístico | - |"
+                "\n| Analista de Mercado | todo |",
+            ]
+        },
+        "turno1.sin_bloques_imitados",
+    ),
     "que_tenemos": (  # describe la mesa de memoria, sin consultarla
         {
             "director": [

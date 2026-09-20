@@ -22,7 +22,11 @@ from google.adk.tools.function_tool import FunctionTool
 from google.adk.tools.tool_context import ToolContext
 from google.genai import types
 
-from investmentsys.agents.director.anexos import anexar_al_cierre, recoger_anexos
+from investmentsys.agents.director.anexos import (
+    anexar_al_cierre,
+    ocultar_anexos_al_modelo,
+    recoger_anexos,
+)
 from investmentsys.agents.director.instruccion import INSTRUCCION
 from investmentsys.agents.market_analyst import crear_market_analyst
 from investmentsys.agents.market_analyst.agente import ETIQUETA_EXPLORATORIO
@@ -96,6 +100,7 @@ Estado de la sesión: {estado_sesion}
   respuesta: di que es la orden a revisar, pide la confirmación y espera. Solo si el usuario
   confirma en su siguiente mensaje, `fase="ejecutar"` con ese token. La orden vale solo para
   ese mensaje: si el usuario habla de otra cosa entremedio, vuelve a `fase="solicitar"`.
+  El token es interno: no lo muestres ni lo menciones al usuario.
 - ATRIBUCIÓN: toda cifra de retorno, riesgo o correlación se dice con su fuente, en la misma
   frase: "el Estadístico estimó…", "según el Escéptico…", "el Constructor propone…", "el
   Analista opina…", "el comité aprobó…". Las fichas de origen, la tabla de la mesa y la orden
@@ -228,6 +233,7 @@ def crear_director(
         before_agent_callback=cargar_universo,
         after_tool_callback=recoger_anexos,
         after_model_callback=anexar_al_cierre,
+        before_model_callback=ocultar_anexos_al_modelo,
         tools=[*MesaTools(gestor, config, sala).function_tools(), *especialistas],
         sub_agents=sub_agentes,
         generate_content_config=types.GenerateContentConfig(

@@ -26,13 +26,33 @@ financiera.
 | Acta | `aprobacion` registra el resumen que viste y tu confirmación ([ADR-014](adr/014-gate-del-comite-en-dos-fases-y-resultados-exploratorios.md)) | `aprobacion: null` |
 
 Custodias del Director que viven en las herramientas, no en el prompt:
-- **Comité**: `convocar_comite` en dos fases. Primero te presenta el resumen (universo,
-  procedencias del prior, restricciones, material); corre solo si confirmas en tu mensaje
-  SIGUIENTE. Un cambio de universo o de restricciones entre medias invalida la solicitud.
+- **Comité**: `convocar_comite` en dos fases. Primero te presenta la **Orden Preparatoria de
+  Sesión** (universo y sello, datos, prior, restricciones, fecha, qué hará el comité); corre solo
+  si confirmas en tu mensaje INMEDIATAMENTE siguiente (S9). Si preguntas otra cosa entre medias, o
+  cambia el universo o una restricción, la orden caduca y el Director te la vuelve a presentar.
 - **Prior neutral**: degradar TODO el prior exige ver la advertencia todo-o-nada y confirmar en
   un turno posterior ([ADR-015](adr/015-evaluacion-del-director-con-arnes-propio-y-promocion-de-apps-equipo.md)).
 - **Obsolescencia**: tras un alta, una baja o un cambio de cap, el Director lista qué resultados
   dejaron de valer; las herramientas los rechazan por `universe_version`.
+
+### La sala se ve (S9)
+- **Mesa de trabajo**: escribe «¿qué tenemos?» o «muestra la mesa» (también abre la sesión con
+  ella). Es una tabla que arma el código desde el estado de la sesión: universo, vistas,
+  estimaciones, carteras, diagnósticos y restricciones, con el especialista que puso cada cosa y
+  si sigue **Vigente** u **Obsoleto** (con qué hacer). Lo que ves ahí es exactamente lo que las
+  herramientas van a usar o rechazar ([ADR-016](adr/016-mesa-de-trabajo-como-proyeccion-del-estado-de-sesion.md)).
+- **Roster**: «¿quién está en la sala?» lista las sillas y las herramientas reales de cada una.
+- **Ficha de origen**: toda respuesta con resultados trae al final, redactada por código, la
+  fuente (especialista y herramienta), el sello del universo y las cifras clave. Todo lo que no
+  aprobó el comité va prefijado `⚠ NO VALIDADO ·`, diga lo que diga la narración
+  ([ADR-017](adr/017-bloques-anexados-por-codigo-a-la-respuesta-del-director.md)).
+
+### Rotar de modelo (S9)
+Los nombres comerciales viven solo en `config.yaml: inferencia` (nivel_1: clase cliente de ADK,
+id del modelo y secreto de la llave; asignaciones agente → nivel). Cambiar de modelo es editar
+esas líneas, correr `make eval` y mirar las conversaciones antes de concluir nada. `make nombres`
+verifica que ningún otro archivo los mencione
+([ADR-018](adr/018-abstraccion-de-inferencia-por-niveles-en-config-yaml.md)).
 
 **En la nube.** dev (Cloud Run) sirve todas las apps: `equipo` está disponible allí desde el
 merge de S8. El almacén `data/` del contenedor es de solo lectura: consultar, diagnosticar y

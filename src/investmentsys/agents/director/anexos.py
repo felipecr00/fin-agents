@@ -1,6 +1,6 @@
 """Bloques que el CÓDIGO anexa a la respuesta del Director (S9): fichas, mesa y memorándum.
 
-Dos callbacks de ADK sobre el Director:
+Tres callbacks de ADK sobre el Director:
 
 - ``recoger_anexos`` (``after_tool_callback``): tras cada herramienta —también el sub-agente
   ``market_analyst``, que ADK expone como tool— arma la ficha de origen de todo resultado con
@@ -8,6 +8,10 @@ Dos callbacks de ADK sobre el Director:
   memorándum de convocatoria). El LLM recibe los datos, no el bloque: no hay nada que copiar mal.
 - ``anexar_al_cierre`` (``after_model_callback``): cuando el modelo cierra el turno (respuesta
   final, sin llamadas pendientes), pega los bloques del turno al final del texto.
+- ``ocultar_anexos_al_modelo`` (``before_model_callback``): recorta esos bloques del historial
+  que ve el LLM. Sin esto, desde el segundo turno el modelo los toma por texto suyo y los IMITA
+  (observado en la demo de S9: su copia de la mesa salió sin el prefijo de no-validado, y
+  duplicada con la del código). Lo que no ve, no lo puede copiar mal.
 
 Así la etiqueta EXPLORATORIO, el prefijo de no-validado y el memorándum que el usuario aprueba
 no dependen de la narración: la redacción puede ser mejor o peor; el bloque está siempre.
@@ -18,6 +22,7 @@ from __future__ import annotations
 from typing import Any
 
 from google.adk.agents.callback_context import CallbackContext
+from google.adk.models.llm_request import LlmRequest
 from google.adk.models.llm_response import LlmResponse
 from google.adk.tools.base_tool import BaseTool
 from google.adk.tools.tool_context import ToolContext
@@ -28,6 +33,9 @@ from investmentsys.tools.ficha import ATIENDE, CLAVE_ANEXO, construir_ficha
 
 CLAVE_ANEXOS_TURNO = "director_anexos_turno"
 SEPARADOR = "\n\n---\n\n"
+# Separador invisible (U+2063) que abre el anexo: ningún renderizador lo muestra y permite
+# recortar del historial exactamente lo que añadió el código.
+MARCA_ANEXO = "\u2063\u2063"
 NOTA_ANEXO = (
     "bloque ya redactado por código: se anexa solo al final de tu respuesta. No lo copies ni "
     "lo reconstruyas; coméntalo."
@@ -80,7 +88,8 @@ def anexar_al_cierre(
     if not bloques:
         return None
     callback_context.state[CLAVE_ANEXOS_TURNO] = None
-    anexo = SEPARADOR + SEPARADOR.join(bloques)
+    # La marca va en su propia línea: los títulos de los bloques deben empezar su línea limpios.
+    anexo = f"\n\n{MARCA_ANEXO}{SEPARADOR}{SEPARADOR.join(bloques)}"
     partes = list(contenido.parts)
     ultima = next((i for i in reversed(range(len(partes))) if partes[i].text), None)
     if ultima is None:
@@ -90,3 +99,18 @@ def anexar_al_cierre(
     return llm_response.model_copy(
         update={"content": types.Content(role=contenido.role, parts=partes)}
     )
+
+
+def ocultar_anexos_al_modelo(
+    callback_context: CallbackContext, llm_request: LlmRequest
+) -> LlmResponse | None:
+    for contenido in llm_request.contents:
+        for i, parte in enumerate(contenido.parts or []):
+            if parte.text and MARCA_ANEXO in parte.text:
+                propio = parte.text.split(MARCA_ANEXO)[0].rstrip()
+                assert contenido.parts is not None
+                # Sin nota en su lugar: el modelo imita lo que ve al final de sus propios turnos
+                # (en la demo real repitió la nota tal cual). Del anexo ya avisa la salida de
+                # la herramienta, que sí conserva.
+                contenido.parts[i] = types.Part(text=propio)
+    return None

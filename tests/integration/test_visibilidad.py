@@ -13,7 +13,11 @@ import pytest
 from google.adk.models.llm_request import LlmRequest
 
 from investmentsys.agents.director import crear_director
-from investmentsys.agents.director.anexos import CLAVE_ANEXOS_TURNO, SEPARADOR
+from investmentsys.agents.director.anexos import (
+    CLAVE_ANEXOS_TURNO,
+    MARCA_ANEXO,
+)
+from investmentsys.agents.director.anexos import SEPARADOR as SEPARADOR_DE_BLOQUES
 from investmentsys.config import Config
 from investmentsys.data_manager import GestorDatos
 from investmentsys.tools.ficha import (
@@ -27,6 +31,7 @@ from tests.integration.conftest import Corrida, Llamada, LlmPorAgente, conversar
 from tests.integration.test_director import cifras_sin_respaldo
 
 NARRACION_POBRE = "Listo."
+SEPARADOR = f"\n\n{MARCA_ANEXO}{SEPARADOR_DE_BLOQUES}"  # termina el LLM, empieza el código
 
 
 @pytest.fixture
@@ -131,3 +136,23 @@ def test_un_resultado_con_error_no_anexa_ficha(
     guion = [Llamada("diagnosticar_cartera", pesos={"VOOG": 0.9}), "Los pesos no suman 1."]
     (turno,), _ = _charlar(config, gestor, tmp_path, guion, ["90 % VOOG"])
     assert turno.textos("director") == ["Los pesos no suman 1."]
+
+
+def test_el_modelo_no_ve_en_su_historial_los_bloques_que_anexo_el_codigo(
+    config: Config, gestor: GestorDatos, tmp_path: Path
+) -> None:
+    """Visto en la demo real: si los ve, desde el segundo turno los imita (sin el prefijo)."""
+    historial: list[str] = []
+
+    def espiar(peticion: LlmRequest) -> str:
+        historial.extend(
+            p.text for c in peticion.contents if c.role == "model" for p in c.parts or [] if p.text
+        )
+        return "De nada."
+
+    guion = [Llamada("estimar_mercado"), "El Estadístico estimó la correlación.", espiar]
+    (primero, _), _ = _charlar(config, gestor, tmp_path, guion, ["¿correlación?", "gracias"])
+    assert "Ficha de origen" in primero.textos("director")[0], "el usuario SÍ la vio"
+    (propio,) = historial
+    assert propio == "El Estadístico estimó la correlación.", "ni bloques ni notas que imitar"
+    assert "Ficha de origen" not in propio and MARCA_ANEXO not in propio

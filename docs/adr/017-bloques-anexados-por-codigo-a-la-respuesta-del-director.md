@@ -23,6 +23,12 @@ el Director (`agents/director/anexos.py`):
   LLM recibe los datos estructurados y una nota; no recibe nada que pueda copiar mal.
 - `after_model_callback`: cuando el modelo cierra el turno (respuesta final, sin llamadas a
   herramientas, no parcial) pega los bloques del turno al final del texto, una sola vez.
+- `before_model_callback`: recorta del historial que ve el LLM todo lo que anexó el código (lo
+  delimita una marca invisible, U+2063, en su propia línea). Añadido tras la primera demo real
+  de seis turnos: al ver los bloques en su historial, el modelo los tomó por texto suyo y desde
+  el cuarto turno los IMITÓ —rehízo la tabla de la mesa, duplicada con la del código y SIN el
+  prefijo de no-validado—. Los evals de un turno no lo mostraban; ahora lo fija el caso
+  `sesion_visible` (seis turnos) con el criterio `sin_bloques_imitados`.
 
 El especialista de la ficha sale de `ATIENDE` (la misma tabla que arma el roster). Solo una
 corrida del comité con `validado: true` va sin el prefijo `⚠ NO VALIDADO ·`. La orden se
@@ -43,8 +49,10 @@ contrato NO cambia.
   cualquier modelo y cualquier redacción. Los evals lo fijan con un guion que narra mal a
   propósito (`tests/integration/test_visibilidad.py`).
 - La respuesta es más larga: una ficha por herramienta con resultado en el turno.
-- El texto final ya no es solo del LLM: queda en el historial de la sesión con los bloques, y el
-  modelo los ve en turnos posteriores (son cifras de herramienta: respaldadas).
+- El texto final ya no es solo del LLM: queda en el historial de la sesión con los bloques (el
+  usuario y la pestaña de eventos los ven), pero el MODELO no: en turnos posteriores recibe su
+  propia narración y una nota de que hubo bloques anexados. Si necesita una cifra de un turno
+  anterior, la tiene en la salida de la herramienta, que sí conserva.
 - Con streaming (SSE) los fragmentos parciales no llevan el anexo; lo lleva la respuesta final
   agregada. Verificar en `adk web` con el interruptor de streaming si se usa.
 - Un canal nuevo (p. ej. el plan de compra de S11) se anexa devolviendo `anexo_usuario`.

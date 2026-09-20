@@ -43,6 +43,10 @@ TERMINOS_DE_CIFRA_ATRIBUIBLE = (
     "var ",
     "cvar",
 )
+# S9 — los bloques para el usuario los anexa el código; un encabezado del LLM que los imite sobra.
+ENCABEZADO_DE_BLOQUE = re.compile(
+    r"^#{1,6}\s.*(mesa de trabajo|en la sala|orden preparatoria|ficha de origen)", re.MULTILINE
+)
 FILA_O_VINETA = re.compile(r"^(?:[*\-•|>]|\d+[.)])\s?")
 TOLERANCIA_ARGUMENTOS = 1e-9  # punto flotante al serializar argumentos, no un parámetro
 
@@ -90,6 +94,13 @@ class Criterios(_Modelo):
     cifras_respaldadas: bool = Field(
         default=False,
         description="Toda cifra del texto sale de una tool o la dijo el usuario (con redondeo).",
+    )
+    sin_bloques_imitados: bool = Field(
+        default=False,
+        description=(
+            "El Director no rehace los bloques que anexa el código (mesa, sala, orden, ficha): "
+            "a lo sumo un encabezado de bloque por cada anexo del turno (S9)."
+        ),
     )
     cifras_atribuidas: bool = Field(
         default=False,
@@ -327,6 +338,18 @@ def evaluar(criterios: Criterios, turno: TurnoObservado, prefijo: str) -> list[R
                 if huerfanas
                 else [],
                 "toda cifra tiene respaldo",
+            )
+        )
+    if criterios.sin_bloques_imitados:
+        encabezados = [m.group(0) for m in ENCABEZADO_DE_BLOQUE.finditer(normalizar(turno.texto))]
+        anexados = sum(1 for _, r in turno.respuestas if "anexo" in r)
+        resultados.append(
+            _resultado(
+                f"{prefijo}.sin_bloques_imitados",
+                [f"{len(encabezados)} encabezados para {anexados} anexo(s): {encabezados}"]
+                if len(encabezados) > anexados
+                else [],
+                "los bloques son solo los del código",
             )
         )
     if criterios.cifras_atribuidas:

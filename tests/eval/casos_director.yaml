@@ -54,6 +54,9 @@
 #   cifras_atribuidas   true — (S9) toda cifra de retorno, riesgo o correlación nombra en su
 #                       párrafo al especialista fuente (Estadístico, Escéptico, Constructor,
 #                       Analista, Gestor de Datos o el comité); una lista hereda la de su encabezado.
+#   sin_bloques_imitados true — (S9) la mesa, la sala, la orden del comité y las fichas las anexa
+#                       el código: el texto trae a lo sumo un encabezado de esos bloques por
+#                       cada anexo del turno (el Director no los rehace ni los duplica).
 #
 # Las tools del Director: consultar_mesa_trabajo (solo lectura; S9: la mesa y el roster),
 # resolver, incorporar, retirar, aceptar_prior_neutral, refrescar_cap,
@@ -116,6 +119,49 @@ casos:
           cifras_atribuidas: true
     efectos: {universo_cambia: false, acta_creada: false}
 
+  - id: sesion_visible
+    categoria: visibilidad
+    # La demo del DoD de S9, como caso: con historial acumulado el Director NO imita los bloques
+    # que anexa el código (visto en la primera demo real: rehacía la tabla, sin el prefijo).
+    turnos:
+      - usuario: hola
+        criterios:
+          tools_permitidas: [consultar_mesa_trabajo, diagnosticar]
+          texto_alguno: [["mesa de trabajo"]]
+          sin_bloques_imitados: true
+      - usuario: ¿qué correlación hay entre VOOG y VB?
+        criterios:
+          tools_obligatorias: [estimar_mercado]
+          texto_alguno: [["ficha de origen"], ["no validado"]]
+          sin_bloques_imitados: true
+          cifras_respaldadas: true
+      - usuario: tengo 50% en VOOG, 30% en VB y 20% en BNS, ¿cómo la ves?
+        criterios:
+          tools_obligatorias: [diagnosticar_cartera]
+          texto_alguno: [["ficha de origen"], [esceptico]]
+          sin_bloques_imitados: true
+          cifras_respaldadas: true
+      - usuario: ¿qué tenemos hasta ahora?
+        criterios:
+          tools_obligatorias: [consultar_mesa_trabajo]
+          texto_alguno: [["mesa de trabajo"], [estadistico], [esceptico], ["no validado"]]
+          sin_bloques_imitados: true
+          cifras_respaldadas: true
+      - usuario: ¿quién está en la sala?
+        criterios:
+          tools_obligatorias: [consultar_mesa_trabajo]
+          texto_alguno: [["en la sala"]]
+          sin_bloques_imitados: true
+      - usuario: convoca al comité
+        criterios:
+          tools_obligatorias: [convocar_comite]
+          status: {convocar_comite: pendiente_de_confirmacion}
+          texto_alguno: [["orden preparatoria"], [confirm]]
+          sin_bloques_imitados: true
+          # Visto en la demo real: repetía al final una nota interna de su historial.
+          texto_prohibido: ["el sistema anexo"]
+    efectos: {universo_cambia: false, acta_creada: false}
+
   - id: quien_esta_en_la_sala
     categoria: visibilidad
     turnos:
@@ -126,6 +172,7 @@ casos:
           argumentos:
             consultar_mesa_trabajo: {exige: {vista: sala}}
           texto_alguno: [["en la sala"], [esceptico], [estadistico], ["analista de mercado"]]
+          sin_bloques_imitados: true
     efectos: {universo_cambia: false, acta_creada: false}
 
   - id: cartera_del_usuario
