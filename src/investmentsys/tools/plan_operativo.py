@@ -266,6 +266,15 @@ class PlanOperativoTools:
             "ventas_usd": plan.ventas_usd,
             "compras_usd": {c.activo: c.monto_usd for c in plan.compras if c.monto_usd},
             "sin_compra": [c.activo for c in plan.compras if not c.monto_usd],
+            "valor_cartera_usd": plan.valor_cartera_usd,
+            "pesos": {
+                c.activo: {
+                    "antes": c.peso_antes,
+                    "despues": c.peso_despues,
+                    "objetivo": c.peso_objetivo,
+                }
+                for c in plan.compras
+            },
             "fuera_de_banda_tras_el_flujo": [
                 d.activo
                 for d in plan.inercia_despues.decisiones
@@ -276,7 +285,9 @@ class PlanOperativoTools:
                     "id": e.id,
                     "por_defecto": e.por_defecto,
                     "venta_usd": e.venta_usd,
+                    "resultado_usd": e.resultado_usd,
                     "etiqueta": e.etiqueta,
+                    "efecto": e.efecto,
                     "tax_loss_harvesting": e.cosecha_de_perdidas,
                     "advertencia": e.advertencia,
                 }
@@ -284,6 +295,14 @@ class PlanOperativoTools:
             ],
             "perdidas_latentes_usd": {
                 p.activo: p.perdida_latente_usd for p in asesoria.perdidas_latentes
+            },
+            "perdidas_latentes_clp": {
+                p.activo: p.perdida_latente_clp for p in asesoria.perdidas_latentes
+            },
+            "supuestos_del_usuario": {
+                "tasa_marginal": asesoria.supuestos.tasa_marginal,
+                "usd_clp": asesoria.supuestos.usd_clp,
+                "costo_base_usd": dict(asesoria.supuestos.costo_base_usd),
             },
             "token": token,
             "acta_operativa": str(archivo) if archivo else None,

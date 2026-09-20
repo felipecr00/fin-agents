@@ -48,7 +48,9 @@ TERMINOS_DE_CIFRA_ATRIBUIBLE = (
 )
 # S9 — los bloques para el usuario los anexa el código; un encabezado del LLM que los imite sobra.
 ENCABEZADO_DE_BLOQUE = re.compile(
-    r"^#{1,6}\s.*(mesa de trabajo|en la sala|orden preparatoria|ficha de origen)", re.MULTILINE
+    r"^#{1,6}\s.*(mesa de trabajo|en la sala|orden preparatoria|ficha de origen"
+    r"|cronologia del comite|plan de compra neta|override registrado)",
+    re.MULTILINE,
 )
 FILA_O_VINETA = re.compile(r"^(?:[*\-•|>]|\d+[.)])\s?")
 # La marca invisible con la que ``agents/anexos.py`` abre lo que anexa el código (un test fija
@@ -119,6 +121,14 @@ class Criterios(_Modelo):
         default=(),
         description="Personas (sub-agentes) que le hablaron al usuario en el turno (S10).",
     )
+    hitos_en_vivo: int = Field(
+        default=0,
+        ge=0,
+        description=(
+            "Mínimo de hitos del comité que llegaron al chat MIENTRAS `convocar_comite` corría: "
+            "entre su llamada y su respuesta, no después (S11, ADR-021)."
+        ),
+    )
     no_repite_cifras: bool = Field(
         default=False,
         description=(
@@ -139,6 +149,8 @@ class TurnoObservado:
     """Salidas de tools y mensajes del usuario de los turnos ANTERIORES (respaldan cifras)."""
     voces: tuple[tuple[str, str], ...] = ()
     """(persona, texto): lo que dijeron al usuario los sub-agentes con voz propia (S10)."""
+    hitos_en_vivo: int = 0
+    """Eventos del comité recibidos ANTES de que su herramienta respondiera (S11)."""
 
     @property
     def leido(self) -> str:
@@ -400,6 +412,19 @@ def evaluar(criterios: Criterios, turno: TurnoObservado, prefijo: str) -> list[R
                 f"{prefijo}.cifras_atribuidas",
                 [f"cifras sin especialista fuente: {sin_fuente}"] if sin_fuente else [],
                 "toda cifra de retorno, riesgo o correlación nombra a su fuente",
+            )
+        )
+    if criterios.hitos_en_vivo:
+        resultados.append(
+            _resultado(
+                f"{prefijo}.hitos_en_vivo",
+                [
+                    f"llegaron {turno.hitos_en_vivo} hitos en vivo; se exigían "
+                    f"{criterios.hitos_en_vivo}"
+                ]
+                if turno.hitos_en_vivo < criterios.hitos_en_vivo
+                else [],
+                f"{turno.hitos_en_vivo} hitos del comité durante la llamada",
             )
         )
     if criterios.habla:

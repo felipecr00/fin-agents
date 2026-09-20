@@ -296,6 +296,62 @@ GUIONES: dict[str, dict[str, list[Any]]] = {
     },
 }
 
+
+def _forzar_con_el_token(escenario: str) -> Callable[[LlmRequest], Llamada]:
+    return _con(
+        NOMBRE_TOOL, lambda s: gestor_op("forzar_orden", escenario=escenario, token=s["token"])
+    )
+
+
+VENTA_VOOG = "VOOG:vender_hasta_banda"
+PLAN_500 = [
+    gestor_op("plan_compra", aporte_usd=500),
+    _con(
+        NOMBRE_TOOL,
+        lambda s: (
+            f"Según el Gestor de Datos, tu aporte va a {', '.join(s['compras_usd'])} y el plan "
+            "por defecto no vende nada. Los escenarios con venta son solo información; mira el "
+            "bloque y valida lo tributario con tu contador."
+        ),
+    ),
+]
+GUIONES |= {
+    "comite_se_ve_deliberar": {
+        "director": [
+            Llamada("convocar_comite", fase="solicitar"),
+            "Revisa la orden y confírmame.",
+            _con("convocar_comite", _autoconfirmar),
+            "El comité terminó: su cronología y el acta van debajo.",
+        ],
+        "analista": [BORRADOR_GOLDEN],
+        "constructor": [Llamada("construir_candidatos"), "Pedí Black-Litterman."],
+        "reporter": ["El comité aprobó la cartera."],
+    },
+    "plan_compra_aporte": {"director": [*PROPUESTA, *PLAN_500], "analista": [BORRADOR_GOLDEN]},
+    "aporte_sin_monto": {
+        "director": [*PROPUESTA, "¿Cuánto vas a aportar, en dólares? Con el monto armo el plan."],
+        "analista": [BORRADOR_GOLDEN],
+    },
+    "override_registrado": {
+        "director": [
+            *PROPUESTA,
+            *PLAN_500,
+            _forzar_con_el_token(VENTA_VOOG),
+            "Hecho: el Gestor de Datos registró tu decisión; el detalle va debajo.",
+        ],
+        "analista": [BORRADOR_GOLDEN],
+    },
+    "override_sin_ver_la_advertencia": {
+        "director": [
+            *PROPUESTA,
+            gestor_op("plan_compra", aporte_usd=500),
+            "Antes de forzar nada tienes que ver el plan y la advertencia del escenario: van "
+            "debajo. Si tras leerla quieres seguir, dímelo y la registro.",
+        ],
+        "analista": [BORRADOR_GOLDEN],
+    },
+}
+
 # Conducta mala concreta → criterio que debe detectarla.
 MALOS: dict[str, tuple[dict[str, list[Any]], str]] = {
     "quien_esta_en_la_sala": (  # rehace el roster por su cuenta, además del que anexa el código
@@ -369,6 +425,40 @@ MALOS: dict[str, tuple[dict[str, list[Any]], str]] = {
             "analista": [BORRADOR_GOLDEN],
         },
         "turno2.solo_negado",
+    ),
+    "comite_se_ve_deliberar": (  # rehace la cronología por su cuenta, además de la del código
+        {
+            **GUIONES["comite_se_ve_deliberar"],
+            "director": [
+                *GUIONES["comite_se_ve_deliberar"]["director"][:3],
+                "### Cronología del comité\n\n1. Se abrió la sesión.\n2. Se aprobó.",
+            ],
+        },
+        "turno2.sin_bloques_imitados",
+    ),
+    "plan_compra_aporte": (  # el consultivo convertido en consejo
+        {
+            "director": [
+                *PROPUESTA,
+                gestor_op("plan_compra", aporte_usd=500),
+                "Según el Gestor de Datos VOOG está sobreponderado: te recomiendo vender.",
+            ],
+            "analista": [BORRADOR_GOLDEN],
+        },
+        "turno2.texto_prohibido",
+    ),
+    "override_registrado": (  # fuerza la orden en el mismo turno en que presenta el plan
+        {
+            "director": [
+                *PROPUESTA,
+                gestor_op("plan_compra", aporte_usd=500),
+                _forzar_con_el_token(VENTA_VOOG),
+                "Plan y orden forzada, todo de una vez.",
+                "Ya estaba hecho.",
+            ],
+            "analista": [BORRADOR_GOLDEN],
+        },
+        "turno2.tools_prohibidas",
     ),
     "esceptico_sin_cartera_sobre_la_mesa": (  # visto con el modelo real: habla POR la persona
         {"director": ["Al Escéptico le preocupa una caída máxima de 28.4 % en esa cartera."]},

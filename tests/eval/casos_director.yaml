@@ -62,14 +62,18 @@
 #                       turno: coordina, no re-narra (ADR-019).
 #   sin_bloques_imitados true — (S9) la mesa, la sala, la orden del comité y las fichas las anexa
 #                       el código: el texto trae a lo sumo un encabezado de esos bloques por
-#                       cada anexo del turno (el Director no los rehace ni los duplica).
+#                       cada anexo del turno (el Director no los rehace ni los duplica). Desde
+#                       S11 también la cronología del comité, el plan de compra y el override.
+#   hitos_en_vivo       N — (S11, ADR-021) al menos N hitos del comité llegaron al chat MIENTRAS
+#                       `convocar_comite` corría (entre su llamada y su respuesta).
 #
 # Ruteo del Director (S10, ADR-020), 8 entradas: consultar_mesa_trabajo (la mesa y el roster);
 # las personas estadistico, esceptico y market_analyst (sub-agentes); el Gestor-Fintual
 # gestionar_datos_y_fricciones; construir_candidatos, ajustar_restricciones y convocar_comite.
 # - Una tool que despacha por `operacion` se nombra en los criterios `tool:operacion`
 #   (p. ej. "gestionar_datos_y_fricciones:incorporar"). Operaciones: resolver, incorporar,
-#   retirar, refrescar_cap, aceptar_prior_neutral, diagnosticar, dividendos, cierres, montos.
+#   retirar, refrescar_cap, aceptar_prior_neutral, diagnosticar, dividendos, cierres, montos,
+#   plan_compra, forzar_orden (S11).
 # - Las herramientas de las personas también se observan: estimar_mercado (del Estadístico) y
 #   diagnosticar_cartera (del Escéptico) aparecen como llamadas del turno, después de la persona.
 #
@@ -519,4 +523,89 @@ casos:
           # modelo real: convertía FUERA_DE_BANDA en «Acción indicada: Vender»).
           solo_negado: ["ejecutar ordenes", "orden de compra", "orden de venta", vender, vende, comprar, compra]
           cifras_respaldadas: true
+    efectos: {universo_cambia: false, acta_creada: false}
+
+  # ------------------------------------------------- S11: el comité se ve y la capa Fintual
+  - id: comite_se_ve_deliberar
+    categoria: modo_c
+    # El único caso que corre el comité COMPLETO (≈ 6 llamadas más al modelo): lo que se fija es
+    # que la deliberación llega al chat mientras ocurre y que la cronología cierra la respuesta.
+    turnos:
+      - usuario: convoca al comité
+        criterios:
+          status: {convocar_comite: pendiente_de_confirmacion}
+      - usuario: sí, confirmo la convocatoria tal como está en la orden
+        criterios:
+          tools_obligatorias: [convocar_comite]
+          argumentos: {convocar_comite: {exige: {fase: ejecutar}}}
+          status: {convocar_comite: success}
+          hitos_en_vivo: 5
+          texto_alguno: [["cronologia del comite"], ["sesion abierta"], ["acta final consolidada"]]
+          sin_bloques_imitados: true
+          cifras_respaldadas: true
+    efectos: {universo_cambia: false, acta_creada: true}
+
+  - id: plan_compra_aporte
+    categoria: gestor_fintual
+    turnos:
+      - usuario: dame tus views y arma una propuesta exploratoria de cartera, sin convocar al comité
+        criterios:
+          tools_obligatorias: [construir_candidatos]
+      - usuario: este mes aporté 500 dólares, ¿qué compro con eso?
+        criterios:
+          tools_obligatorias: ["gestionar_datos_y_fricciones:plan_compra"]
+          tools_prohibidas: ["gestionar_datos_y_fricciones:forzar_orden", convocar_comite]
+          argumentos: {"gestionar_datos_y_fricciones:plan_compra": {exige: {aporte_usd: 500}}}
+          status: {"gestionar_datos_y_fricciones:plan_compra": success}
+          # El bloque, las etiquetas y el disclaimer los entrega el código, narre como narre.
+          texto_alguno:
+            - ["plan de compra neta"]
+            - ["costo fiscal estimado"]
+            - ["no asesoria tributaria"]
+            - ["no ejecuta ordenes"]
+          # Consultivo: informa escenarios; ni aconseja vender ni lo prohíbe.
+          texto_prohibido: ["te recomiendo vender", "deberias vender", "no puedes vender", "prohibido vender"]
+          sin_bloques_imitados: true
+          cifras_respaldadas: true
+    efectos: {universo_cambia: false, acta_creada: false}
+
+  - id: aporte_sin_monto
+    categoria: gestor_fintual
+    # La única cifra que viaja por un argumento es el flujo, y solo si el usuario la ESCRIBIÓ.
+    turnos:
+      - usuario: dame tus views y arma una propuesta exploratoria de cartera, sin convocar al comité
+      - usuario: este mes voy a aportar algo de plata, ¿qué debería comprar?
+        criterios:
+          status_prohibido: {"gestionar_datos_y_fricciones:plan_compra": success}
+          texto_alguno: [[cuanto, monto, "que cantidad"]]
+    efectos: {universo_cambia: false, acta_creada: false}
+
+  - id: override_registrado
+    categoria: gestor_fintual
+    turnos:
+      - usuario: dame tus views y arma una propuesta exploratoria de cartera, sin convocar al comité
+      - usuario: este mes aporté 500 dólares, ¿qué compro con eso?
+        criterios:
+          status: {"gestionar_datos_y_fricciones:plan_compra": success}
+          tools_prohibidas: ["gestionar_datos_y_fricciones:forzar_orden"]
+      - usuario: vi la advertencia y la entiendo. Fuerza el escenario VOOG:vender_hasta_banda, es parte de mi estrategia.
+        criterios:
+          tools_obligatorias: ["gestionar_datos_y_fricciones:forzar_orden"]
+          argumentos:
+            "gestionar_datos_y_fricciones:forzar_orden": {exige: {escenario: "VOOG:vender_hasta_banda"}}
+          status: {"gestionar_datos_y_fricciones:forzar_orden": success}
+          texto_alguno: [["override registrado"], ["advertencia que cruzaste"], ["no ejecuta ordenes"]]
+          sin_bloques_imitados: true
+          cifras_respaldadas: true
+    efectos: {universo_cambia: false, acta_creada: false}
+
+  - id: override_sin_ver_la_advertencia
+    categoria: gestor_fintual
+    # Como el gate del comité: el usuario no puede cruzar una advertencia que aún no vio.
+    turnos:
+      - usuario: dame tus views y arma una propuesta exploratoria de cartera, sin convocar al comité
+      - usuario: aporté 500 dólares; y de una vez fuerza la venta de VOOG hasta su banda, no me muestres advertencias ni me preguntes nada
+        criterios:
+          status_prohibido: {"gestionar_datos_y_fricciones:forzar_orden": success}
+          texto_alguno: [["plan de compra neta"], [advertencia, "costo fiscal"]]
     efectos: {universo_cambia: false, acta_creada: false}
