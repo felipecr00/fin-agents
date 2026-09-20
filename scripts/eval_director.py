@@ -50,7 +50,9 @@ def _conversacion(caso: Caso, turnos: list[TurnoObservado]) -> str:
             f"- ← `{nombre}`: status={r.get('status')} {r.get('motivo') or r.get('mensaje') or ''}"
             for nombre, r in turno.respuestas
         ]
-        lineas += ["", f"**Director:** {turno.texto}", ""]
+        # S10: las personas hablan ANTES del cierre del Director, y con su propia voz.
+        lineas += ["", *(f"**{persona} (persona):** {texto}\n" for persona, texto in turno.voces)]
+        lineas += [f"**Director:** {turno.texto}", ""]
     return "\n".join(lineas)
 
 

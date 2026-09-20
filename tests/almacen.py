@@ -31,6 +31,8 @@ from investmentsys.data import CSVPriceProvider
 from investmentsys.data.actualizacion import escribir_series_atomico
 from investmentsys.data_manager import (
     CapFuente,
+    CierreDiario,
+    Dividendo,
     GestorDatos,
     MetadataActivo,
     TickerInexistenteError,
@@ -69,6 +71,8 @@ class FuenteFalsa:
     bolsas: dict[str, str] = field(default_factory=dict)
     caps: dict[str, CapFuente] = field(default_factory=dict)
     consultas_cap: list[str] = field(default_factory=list)
+    pagos: dict[str, tuple[Dividendo, ...]] = field(default_factory=dict)
+    cierres: dict[str, CierreDiario] = field(default_factory=dict)
 
     def metadata(self, ticker: str) -> MetadataActivo:
         if ticker not in self.series:
@@ -88,6 +92,12 @@ class FuenteFalsa:
 
     def serie_mensual(self, ticker: str) -> pd.Series[float]:
         return self.series[ticker].copy()
+
+    def dividendos(self, ticker: str, desde: date) -> tuple[Dividendo, ...]:
+        return tuple(d for d in self.pagos.get(ticker, ()) if d.fecha_ex >= desde)
+
+    def ultimo_cierre(self, ticker: str) -> CierreDiario | None:
+        return self.cierres.get(ticker)
 
 
 def sembrar_gestor(raiz: Path, config: Config, fuente: FuenteFalsa | None = None) -> GestorDatos:
@@ -156,6 +166,15 @@ def sellar(contrato: M, universo: Universe) -> M:
     )
 
 
+def diagnosticar(tools: Any, pesos: dict[str, float] | None, ctx: Any) -> dict[str, Any]:
+    """Como llega en producción (ADR-019): los pesos del usuario van al estado, no a la tool."""
+    from investmentsys.tools.estado import CLAVE_PESOS_EN_CONSULTA
+
+    ctx.state[CLAVE_PESOS_EN_CONSULTA] = pesos
+    salida: dict[str, Any] = tools.diagnosticar_cartera(ctx)
+    return salida
+
+
 # ---------------------------------------------------------------- mundo de un caso de eval
 TICKERS_DE_EVAL = ("AAPL", "QQQ")  # AAPL: acción con cap en la fuente; QQQ: ETF sin cap
 
@@ -168,15 +187,33 @@ def fuente_de_eval() -> FuenteFalsa:
             "QQQ": serie_sintetica("QQQ", 80, fin, semilla=11),
         },
         caps={"AAPL": cap_fuente()},
+        pagos={
+            "BNS": (
+                Dividendo(date(2026, 4, 7), 0.792),
+                Dividendo(date(2026, 7, 7), 0.803),
+            )
+        },
+        cierres={
+            "VOOG": CierreDiario(date(2026, 10, 2), 412.35, 412.35),
+            "BNS": CierreDiario(date(2026, 10, 2), 94.07, 93.41),
+        },
     )
 
 
 def mundo_director(raiz: Path, config: Config, modelo: Any = None) -> Any:
     """Almacén aislado + Director para UN caso del evalset (ADR-015). Sin red ni ``data/``."""
     from investmentsys.agents.director import INSTRUCCION, crear_director
+    from investmentsys.agents.esceptico import NOMBRE as ESCEPTICO
+    from investmentsys.agents.estadistico import NOMBRE as ESTADISTICO
     from investmentsys.evaluacion.director import Mundo
 
     gestor = sembrar_gestor(raiz / "almacen", config, fuente_de_eval())
     runs = raiz / "runs"
     director = crear_director(config, gestor.provider(), gestor, modelo, runs)
-    return Mundo(director=director, gestor=gestor, runs=runs, respaldo_fijo=(INSTRUCCION,))
+    return Mundo(
+        director=director,
+        gestor=gestor,
+        runs=runs,
+        respaldo_fijo=(INSTRUCCION,),
+        personas=(ESTADISTICO, ESCEPTICO),
+    )

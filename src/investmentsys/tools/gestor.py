@@ -1,4 +1,7 @@
-"""FunctionTools de ADK sobre el Gestor de Datos (S7), para el Director conversacional (S8).
+"""Operaciones del Gestor de Datos (S7) para el Director conversacional (S8).
+
+Desde S10 (ADR-020) el Director no las ve una a una: las despacha la tool única
+``gestionar_datos_y_fricciones`` (``tools/fintual.py``). Aquí siguen el código y las custodias.
 
 Misma regla que ``nucleo.py``: aquí no hay lógica de datos. Cada tool llama al Gestor, deja el
 universo vigente en el estado de sesión y, si el universo cambió, DECLARA qué resultados de la
@@ -11,7 +14,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from google.adk.tools.function_tool import FunctionTool
 from google.adk.tools.tool_context import ToolContext
 
 from investmentsys.contracts import AssetDiagnostic, Universe
@@ -35,9 +37,13 @@ ERRORES_DEL_GESTOR = (GestorError, TiingoError, DatosInvalidosError)
 
 # (clave del estado, cómo llamarlo ante el usuario, qué hacer)
 SELLADOS = (
-    (CLAVE_QUANT_ESTIMATES, "estimaciones del Estadístico", "vuelve a llamar a estimar_mercado"),
+    (CLAVE_QUANT_ESTIMATES, "estimaciones del Estadístico", "pídeselas de nuevo al Estadístico"),
     (CLAVE_CANDIDATOS, "carteras candidatas", "vuelve a construirlas"),
-    (CLAVE_DIAGNOSTICOS_CARTERA, "diagnósticos de carteras del usuario", "vuelve a diagnosticar"),
+    (
+        CLAVE_DIAGNOSTICOS_CARTERA,
+        "diagnósticos de carteras del usuario",
+        "pídele de nuevo el diagnóstico al Escéptico",
+    ),
 )
 
 
@@ -50,7 +56,7 @@ NEUTRAL_EXIGE_OTRO_TURNO = (
     "advertencia todo-o-nada y espera. Afecta a TODOS los activos del universo ({activos}): "
     "las capitalizaciones presentes ({con_cap}) dejan de usarse y el prior pasa a ser "
     "equiponderado, con el sesgo documentado en ADR-013. Si el usuario confirma en su "
-    "siguiente mensaje, vuelve a llamar a aceptar_prior_neutral"
+    "siguiente mensaje, repite la operación aceptar_prior_neutral"
 )
 
 
@@ -276,16 +282,3 @@ class GestorTools:
             "mensaje_prior": informe.mensaje_prior,
             "resultados_obsoletos": obsoletos,
         }
-
-    def function_tools(self) -> list[FunctionTool]:
-        return [
-            FunctionTool(f)
-            for f in (
-                self.resolver,
-                self.incorporar,
-                self.retirar,
-                self.aceptar_prior_neutral,
-                self.refrescar_cap,
-                self.diagnosticar,
-            )
-        ]

@@ -122,6 +122,8 @@ inferencia:
     market_analyst: nivel_1
     constructor: nivel_1
     reporter: nivel_1
+    estadistico: nivel_1
+    esceptico: nivel_1
   # Marcas que no pueden aparecer fuera de este archivo (lo verifica un test y `make nombres`).
   nombres_vetados: [gemini, claude, gpt, whisper, finbert, sonnet]
   # Nombres que impone el tooling y no son menciones de un modelo: el archivo de instrucciones
@@ -130,6 +132,8 @@ inferencia:
 
 agentes:
   temperatura: 0.2
+  # Estadístico y Escéptico (S10, ADR-019): personas thin que redactan sobre las cifras de su tool.
+  temperatura_personas: 0.1
   # Intentos del analista hasta que su salida valide contra MarketViews (incluye el primero).
   max_intentos_analista: 3
   horizonte_views_meses: 12
@@ -156,6 +160,15 @@ evaluacion:
   # no es "sobria", diga lo que diga la noticia.
   q_absoluta_max: 0.30
   q_relativa_max: 0.20
+
+fintual:
+  # Gobernanza operativa en Fintual Acciones (fintual/, ADR-020). No-Trade Zone: banda ABSOLUTA
+  # alrededor del peso objetivo (0.05 = ±5 p.p.: objetivo 55 % → [50 %, 60 %]). Dentro de banda
+  # la orden es HOLD obligatorio. `bandas_por_activo` sobrescribe la banda de un activo.
+  banda_inercia: 0.05
+  bandas_por_activo: {}
+  decimales_usd: 2               # Fintual compra fracciones: montos exactos al centavo
+  dias_historia_dividendos: 400  # historia de ex-dividendos que se consulta a la fuente
 
 sensibilidad:
   # Rejilla del análisis de sensibilidad (risk/sensibilidad.py): cada magnitud se aplica con

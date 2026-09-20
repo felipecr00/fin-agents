@@ -180,6 +180,9 @@ class ReintentosModeloConfig(_Seccion):
 
 class AgentesConfig(_Seccion):
     temperatura: float = Field(ge=0.0, le=2.0)
+    temperatura_personas: float = Field(
+        ge=0.0, le=2.0, description="Estadístico y Escéptico (S10): baja, redactan sobre cifras."
+    )
     max_intentos_analista: int = Field(ge=1)
     horizonte_views_meses: int = Field(gt=0)
     max_views: int = Field(ge=1)
@@ -281,6 +284,24 @@ class SensibilidadConfig(_Seccion):
         return self
 
 
+class FintualConfig(_Seccion):
+    """Gobernanza operativa en Fintual Acciones (``fintual/``, ADR-020)."""
+
+    banda_inercia: float = Field(
+        gt=0.0, le=1.0, description="Semiancho ABSOLUTO de la No-Trade Zone: 0.05 = ±5 p.p."
+    )
+    bandas_por_activo: dict[Ticker, float] = Field(default_factory=dict)
+    decimales_usd: int = Field(ge=0, le=4, description="Fintual compra fracciones: montos a 2.")
+    dias_historia_dividendos: int = Field(gt=0)
+
+    @model_validator(mode="after")
+    def _bandas(self) -> FintualConfig:
+        fuera = sorted(a for a, b in self.bandas_por_activo.items() if not 0.0 < b <= 1.0)
+        if fuera:
+            raise ValueError(f"bandas_por_activo fuera de (0, 1]: {fuera}")
+        return self
+
+
 class CorridasConfig(_Seccion):
     directorio: Path
 
@@ -301,6 +322,7 @@ class Config(_Seccion):
     inferencia: InferenciaConfig
     agentes: AgentesConfig
     evaluacion: EvaluacionConfig
+    fintual: FintualConfig
     sensibilidad: SensibilidadConfig
     corridas: CorridasConfig
     reproducibilidad: ReproducibilidadConfig

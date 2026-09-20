@@ -22,6 +22,8 @@ from pydantic import PrivateAttr
 
 from investmentsys.config import Config, cargar_config
 from investmentsys.data import CSVPriceProvider
+from investmentsys.tools.fintual import NOMBRE_TOOL as NOMBRE_TOOL_GESTOR
+from investmentsys.tools.fintual import OPERACIONES
 from tests.conftest import CSV_REFERENCIA
 
 
@@ -63,6 +65,11 @@ class Llamada(dict[str, Any]):
         self.nombre = nombre
 
 
+def gestor_op(operacion: str, **args: Any) -> Llamada:
+    """Una operación del Gestor-Fintual: la ÚNICA tool del Gestor desde S10 (ADR-020)."""
+    return Llamada(NOMBRE_TOOL_GESTOR, operacion=operacion, **args)
+
+
 class LlmPorAgente(BaseLlm):
     """Un guion por agente, elegido por una frase distintiva de su instrucción de sistema."""
 
@@ -80,6 +87,8 @@ class LlmPorAgente(BaseLlm):
         "constructor": "Eres el Constructor de Portafolios",
         "reporter": "Eres el redactor del informe",
         "director": "Eres el Director de Análisis",
+        "estadistico": "Eres el Estadístico",
+        "esceptico": "Eres el Escéptico",
     }
 
     def instrucciones(self, agente: str) -> list[str]:
@@ -122,14 +131,20 @@ class Corrida:
         ]
 
     def respuestas(self, tool: str) -> list[dict[str, Any]]:
-        """Lo que devolvió ``tool`` cada vez que se llamó."""
-        return [
+        """Lo que devolvió ``tool`` cada vez que se llamó.
+
+        ``tool`` puede ser una operación del Gestor-Fintual ("incorporar"): son las respuestas
+        de su tool única con esa ``operacion``.
+        """
+        nombre = NOMBRE_TOOL_GESTOR if tool in OPERACIONES else tool
+        salidas = [
             dict(parte.function_response.response or {})
             for e in self.eventos
             if e.content and e.content.parts
             for parte in e.content.parts
-            if parte.function_response and parte.function_response.name == tool
+            if parte.function_response and parte.function_response.name == nombre
         ]
+        return [s for s in salidas if tool not in OPERACIONES or s.get("operacion") == tool]
 
     def textos(self, autor: str) -> list[str]:
         return [

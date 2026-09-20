@@ -37,7 +37,7 @@ from investmentsys.tools import (
     CLAVE_VALIDACIONES,
     NucleoTools,
 )
-from tests.almacen import universo_referencia
+from tests.almacen import diagnosticar, universo_referencia
 from tests.conftest import ACTIVOS, FECHA
 
 PESOS_GOLDEN = {"VOOG": 0.70, "BNS": 0.07, "IBIT": 0.02, "VB": 0.21}
@@ -277,7 +277,7 @@ class TestDiagnosticarCartera:
     def test_pesos_validos_dan_un_diagnostico_etiquetado_y_sin_veredicto(
         self, tools: NucleoTools, ctx: ToolContext
     ) -> None:
-        salida = tools.diagnosticar_cartera(PESOS_GOLDEN, ctx)
+        salida = diagnosticar(tools, PESOS_GOLDEN, ctx)
         assert salida["status"] == "success"
         assert salida["etiqueta"] == "diagnostico" and salida["validado"] is False
         assert salida["universe_version"] == universo_referencia().version
@@ -301,19 +301,19 @@ class TestDiagnosticarCartera:
         _hasta_candidatos(tools, ctx, views_golden)
         comite = tools.validar_candidato(ctx)
         ronda = CandidatePortfolios.model_validate(ctx.state[CLAVE_CANDIDATOS][-1])
-        salida = tools.diagnosticar_cartera(dict(ronda.portafolio_recomendado.pesos), ctx)
+        salida = diagnosticar(tools, dict(ronda.portafolio_recomendado.pesos), ctx)
         for metrica, valor in comite["metricas_oos"].items():
             assert salida["metricas_oos"][metrica] == valor
         assert len(ctx.state[CLAVE_VALIDACIONES]) == 1  # el diagnóstico no añade validaciones
 
     def test_un_activo_omitido_pesa_cero(self, tools: NucleoTools, ctx: ToolContext) -> None:
-        salida = tools.diagnosticar_cartera({"VOOG": 0.6, "VB": 0.4}, ctx)
+        salida = diagnosticar(tools, {"VOOG": 0.6, "VB": 0.4}, ctx)
         assert salida["pesos_evaluados"] == {"VOOG": 0.6, "BNS": 0.0, "IBIT": 0.0, "VB": 0.4}
 
     def test_pesos_que_no_suman_uno_son_un_error_descriptivo(
         self, tools: NucleoTools, ctx: ToolContext
     ) -> None:
-        salida = tools.diagnosticar_cartera({"VOOG": 0.5, "BNS": 0.3}, ctx)
+        salida = diagnosticar(tools, {"VOOG": 0.5, "BNS": 0.3}, ctx)
         assert salida["status"] == "error" and salida["tipo"] == "CarteraInvalidaError"
         assert "suman 0.800000" in salida["mensaje"] and "No se renormalizan" in salida["mensaje"]
         assert ctx.state.get(CLAVE_DIAGNOSTICOS_CARTERA) is None
@@ -322,7 +322,7 @@ class TestDiagnosticarCartera:
     def test_activo_fuera_del_universo_es_un_error_descriptivo(
         self, tools: NucleoTools, ctx: ToolContext
     ) -> None:
-        salida = tools.diagnosticar_cartera({"VOOG": 0.5, "NVDA": 0.5}, ctx)
+        salida = diagnosticar(tools, {"VOOG": 0.5, "NVDA": 0.5}, ctx)
         assert salida["status"] == "error" and salida["tipo"] == "CarteraInvalidaError"
         assert "['NVDA']" in salida["mensaje"] and "Gestor de Datos" in salida["mensaje"]
         assert ctx.state.get(CLAVE_DIAGNOSTICOS_CARTERA) is None
@@ -330,7 +330,7 @@ class TestDiagnosticarCartera:
     def test_posicion_corta_es_un_error_descriptivo(
         self, tools: NucleoTools, ctx: ToolContext
     ) -> None:
-        salida = tools.diagnosticar_cartera({"VOOG": 1.2, "IBIT": -0.2}, ctx)
+        salida = diagnosticar(tools, {"VOOG": 1.2, "IBIT": -0.2}, ctx)
         assert salida["status"] == "error" and "cortas" in salida["mensaje"]
 
     def test_sello_obsoleto_es_un_rechazo_que_dice_que_recalcular(
@@ -338,7 +338,7 @@ class TestDiagnosticarCartera:
     ) -> None:
         assert tools.estimar_mercado(ctx)["status"] == "success"
         ctx.state[CLAVE_UNIVERSO] = _universo_con_otra_cap().model_dump(mode="json")
-        salida = tools.diagnosticar_cartera(PESOS_GOLDEN, ctx)
+        salida = diagnosticar(tools, PESOS_GOLDEN, ctx)
         assert salida["status"] == "error" and salida["tipo"] == "ResultadoObsoletoError"
         assert "estimaciones del Quant: obsoleto" in salida["mensaje"]
         assert ctx.state.get(CLAVE_DIAGNOSTICOS_CARTERA) is None

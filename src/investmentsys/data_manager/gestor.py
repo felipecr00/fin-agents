@@ -13,7 +13,7 @@ import os
 import tempfile
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -35,7 +35,13 @@ from investmentsys.data.actualizacion import (
     escribir_series_atomico,
     validar_sanidad,
 )
-from investmentsys.data_manager.fuente import FuenteActivos, MetadataActivo, TickerInexistenteError
+from investmentsys.data_manager.fuente import (
+    CierreDiario,
+    Dividendo,
+    FuenteActivos,
+    MetadataActivo,
+    TickerInexistenteError,
+)
 from investmentsys.portfolio.prior import mensaje_estado_prior
 from investmentsys.risk.cobertura import Cobertura, advertencias_de_cobertura, cobertura_escenario
 
@@ -314,6 +320,36 @@ class GestorDatos:
             mensaje_prior=mensaje_estado_prior(universo),
             advertencias=tuple(f"{d.ticker}: {a}" for d in ds for a in d.advertencias),
         )
+
+    # ------------------------------------------- datos diarios de la fuente (S10)
+    def dividendos(
+        self, universo: Universe | None = None, activos: tuple[str, ...] | None = None
+    ) -> dict[str, tuple[Dividendo, ...]]:
+        """Ex-dividendos recientes de los ``activos`` (por defecto, todo el universo).
+
+        Solo historia: no se proyecta ninguna fecha futura.
+        """
+        universo = universo or self.universo()
+        dias = self.config.fintual.dias_historia_dividendos
+        desde = self.reloj().date() - timedelta(days=dias)
+        fuente = self._fuente()
+        return {a: fuente.dividendos(a, desde) for a in self._del_universo(universo, activos)}
+
+    def cierres(
+        self, universo: Universe | None = None, activos: tuple[str, ...] | None = None
+    ) -> dict[str, CierreDiario | None]:
+        """Último cierre (crudo y ajustado) de los ``activos``, según la fuente."""
+        universo = universo or self.universo()
+        fuente = self._fuente()
+        return {a: fuente.ultimo_cierre(a) for a in self._del_universo(universo, activos)}
+
+    @staticmethod
+    def _del_universo(universo: Universe, activos: tuple[str, ...] | None) -> tuple[str, ...]:
+        pedidos = activos if activos is not None else universo.activos
+        ajenos = sorted(set(pedidos) - set(universo.activos))
+        if ajenos:
+            raise GestorError(f"fuera del universo vigente: {ajenos}")
+        return pedidos
 
     # ---------------------------------------------------------------- interno
     def _fuente(self) -> FuenteActivos:

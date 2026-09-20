@@ -11,6 +11,12 @@ from investmentsys.contracts.estimates import (
     RegimenMercado,
     RetornoEsperado,
 )
+from investmentsys.contracts.fintual import (
+    DISCLAIMER_OPERATIVO,
+    DecisionInercia,
+    OrdenInercia,
+    PlanInercia,
+)
 from investmentsys.contracts.mesa_trabajo import (
     CategoriaPizarra,
     Especialista,
@@ -61,6 +67,7 @@ __all__ = [
     "ADVERTENCIA_PRIOR_NEUTRAL",
     "ADVERTENCIA_PRIOR_SOLO_VIEWS",
     "DISCLAIMER",
+    "DISCLAIMER_OPERATIVO",
     "ETIQUETA_DIAGNOSTICO",
     "AprobacionComite",
     "AssetDiagnostic",
@@ -69,6 +76,7 @@ __all__ = [
     "CategoriaPizarra",
     "ContractBase",
     "Criterio",
+    "DecisionInercia",
     "DiagnosticoCartera",
     "Especialista",
     "EstadoPrior",
@@ -85,8 +93,10 @@ __all__ = [
     "MetodoPrior",
     "MetricasExAnte",
     "MetricasOOS",
+    "OrdenInercia",
     "OrigenActivo",
     "OrigenRestriccion",
+    "PlanInercia",
     "PortfolioConstraints",
     "PriorActivo",
     "PriorProvenance",

@@ -17,6 +17,7 @@ import pytest
 from google.adk.agents import LlmAgent
 from google.adk.models.llm_request import LlmRequest
 
+from investmentsys.agents.anexos import MARCA_ANEXO
 from investmentsys.agents.director import MARCADORES, crear_director
 from investmentsys.config import Config
 from investmentsys.contracts import DISCLAIMER, MarketViews, RunState
@@ -34,7 +35,7 @@ from investmentsys.tools import (
     CLAVE_VALIDACIONES,
 )
 from tests.almacen import FuenteFalsa, cap_fuente, panel_referencia, sembrar_gestor, serie_sintetica
-from tests.integration.conftest import Corrida, Llamada, LlmPorAgente, conversar
+from tests.integration.conftest import Corrida, Llamada, LlmPorAgente, conversar, gestor_op
 from tests.integration.test_market_analyst import BORRADOR_GOLDEN
 
 FIN = panel_referencia().index[-1]
@@ -87,22 +88,37 @@ def _responder_con(tool: str, redactar: Callable[[dict[str, Any]], str]) -> Call
     return lambda peticion: redactar(_ultima_salida(peticion, tool))
 
 
-# ------------------------------------------------------------------ Modo A: consulta
+# ------------------------------------------- Modo A: consulta (delegación de roles, S10)
+CORRELACION = "¿correlación entre VOOG y VB?"
+
+
+def _estadistico(redactar: Callable[[dict[str, Any]], str]) -> list[Any]:
+    return [Llamada("estimar_mercado"), _responder_con("estimar_mercado", redactar)]
+
+
+def _esceptico(redactar: Callable[[dict[str, Any]], str]) -> list[Any]:
+    return [Llamada("diagnosticar_cartera"), _responder_con("diagnosticar_cartera", redactar)]
+
+
 class TestConsultaAUnEspecialista:
-    def test_correlacion_llama_a_estimar_mercado_y_a_nada_mas(
+    def test_correlacion_el_director_delega_y_habla_el_estadistico(
         self, config: Config, gestor: GestorDatos, tmp_path: Path
     ) -> None:
         llm = LlmPorAgente(
             director=[
-                Llamada("estimar_mercado"),
-                _responder_con(
-                    "estimar_mercado",
-                    lambda s: f"Exploratorio: correlación VOOG-VB {s['correlaciones']['VOOG-VB']}.",
-                ),
-            ]
+                Llamada("estadistico", pregunta=CORRELACION),
+                "Ya respondió el Estadístico. ¿Quieres contrastarlo con el Analista?",
+            ],
+            estadistico=_estadistico(
+                lambda s: (
+                    f"Exploratorio: estimé una correlación de {s['correlaciones']['VOOG-VB']}."
+                )
+            ),
         )
-        (turno,) = _charlar(config, gestor, llm, tmp_path, ["¿correlación entre VOOG y VB?"])
-        assert turno.llamadas() == [("estimar_mercado", {})]
+        (turno,) = _charlar(config, gestor, llm, tmp_path, [CORRELACION])
+        # El Director solo delega; la herramienta la llama la persona, y nadie más llama nada.
+        assert turno.llamadas("director") == [("estadistico", {"pregunta": CORRELACION})]
+        assert turno.llamadas("estadistico") == [("estimar_mercado", {})]
         (salida,) = turno.respuestas("estimar_mercado")
         assert salida["etiqueta"] == "exploratorio" and salida["validado"] is False
         assert set(salida["correlaciones"]) >= {"VOOG-VB", "BNS-IBIT"}
@@ -111,44 +127,177 @@ class TestConsultaAUnEspecialista:
         assert not turno.estado.get(CLAVE_CANDIDATOS) and not turno.estado.get(CLAVE_VALIDACIONES)
         assert not tmp_path.joinpath("runs").exists()
 
-        (respuesta,) = turno.textos("director")
-        assert cifras_sin_respaldo(respuesta, [salida]) == []
+        # Habla el Estadístico, con sus cifras; el Director recibe solo ese texto y no re-narra.
+        (voz,) = turno.textos("estadistico")
+        assert cifras_sin_respaldo(voz, [salida]) == []
+        (recibido,) = turno.respuestas("estadistico")
+        assert recibido["respuesta_de_la_persona"] == voz
+        assert "No la repitas" in recibido["nota"] and "Estadístico" in recibido["nota"]
+        (cierre,) = turno.textos("director")
+        assert str(salida["correlaciones"]["VOOG-VB"]) not in cierre.split(MARCA_ANEXO)[0]
+        # La ficha la recogió la persona (ADR-019) y la anexa el Director al cerrar el turno.
+        assert "- Fuente: **Estadístico** · herramienta `estimar_mercado`" in cierre
+
+    def test_la_persona_ve_una_sola_herramienta_y_solo_su_encargo(
+        self, config: Config, gestor: GestorDatos, tmp_path: Path
+    ) -> None:
+        """Thin de verdad: ni ``transfer_to_agent`` ni la conversación del Director."""
+        vistos: dict[str, Any] = {}
+
+        def espiar(peticion: LlmRequest) -> Llamada:
+            vistos["tools"] = [
+                d.name for t in peticion.config.tools or [] for d in t.function_declarations or []
+            ]
+            vistos["mensajes"] = [
+                p.text for c in peticion.contents for p in c.parts or [] if p.text
+            ]
+            return Llamada("estimar_mercado")
+
+        llm = LlmPorAgente(
+            director=[
+                "Hola. ¿Seguimos con este universo?",
+                Llamada("estadistico", pregunta=CORRELACION),
+                "Ya respondió el Estadístico.",
+            ],
+            estadistico=[espiar, "Exploratorio: la correlación es alta."],
+        )
+        _charlar(config, gestor, llm, tmp_path, ["hola, soy SECRETO-DE-LA-CHARLA", CORRELACION])
+        assert vistos["tools"] == ["estimar_mercado"]
+        assert not any("SECRETO-DE-LA-CHARLA" in m for m in vistos["mensajes"])
+        assert any(CORRELACION in m for m in vistos["mensajes"])
+        (sistema, _) = llm.instrucciones("estadistico")
+        assert "confianza de tu estimación" in sistema and "VOOG, BNS, IBIT, VB" in sistema
 
     def test_una_cifra_que_no_sale_de_una_tool_se_detecta(
         self, config: Config, gestor: GestorDatos, tmp_path: Path
     ) -> None:
         """El detector de cifras no es decorativo: una correlación inventada no pasa."""
-        llm = LlmPorAgente(director=[Llamada("estimar_mercado"), "Correlación VOOG-VB: 0.75."])
+        llm = LlmPorAgente(
+            director=[Llamada("estadistico", pregunta=CORRELACION), "Ya respondió."],
+            estadistico=[Llamada("estimar_mercado"), "Correlación VOOG-VB: 0.75."],
+        )
         (turno,) = _charlar(config, gestor, llm, tmp_path, ["¿correlación?"])
-        (respuesta,) = turno.textos("director")
-        assert cifras_sin_respaldo(respuesta, turno.respuestas("estimar_mercado")) == ["0.75"]
+        (voz,) = turno.textos("estadistico")
+        assert cifras_sin_respaldo(voz, turno.respuestas("estimar_mercado")) == ["0.75"]
 
-    def test_cartera_del_usuario_llega_a_diagnosticar_cartera_con_sus_pesos(
+    def test_los_pesos_del_usuario_llegan_a_la_herramienta_sin_pasar_por_el_llm_del_esceptico(
         self, config: Config, gestor: GestorDatos, tmp_path: Path
     ) -> None:
         llm = LlmPorAgente(
             director=[
-                Llamada("diagnosticar_cartera", pesos=PESOS_USUARIO),
-                _responder_con(
-                    "diagnosticar_cartera",
-                    lambda s: (
-                        f"Diagnóstico exploratorio: Sharpe OOS {s['metricas_oos']['sharpe_oos']}, "
-                        f"drawdown máximo {s['metricas_oos']['max_drawdown']}. {DISCLAIMER}"
-                    ),
-                ),
-            ]
+                Llamada("esceptico", pregunta="¿cómo la ves?", pesos=PESOS_USUARIO),
+                "Ya respondió el Escéptico: es un diagnóstico, no un veredicto.",
+            ],
+            esceptico=_esceptico(
+                lambda s: (
+                    f"Medí la cartera con {s['cartera_evaluada']}. Exploratorio: me preocupa un "
+                    f"drawdown máximo de {s['metricas_oos']['max_drawdown']}. {DISCLAIMER}"
+                )
+            ),
         )
         (turno,) = _charlar(
             config, gestor, llm, tmp_path, ["tengo 50% VOOG, 30% VB y 20% BNS, ¿cómo la ves?"]
         )
-        assert turno.llamadas() == [("diagnosticar_cartera", {"pesos": PESOS_USUARIO})]
+        assert turno.llamadas("director") == [
+            ("esceptico", {"pregunta": "¿cómo la ves?", "pesos": PESOS_USUARIO})
+        ]
+        assert turno.llamadas("esceptico") == [("diagnosticar_cartera", {})]  # sin cifras del LLM
         (salida,) = turno.respuestas("diagnosticar_cartera")
         assert salida["etiqueta"] == "diagnostico" and salida["validado"] is False
         assert salida["pesos_evaluados"] == {**PESOS_USUARIO, "IBIT": 0.0}
+        assert salida["cartera_evaluada"] == "pesos indicados por el usuario"
         assert "veredicto" not in json.dumps(salida)
         assert len(turno.estado[CLAVE_DIAGNOSTICOS_CARTERA]) == 1
-        (respuesta,) = turno.textos("director")
-        assert cifras_sin_respaldo(respuesta, [salida]) == []
+        (voz,) = turno.textos("esceptico")
+        assert cifras_sin_respaldo(voz, [salida]) == []
+        assert (
+            "- Fuente: **Escéptico** · herramienta `diagnosticar_cartera`"
+            in (turno.textos("director")[-1])
+        )
+
+    def test_sin_pesos_el_esceptico_mide_la_cartera_de_la_mesa_y_no_hereda_pesos_viejos(
+        self, config: Config, gestor: GestorDatos, tmp_path: Path
+    ) -> None:
+        llm = LlmPorAgente(
+            director=[
+                Llamada("esceptico", pregunta="¿cómo la ves?", pesos=PESOS_USUARIO),
+                "Ya respondió el Escéptico.",
+                Llamada("market_analyst", request="views de partida"),
+                Llamada("construir_candidatos", recomendado="hrp"),
+                "Propuesta exploratoria del Constructor.",
+                Llamada("esceptico", pregunta="¿qué te preocupa de esta cartera?"),
+                "Ya respondió el Escéptico sobre la propuesta.",
+            ],
+            analista=[BORRADOR_GOLDEN],
+            esceptico=[
+                *_esceptico(lambda s: "Exploratorio: mira la ficha."),
+                *_esceptico(lambda s: f"Medí la {s['cartera_evaluada']}. Exploratorio."),
+            ],
+        )
+        _, propuesta, tercero = _charlar(
+            config, gestor, llm, tmp_path, ["tengo 50/30/20", "propón una", "¿y esta cartera?"]
+        )
+        (candidatos,) = propuesta.respuestas("construir_candidatos")
+        (salida,) = tercero.respuestas("diagnosticar_cartera")
+        assert salida["status"] == "success"
+        assert (
+            salida["cartera_evaluada"] == "cartera hrp propuesta por el Constructor (exploratoria)"
+        )
+        assert salida["pesos_evaluados"] == candidatos["candidatos"]["hrp"]["pesos"]
+
+    def test_pesos_copiados_de_la_mesa_se_miden_como_de_la_mesa_no_como_del_usuario(
+        self, config: Config, gestor: GestorDatos, tmp_path: Path
+    ) -> None:
+        """Visto con el modelo real: el Director copió la propuesta en ``pesos``."""
+
+        def copiar_la_propuesta(peticion: LlmRequest) -> Llamada:
+            s = _ultima_salida(peticion, "construir_candidatos")
+            pesos = s["candidatos"][s["recomendado"]]["pesos"]
+            return Llamada("esceptico", pregunta="¿qué te preocupa de esta cartera?", pesos=pesos)
+
+        llm = LlmPorAgente(
+            director=[
+                Llamada("market_analyst", request="views de partida"),
+                Llamada("construir_candidatos"),
+                copiar_la_propuesta,
+                "Ya respondió el Escéptico.",
+            ],
+            analista=[BORRADOR_GOLDEN],
+            esceptico=_esceptico(lambda s: f"Medí la {s['cartera_evaluada']}. Exploratorio."),
+        )
+        (turno,) = _charlar(config, gestor, llm, tmp_path, ["propón y dime qué te preocupa"])
+        (salida,) = turno.respuestas("diagnosticar_cartera")
+        assert salida["status"] == "success"
+        assert "propuesta por el Constructor" in salida["cartera_evaluada"]
+
+    def test_pesos_que_no_escribio_el_usuario_ni_estan_en_la_mesa_se_rechazan_sin_diagnosticar(
+        self, config: Config, gestor: GestorDatos, tmp_path: Path
+    ) -> None:
+        inventados = {"VOOG": 0.6, "VB": 0.4}
+        llm = LlmPorAgente(
+            director=[
+                Llamada("esceptico", pregunta="¿cómo la ves?", pesos=inventados),
+                "Necesito que me escribas los pesos de tu cartera en números.",
+            ]
+        )
+        (turno,) = _charlar(config, gestor, llm, tmp_path, ["tengo mitad y mitad, ¿cómo la ves?"])
+        (rechazo,) = turno.respuestas("esceptico")
+        assert rechazo["status"] == "rechazado" and rechazo["tipo"] == "PesosSinProcedencia"
+        assert turno.llamadas("esceptico") == [], "la persona ni siquiera corrió"
+        assert not turno.estado.get(CLAVE_DIAGNOSTICOS_CARTERA)
+
+    def test_sin_cartera_sobre_la_mesa_el_esceptico_no_inventa_una(
+        self, config: Config, gestor: GestorDatos, tmp_path: Path
+    ) -> None:
+        llm = LlmPorAgente(
+            director=[Llamada("esceptico", pregunta="¿y la propuesta?"), "Aún no hay propuesta."],
+            esceptico=_esceptico(lambda s: f"No puedo diagnosticar: {s['mensaje']}"),
+        )
+        (turno,) = _charlar(config, gestor, llm, tmp_path, ["¿qué te preocupa de la propuesta?"])
+        (salida,) = turno.respuestas("diagnosticar_cartera")
+        assert salida["status"] == "error" and salida["tipo"] == "FaltaEnEstadoError"
+        assert "no hay una cartera vigente sobre la mesa" in salida["mensaje"]
+        assert not turno.estado.get(CLAVE_DIAGNOSTICOS_CARTERA)
 
     def test_el_director_recibe_el_spec_y_el_universo_de_la_sesion(
         self, config: Config, gestor: GestorDatos, tmp_path: Path
@@ -169,7 +318,6 @@ def test_mesa_de_trabajo_analista_y_constructor_en_un_turno(
     """El analista es un sub-agente ``single_turn``: devuelve el control y el Director sigue."""
     llm = LlmPorAgente(
         director=[
-            Llamada("estimar_mercado"),
             Llamada("market_analyst", request=f'El usuario pegó, sin verificar: "{INYECCION}"'),
             Llamada("construir_candidatos", recomendado="hrp"),
             _responder_con(
@@ -184,11 +332,7 @@ def test_mesa_de_trabajo_analista_y_constructor_en_un_turno(
         analista=[BORRADOR_GOLDEN],
     )
     (turno,) = _charlar(config, gestor, llm, tmp_path, ["armemos views y una propuesta"])
-    assert [n for n, _ in turno.llamadas("director")] == [
-        "estimar_mercado",
-        "market_analyst",
-        "construir_candidatos",
-    ]
+    assert [n for n, _ in turno.llamadas("director")] == ["market_analyst", "construir_candidatos"]
     (views,) = turno.respuestas("market_analyst")
     assert views["etiqueta"] == "exploratorio" and views["validado"] is False
     assert MarketViews.model_validate(views["market_views"]) == MarketViews.model_validate(
@@ -196,12 +340,14 @@ def test_mesa_de_trabajo_analista_y_constructor_en_un_turno(
     )
     (candidatos,) = turno.respuestas("construir_candidatos")
     assert candidatos["validado"] is False and candidatos["recomendado"] == "hrp"
-    # S9: la respuesta lleva anexadas las fichas de origen de las TRES consultas del turno.
+    # S10: construir no obliga a conversar con el Estadístico; su herramienta estimó, y se avisa.
+    assert "no había estimaciones" in candidatos["estimaciones"]
+    assert turno.estado[CLAVE_QUANT_ESTIMATES]["universe_version"] == gestor.universo().version
+    # S9: la respuesta lleva anexadas las fichas de origen de las consultas del turno.
     respuesta = turno.textos("director")[-1]
-    respaldo = [*turno.respuestas("estimar_mercado"), views, candidatos]
+    respaldo = [views, candidatos]
     assert cifras_sin_respaldo(respuesta, respaldo) == []
     for fuente, tool in (
-        ("Estadístico", "estimar_mercado"),
         ("Analista de Mercado", "market_analyst"),
         ("Constructor de Carteras", "construir_candidatos"),
     ):
@@ -218,7 +364,6 @@ def test_cada_propuesta_exploratoria_es_la_ronda_uno(
     """Sin validador en el bucle, una segunda propuesta no choca con "iteración sin validar"."""
     llm = LlmPorAgente(
         director=[
-            Llamada("estimar_mercado"),
             Llamada("market_analyst", request="views de partida"),
             Llamada("construir_candidatos"),
             "Primera propuesta.",
@@ -330,7 +475,7 @@ class TestComite:
 
         def alta(peticion: LlmRequest) -> Llamada:
             tokens.append(_ultima_salida(peticion, "convocar_comite")["token"])
-            return Llamada("incorporar", ticker="AAPL")
+            return gestor_op("incorporar", ticker="AAPL")
 
         llm = LlmPorAgente(
             director=[
@@ -358,7 +503,7 @@ class TestComite:
     ) -> None:
         llm = LlmPorAgente(
             director=[
-                Llamada("incorporar", ticker="QQQ"),
+                gestor_op("incorporar", ticker="QQQ"),
                 Llamada("convocar_comite", fase="solicitar"),
                 "No se puede convocar: falta resolver el prior de QQQ.",
             ]
@@ -376,9 +521,9 @@ class TestAltaConversacional:
     ) -> None:
         llm = LlmPorAgente(
             director=[
-                Llamada("resolver", ticker="AAPL"),
+                gestor_op("resolver", ticker="AAPL"),
                 "AAPL tiene datos suficientes y capitalización en la fuente. ¿La incorporo?",
-                Llamada("incorporar", ticker="AAPL"),
+                gestor_op("incorporar", ticker="AAPL"),
                 "Incorporada con la capitalización congelada de la fuente.",
             ]
         )
@@ -396,10 +541,10 @@ class TestAltaConversacional:
     ) -> None:
         llm = LlmPorAgente(
             director=[
-                Llamada("resolver", ticker="QQQ"),
+                gestor_op("resolver", ticker="QQQ"),
                 "QQQ no tiene capitalización en la fuente. Opciones: (a) subyacente, (b) AUM, "
                 "(c) degradar todo el universo a neutral.",
-                Llamada(
+                gestor_op(
                     "incorporar",
                     ticker="QQQ",
                     prior_cap=22.0,
@@ -427,12 +572,12 @@ class TestAltaConversacional:
         """Lo que hizo el modelo en la línea base (ADR-015): elegir "c" y degradar en el acto."""
         llm = LlmPorAgente(
             director=[
-                Llamada("incorporar", ticker="QQQ"),
-                Llamada("aceptar_prior_neutral"),
+                gestor_op("incorporar", ticker="QQQ"),
+                gestor_op("aceptar_prior_neutral"),
                 _responder_con(
-                    "aceptar_prior_neutral", lambda s: f"Antes de degradar: {s['motivo']}"
+                    "gestionar_datos_y_fricciones", lambda s: f"Antes de degradar: {s['motivo']}"
                 ),
-                Llamada("aceptar_prior_neutral"),
+                gestor_op("aceptar_prior_neutral"),
                 "Prior neutral aceptado para todo el universo.",
             ]
         )
@@ -451,13 +596,15 @@ class TestAltaConversacional:
     ) -> None:
         llm = LlmPorAgente(
             director=[
-                Llamada("estimar_mercado"),
-                "Estimaciones listas.",
-                Llamada("incorporar", ticker="AAPL"),
+                Llamada("estadistico", pregunta="estima el mercado"),
+                "Ya respondió el Estadístico.",
+                gestor_op("incorporar", ticker="AAPL"),
                 "AAPL incorporado: las estimaciones anteriores quedaron obsoletas.",
-                Llamada("diagnosticar_cartera", pesos={"VOOG": 0.5, "AAPL": 0.5}),
-                "No puedo diagnosticar: las estimaciones son del universo anterior.",
-            ]
+                Llamada("esceptico", pregunta="¿y 50/50?", pesos={"VOOG": 0.5, "AAPL": 0.5}),
+                "El Escéptico no pudo: las estimaciones son del universo anterior.",
+            ],
+            estadistico=_estadistico(lambda s: "Exploratorio: estimaciones listas."),
+            esceptico=_esceptico(lambda s: f"No puedo diagnosticar: {s['mensaje']}"),
         )
         _, alta, diagnostico = _charlar(
             config, gestor, llm, tmp_path, ["estima", "agrega AAPL", "¿y 50/50 VOOG y AAPL?"]
@@ -473,7 +620,7 @@ class TestAltaConversacional:
         self, config: Config, gestor: GestorDatos, tmp_path: Path
     ) -> None:
         llm = LlmPorAgente(
-            director=[Llamada("resolver", ticker="ZZZZ"), "ZZZZ no existe en la fuente."]
+            director=[gestor_op("resolver", ticker="ZZZZ"), "ZZZZ no existe en la fuente."]
         )
         (turno,) = _charlar(config, gestor, llm, tmp_path, ["agrega ZZZZ"])
         (salida,) = turno.respuestas("resolver")

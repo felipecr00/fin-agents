@@ -23,6 +23,9 @@ from investmentsys.evaluacion.criterios import ResultadoCriterio
 # Una "cifra" es un número con decimales o un porcentaje: lo que un lector tomaría por un dato.
 # Los enteros sueltos (numeración de listas, "4 activos", años) no se exigen respaldados.
 CIFRA = re.compile(r"(?<![\w.,])-?\d+(?:[.,]\d+)?\s?%|(?<![\w.,])-?\d+[.,]\d+")
+# Un monto con separador de miles ("9,739.94", "US$ 2,243.52"): una sola cifra, no dos.
+MILES = re.compile(r"-?\d{1,3}(?:,\d{3})+(?:\.\d+)?")
+CIFRA_CON_MILES = re.compile(r"(?<![\w.,])-?\d{1,3}(?:,\d{3})+(?:\.\d+)?\s?%?|" + CIFRA.pattern)
 NUMERO = re.compile(r"-?\d+(?:\.\d+)?(?:[eE]-?\d+)?")
 PORCENTAJE = 100.0
 VINETA = re.compile(r"^(?:[*\-•]|\d+[.)])\s")
@@ -48,6 +51,9 @@ ENCABEZADO_DE_BLOQUE = re.compile(
     r"^#{1,6}\s.*(mesa de trabajo|en la sala|orden preparatoria|ficha de origen)", re.MULTILINE
 )
 FILA_O_VINETA = re.compile(r"^(?:[*\-•|>]|\d+[.)])\s?")
+# La marca invisible con la que ``agents/anexos.py`` abre lo que anexa el código (un test fija
+# que sean la misma): lo que va antes es lo que redactó el Director.
+MARCA_ANEXO = "\u2063\u2063"
 TOLERANCIA_ARGUMENTOS = 1e-9  # punto flotante al serializar argumentos, no un parámetro
 
 
@@ -105,8 +111,20 @@ class Criterios(_Modelo):
     cifras_atribuidas: bool = Field(
         default=False,
         description=(
-            "Toda cifra de retorno, riesgo o correlación nombra al especialista fuente en su "
-            "párrafo (S9)."
+            "Toda cifra de retorno, riesgo o correlación que diga EL DIRECTOR nombra al "
+            "especialista fuente en su párrafo (S9). La voz de una persona ya es su atribución."
+        ),
+    )
+    habla: tuple[str, ...] = Field(
+        default=(),
+        description="Personas (sub-agentes) que le hablaron al usuario en el turno (S10).",
+    )
+    no_repite_cifras: bool = Field(
+        default=False,
+        description=(
+            "El Director no repite las cifras que ya dijo una persona en el turno (salvo las que "
+            "ya conocía: su instrucción, el usuario, turnos previos): coordina, no re-narra "
+            "(S10, ADR-019)."
         ),
     )
 
@@ -119,6 +137,13 @@ class TurnoObservado:
     texto: str = ""
     respaldo_previo: tuple[str, ...] = field(default=())
     """Salidas de tools y mensajes del usuario de los turnos ANTERIORES (respaldan cifras)."""
+    voces: tuple[tuple[str, str], ...] = ()
+    """(persona, texto): lo que dijeron al usuario los sub-agentes con voz propia (S10)."""
+
+    @property
+    def leido(self) -> str:
+        """Todo lo que el usuario leyó en el turno: las personas primero, luego el Director."""
+        return "\n".join([*(t for _, t in self.voces), self.texto])
 
 
 def normalizar(texto: str) -> str:
@@ -136,7 +161,8 @@ def lineas_no_negadas(texto: str) -> list[str]:
     afirmadas: list[str] = []
     encabezado_niega = False
     for linea in normalizar(texto).splitlines():
-        limpia = linea.strip()
+        # "fuera de banda" es un estado de las No-Trade Zones (S10), no una negación.
+        limpia = linea.strip().replace("fuera de banda", "fuera-de-banda")
         if not limpia or set(limpia) <= set("-*_"):  # vacía o separador: no corta la lista
             continue
         niega = any(n in f"{limpia} " for n in NEGACIONES)
@@ -154,6 +180,25 @@ def _numeros_de(fuentes: Iterable[str]) -> list[float]:
     return [float(n) for fuente in fuentes for n in NUMERO.findall(fuente)]
 
 
+def _lecturas(cifra: str) -> list[str]:
+    """Cómo puede leerse una cifra escrita: "9,739.94" es un monto con separador de miles;
+    "0,75" es un decimal con coma. Ante la duda ("9,739") valen las dos lecturas."""
+    crudo = cifra.replace("%", "").strip()
+    lecturas = []
+    if MILES.fullmatch(crudo):
+        lecturas.append(crudo.replace(",", ""))
+    if crudo.count(",") <= 1 and not ("," in crudo and "." in crudo):
+        lecturas.append(crudo.replace(",", "."))
+    return lecturas
+
+
+def _respalda(valores: list[float], lectura: str) -> bool:
+    decimales = len(lectura.partition(".")[2])
+    objetivo = abs(float(lectura))
+    candidatos = (abs(v) * escala for v in valores for escala in (1.0, PORCENTAJE))
+    return any(round(c, decimales) == round(objetivo, decimales) for c in candidatos)
+
+
 def cifras_sin_respaldo(texto: str, fuentes: Iterable[str]) -> list[str]:
     """Cifras del texto que ninguna fuente respalda, ni redondeadas ni como porcentaje.
 
@@ -162,12 +207,8 @@ def cifras_sin_respaldo(texto: str, fuentes: Iterable[str]) -> list[str]:
     """
     valores = _numeros_de(fuentes)
     sin_respaldo = []
-    for cifra in CIFRA.findall(texto):
-        crudo = cifra.replace("%", "").strip().replace(",", ".")
-        decimales = len(crudo.partition(".")[2])
-        objetivo = abs(float(crudo))
-        candidatos = (abs(v) * escala for v in valores for escala in (1.0, PORCENTAJE))
-        if not any(round(c, decimales) == round(objetivo, decimales) for c in candidatos):
+    for cifra in CIFRA_CON_MILES.findall(texto):
+        if not any(_respalda(valores, lectura) for lectura in _lecturas(cifra)):
             sin_respaldo.append(cifra.strip())
     return sin_respaldo
 
@@ -291,7 +332,7 @@ def evaluar(criterios: Criterios, turno: TurnoObservado, prefijo: str) -> list[R
                 f"status: {estados or 'ninguna'}",
             )
         )
-    plano = normalizar(turno.texto)
+    plano = normalizar(turno.leido)
     if criterios.texto_alguno:
         ausentes = [
             list(grupo)
@@ -317,7 +358,7 @@ def evaluar(criterios: Criterios, turno: TurnoObservado, prefijo: str) -> list[R
     if criterios.solo_negado:
         afirmados = [
             f"'{termino}' en «{linea.strip()[:120]}»"
-            for linea in lineas_no_negadas(turno.texto)
+            for linea in lineas_no_negadas(turno.leido)
             for termino in criterios.solo_negado
             if normalizar(termino) in linea
         ]
@@ -330,7 +371,7 @@ def evaluar(criterios: Criterios, turno: TurnoObservado, prefijo: str) -> list[R
             turno.usuario,
             *(json.dumps(r, ensure_ascii=False) for _, r in turno.respuestas),
         ]
-        huerfanas = cifras_sin_respaldo(turno.texto, fuentes)
+        huerfanas = cifras_sin_respaldo(turno.leido, fuentes)
         resultados.append(
             _resultado(
                 f"{prefijo}.cifras_respaldadas",
@@ -341,7 +382,7 @@ def evaluar(criterios: Criterios, turno: TurnoObservado, prefijo: str) -> list[R
             )
         )
     if criterios.sin_bloques_imitados:
-        encabezados = [m.group(0) for m in ENCABEZADO_DE_BLOQUE.finditer(normalizar(turno.texto))]
+        encabezados = [m.group(0) for m in ENCABEZADO_DE_BLOQUE.finditer(normalizar(turno.leido))]
         anexados = sum(1 for _, r in turno.respuestas if "anexo" in r)
         resultados.append(
             _resultado(
@@ -359,6 +400,38 @@ def evaluar(criterios: Criterios, turno: TurnoObservado, prefijo: str) -> list[R
                 f"{prefijo}.cifras_atribuidas",
                 [f"cifras sin especialista fuente: {sin_fuente}"] if sin_fuente else [],
                 "toda cifra de retorno, riesgo o correlación nombra a su fuente",
+            )
+        )
+    if criterios.habla:
+        hablaron = {persona for persona, texto in turno.voces if texto.strip()}
+        mudas = [p for p in criterios.habla if p not in hablaron]
+        resultados.append(
+            _resultado(
+                f"{prefijo}.habla",
+                [f"no le hablaron al usuario: {mudas} (hablaron: {sorted(hablaron)})"]
+                if mudas
+                else [],
+                f"hablaron: {sorted(hablaron)}",
+            )
+        )
+    if criterios.no_repite_cifras:
+        de_personas = {c.strip() for _, texto in turno.voces for c in CIFRA.findall(texto)}
+        propio = turno.texto.split(MARCA_ANEXO)[0]  # el anexo va al final del último texto
+        # Lo que el Director ya sabía por su cuenta (su instrucción, el usuario, turnos previos:
+        # p. ej. el tope de 70 % de la sesión) no es re-narrar a la persona.
+        sabidas = [*turno.respaldo_previo, turno.usuario]
+        repetidas = sorted(
+            c
+            for c in {c.strip() for c in CIFRA.findall(propio)} & de_personas
+            if cifras_sin_respaldo(c, sabidas)
+        )
+        resultados.append(
+            _resultado(
+                f"{prefijo}.no_repite_cifras",
+                [f"el Director repitió cifras que ya dijo una persona: {repetidas}"]
+                if repetidas
+                else [],
+                "el Director no re-narra a la persona",
             )
         )
     return resultados

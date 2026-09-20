@@ -26,7 +26,14 @@ from investmentsys.tools.mesa import (
     SalaIncompletaError,
     componer_sala,
 )
-from tests.almacen import FuenteFalsa, cap_fuente, panel_referencia, sembrar_gestor, serie_sintetica
+from tests.almacen import (
+    FuenteFalsa,
+    cap_fuente,
+    diagnosticar,
+    panel_referencia,
+    sembrar_gestor,
+    serie_sintetica,
+)
 from tests.conftest import ACTIVOS, FECHA
 
 FIN = panel_referencia().index[-1]
@@ -43,7 +50,9 @@ def gestor_tools(tmp_path: Path, config: Config) -> GestorTools:
 
 @pytest.fixture
 def mesa_tools(gestor_tools: GestorTools, config: Config) -> MesaTools:
-    sala = componer_sala([NOMBRE_TOOL, "estimar_mercado", "diagnosticar"], ["market_analyst"])
+    sala = componer_sala(
+        [NOMBRE_TOOL, "estimar_mercado", "gestionar_datos_y_fricciones"], ["market_analyst"]
+    )
     return MesaTools(gestor_tools.gestor, config, sala)
 
 
@@ -117,7 +126,7 @@ class TestQueTenemos:
         ctx.state[CLAVE_MARKET_VIEWS] = _views().model_dump(mode="json")
         assert tools.estimar_mercado(ctx)["status"] == "success"
         assert tools.construir_candidatos(ctx)["status"] == "success"
-        diagnostico = tools.diagnosticar_cartera(PESOS_USUARIO, ctx)
+        diagnostico = diagnosticar(tools, PESOS_USUARIO, ctx)
         assert (
             tools.ajustar_restricciones(ctx, limites_por_activo={"IBIT": [0.0, 0.1]})["status"]
             == "success"
@@ -163,7 +172,7 @@ class TestObsolescenciaPorElemento:
     ) -> None:
         ctx.state[CLAVE_MARKET_VIEWS] = _views().model_dump(mode="json")
         tools.estimar_mercado(ctx)
-        tools.diagnosticar_cartera(PESOS_USUARIO, ctx)
+        diagnosticar(tools, PESOS_USUARIO, ctx)
         previa = ctx.state[CLAVE_UNIVERSO]["version"]
 
         assert gestor_tools.retirar("BNS", ctx)["status"] == "success"
@@ -180,7 +189,7 @@ class TestObsolescenciaPorElemento:
         mesa = MesaDeTrabajoState.model_validate(salida["mesa"])
         viejo = next(i for i in mesa.items if i.categoria is CategoriaPizarra.DIAGNOSTICO)
         assert viejo.universe_version == previa != mesa.universe_version
-        assert "| **Obsoleto**: vuelve a diagnosticar |" in salida[CLAVE_ANEXO]
+        assert "| **Obsoleto**: pídeselo de nuevo al Escéptico |" in salida[CLAVE_ANEXO]
         assert "| **Obsoleto**: vuelve a pedirlas al analista |" in salida[CLAVE_ANEXO]
         # Auditoría previa: el aviso va arriba de la nota, con la cuenta exacta.
         assert "**Atención: 2 elemento(s) obsoleto(s).**" in salida[CLAVE_ANEXO]
@@ -192,7 +201,7 @@ class TestObsolescenciaPorElemento:
         gestor_tools.refrescar_cap("BNS", ctx, 0.12, "cap bursátil")
         mesa = MesaDeTrabajoState.model_validate(mesa_tools.consultar_mesa_trabajo(ctx)["mesa"])
         assert [i.categoria for i in mesa.obsoletos] == [CategoriaPizarra.ESTIMACION]
-        assert tools.diagnosticar_cartera(PESOS_USUARIO, ctx)["tipo"] == "ResultadoObsoletoError"
+        assert diagnosticar(tools, PESOS_USUARIO, ctx)["tipo"] == "ResultadoObsoletoError"
 
     def test_refrescar_una_cap_no_toca_las_vistas(
         self, mesa_tools: MesaTools, gestor_tools: GestorTools, ctx: ToolContext
@@ -212,7 +221,7 @@ class TestSala:
         salida = mesa_tools.consultar_mesa_trabajo(ctx, vista="sala")
         assert [(s["especialista"], s["conversa"], s["herramientas"]) for s in salida["sala"]] == [
             ("Director", True, [NOMBRE_TOOL]),
-            ("Gestor de Datos", False, ["diagnosticar"]),
+            ("Gestor de Datos", False, ["gestionar_datos_y_fricciones"]),
             ("Analista de Mercado", True, ["market_analyst"]),
             ("Estadístico", False, ["estimar_mercado"]),
         ]

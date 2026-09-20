@@ -1,11 +1,14 @@
 """Bloques que el CÓDIGO anexa a la respuesta del Director (S9): fichas, mesa y memorándum.
 
-Tres callbacks de ADK sobre el Director:
+Tres callbacks de ADK:
 
 - ``recoger_anexos`` (``after_tool_callback``): tras cada herramienta —también el sub-agente
   ``market_analyst``, que ADK expone como tool— arma la ficha de origen de todo resultado con
   ``validado`` y retira de la salida el bloque ya redactado (``anexo_usuario``: la mesa, el
   memorándum de convocatoria). El LLM recibe los datos, no el bloque: no hay nada que copiar mal.
+  Desde S10 (ADR-019) es también el callback de las PERSONAS thin: el Director solo recibe el
+  texto de la persona, así que la ficha la recoge quien ve la salida de la herramienta. Estado
+  e ``invocation_id`` son los del turno, y el Director la anexa al cierre igual que las suyas.
 - ``anexar_al_cierre`` (``after_model_callback``): cuando el modelo cierra el turno (respuesta
   final, sin llamadas pendientes), pega los bloques del turno al final del texto.
 - ``ocultar_anexos_al_modelo`` (``before_model_callback``): recorta esos bloques del historial
@@ -36,6 +39,9 @@ SEPARADOR = "\n\n---\n\n"
 # Separador invisible (U+2063) que abre el anexo: ningún renderizador lo muestra y permite
 # recortar del historial exactamente lo que añadió el código.
 MARCA_ANEXO = "\u2063\u2063"
+CIERRE_SIN_TEXTO = (
+    "Aquí está el resultado; el detalle y su origen van debajo. Dime cómo quieres seguir."
+)
 NOTA_ANEXO = (
     "bloque ya redactado por código: se anexa solo al final de tu respuesta. No lo copies ni "
     "lo reconstruyas; coméntalo."
@@ -79,26 +85,38 @@ def recoger_anexos(
 def anexar_al_cierre(
     callback_context: CallbackContext, llm_response: LlmResponse
 ) -> LlmResponse | None:
-    contenido = llm_response.content
-    if llm_response.partial or contenido is None or not contenido.parts:
+    if llm_response.partial or llm_response.error_code:
         return None
-    if any(p.function_call or p.function_response for p in contenido.parts):
+    contenido = llm_response.content
+    partes_previas = list(contenido.parts or []) if contenido is not None else []
+    if any(p.function_call or p.function_response for p in partes_previas):
         return None  # el turno sigue: todavía hay herramientas por correr
     bloques = _bloques_del_turno(callback_context.state, callback_context.invocation_id)
-    if not bloques:
+    # S10: el modelo a veces cierra el turno SIN texto (visto en el eval y en la demo reales:
+    # 3 de 8 turnos). La ficha se entrega igual, y el turno nunca queda mudo: un cierre vacío
+    # confundía además al modelo en el turno siguiente (contestó la pregunta anterior).
+    mudo = not any(p.text and p.text.strip() and not p.thought for p in partes_previas)
+    if mudo:
+        partes_previas = [*partes_previas, types.Part(text=CIERRE_SIN_TEXTO)]
+    elif not bloques:
         return None
+    rol = contenido.role if contenido is not None and contenido.role else "model"
+    if not bloques:
+        return llm_response.model_copy(
+            update={"content": types.Content(role=rol, parts=partes_previas)}
+        )
     callback_context.state[CLAVE_ANEXOS_TURNO] = None
     # La marca va en su propia línea: los títulos de los bloques deben empezar su línea limpios.
     anexo = f"\n\n{MARCA_ANEXO}{SEPARADOR}{SEPARADOR.join(bloques)}"
-    partes = list(contenido.parts)
-    ultima = next((i for i in reversed(range(len(partes))) if partes[i].text), None)
+    partes = partes_previas
+    ultima = next(
+        (i for i in reversed(range(len(partes))) if partes[i].text and not partes[i].thought), None
+    )
     if ultima is None:
         partes.append(types.Part(text=anexo.lstrip()))
     else:  # mismo Part: para la interfaz y para el historial es UNA respuesta
         partes[ultima] = types.Part(text=f"{partes[ultima].text}{anexo}")
-    return llm_response.model_copy(
-        update={"content": types.Content(role=contenido.role, parts=partes)}
-    )
+    return llm_response.model_copy(update={"content": types.Content(role=rol, parts=partes)})
 
 
 def ocultar_anexos_al_modelo(

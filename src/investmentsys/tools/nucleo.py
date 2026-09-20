@@ -59,6 +59,7 @@ from investmentsys.tools.estado import (
     CLAVE_DIAGNOSTICOS_CARTERA,
     CLAVE_FECHA_DECISION,
     CLAVE_MARKET_VIEWS,
+    CLAVE_PESOS_EN_CONSULTA,
     CLAVE_PRIOR,
     CLAVE_QUANT_ESTIMATES,
     CLAVE_RESTRICCIONES,
@@ -74,7 +75,9 @@ from investmentsys.tools.estado import (
     leer_lista,
     volcar,
 )
+from investmentsys.tools.objetivo import cartera_objetivo
 
+ORIGEN_PESOS_DEL_USUARIO = "pesos indicados por el usuario"
 ERRORES_DE_DOMINIO = (
     FaltaEnEstadoError,
     LookAheadError,
@@ -108,6 +111,17 @@ class NucleoTools:
             return self._estimar_mercado(tool_context.state)
         except ERRORES_DE_DOMINIO as exc:
             return _error(exc)
+
+    def asegurar_estimaciones(self, estado: Estado) -> bool:
+        """Estima si la sesión aún no tiene estimaciones; ``True`` si las calculó ahora.
+
+        Unas estimaciones OBSOLETAS no se rehacen aquí: la herramienta que las lea las rechaza
+        por su sello y dice qué recalcular (ADR-012).
+        """
+        if estado.get(CLAVE_QUANT_ESTIMATES) is not None:
+            return False
+        self._estimar_mercado(estado)
+        return True
 
     def _estimar_mercado(self, estado: Estado) -> dict[str, Any]:
         universo = self._universo(estado)
@@ -383,31 +397,34 @@ class NucleoTools:
         }
 
     # ------------------------------------------------------- Riesgo, exploratorio
-    def diagnosticar_cartera(
-        self, pesos: dict[str, float], tool_context: ToolContext
-    ) -> dict[str, Any]:
-        """Mide una cartera que trae el usuario: diagnóstico EXPLORATORIO, nunca un veredicto.
+    def diagnosticar_cartera(self, tool_context: ToolContext) -> dict[str, Any]:
+        """Mide la cartera en consulta: diagnóstico EXPLORATORIO, nunca un veredicto.
 
-        Mismas mediciones que el validador del comité (backtest walk-forward con costos,
-        métricas fuera de muestra, stress históricos, look-ahead) sobre los pesos indicados y
-        el universo vigente. No aprueba ni rechaza: la salida lleva ``etiqueta="diagnostico"``
-        y ``validado=false``, y no entra en ningún acta. Los pesos se validan antes de
-        calcular: suman 1, sin negativos y solo activos del universo; no se renormalizan.
-
-        Args:
-            pesos: peso de cada activo como fracción, p. ej. {"VOOG": 0.5, "BNS": 0.5}. Un
-                activo del universo que se omita pesa 0.
+        No lleva argumentos: la cartera NO se pasa aquí. Si el usuario indicó pesos, ya están
+        en la consulta; si no, se mide la cartera vigente sobre la mesa (la aprobada por el
+        comité o, si no hay, la que propone el Constructor). Mismas mediciones que el validador
+        del comité (backtest walk-forward con costos, métricas fuera de muestra, stress
+        históricos, look-ahead). No aprueba ni rechaza: la salida lleva
+        ``etiqueta="diagnostico"`` y ``validado=false``, y no entra en ningún acta. Los pesos
+        del usuario se validan antes de calcular: suman 1, sin negativos y solo activos del
+        universo; no se renormalizan.
         """
         try:
-            return self._diagnosticar_cartera(tool_context.state, pesos)
+            estado = tool_context.state
+            pesos = estado.get(CLAVE_PESOS_EN_CONSULTA)
+            if pesos:
+                origen = ORIGEN_PESOS_DEL_USUARIO
+            else:
+                objetivo = cartera_objetivo(estado)
+                pesos, origen = objetivo.pesos, objetivo.origen
+            return {**self._diagnosticar_cartera(estado, dict(pesos)), "cartera_evaluada": origen}
         except ERRORES_DE_DOMINIO as exc:
             return _error(exc)
 
     def _diagnosticar_cartera(self, estado: Estado, pesos: dict[str, float]) -> dict[str, Any]:
         universo = self._universo(estado)
         validar_pesos_usuario(pesos, universo.activos)  # antes de calcular nada
-        if estado.get(CLAVE_QUANT_ESTIMATES) is None:
-            self._estimar_mercado(estado)
+        self.asegurar_estimaciones(estado)
         estimaciones = leer(estado, CLAVE_QUANT_ESTIMATES, QuantEstimates)
         exigir_sello(estimaciones.universe_version, universo.version, "estimaciones del Quant")
         cartera = cartera_del_usuario(pesos, estimaciones, self.config.optimizacion)
