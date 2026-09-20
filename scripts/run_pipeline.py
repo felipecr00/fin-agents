@@ -1,9 +1,10 @@
-"""Corrida REAL completa contra el modelo real (necesita credenciales; ver `.env.example`).
+"""MODO COMANDO: el comité completo contra el modelo real, sin conversación (`make comando`).
 
     uv run python scripts/run_pipeline.py ["contexto opcional para el analista"]
 
-Analista ∥ Quant → Constructor ⇄ Validador → Reporter. Escribe `runs/<run_id>/run_state.json`
-y `runs/<run_id>/reporte.md`, e imprime el recorrido y la ruta de la carpeta.
+Analista ∥ Quant → Constructor ⇄ Validador → Reporter. Escribe `runs/<run_id>/run_state.json`,
+`reporte.md` y `bitacora.jsonl`, e imprime los HITOS del comité a medida que ocurren (S11): es
+un target de make y de despliegue, no un visor. Necesita credenciales (ver `.env.example`).
 """
 
 from __future__ import annotations
@@ -18,8 +19,10 @@ from google.adk.sessions import InMemorySessionService
 from google.genai import types
 
 from investmentsys.config import RAIZ_PROYECTO, cargar_config
+from investmentsys.contracts import HitoComite
 from investmentsys.data import provider_de_config
 from investmentsys.orchestrator import CLAVE_DIRECTORIO, crear_pipeline
+from investmentsys.orchestrator.bitacora import CLAVE_HITOS, linea_con_tiempo
 
 APP = "pipeline"
 VARIABLES = (
@@ -28,7 +31,6 @@ VARIABLES = (
     "GOOGLE_GENAI_USE_ENTERPRISE",
     "GOOGLE_GENAI_USE_VERTEXAI",
 )
-MAX_CARACTERES_EVENTO = 600
 
 
 async def correr(mensaje: str) -> str:
@@ -38,16 +40,15 @@ async def correr(mensaje: str) -> str:
     runner = Runner(node=pipeline, app_name=APP, session_service=sesiones)
     sesion = await sesiones.create_session(app_name=APP, user_id="local")
     contenido = types.Content(role="user", parts=[types.Part(text=mensaje)])
+    impresos = 0
     async for evento in runner.run_async(
         user_id="local", session_id=sesion.id, new_message=contenido
     ):
-        for parte in evento.content.parts if evento.content and evento.content.parts else []:
-            if parte.function_call:
-                print(
-                    f"\n[{evento.author}] → {parte.function_call.name}({parte.function_call.args})"
-                )
-            elif parte.text:
-                print(f"\n[{evento.author}]\n{parte.text[:MAX_CARACTERES_EVENTO]}")
+        crudos = (evento.actions.state_delta or {}).get(CLAVE_HITOS) or []
+        hitos = [HitoComite.model_validate(c) for c in crudos]
+        for hito in hitos[impresos:]:
+            print(linea_con_tiempo(hito, hitos[0].timestamp).replace("**", ""), flush=True)
+        impresos = max(impresos, len(hitos))
     final = await sesiones.get_session(app_name=APP, user_id="local", session_id=sesion.id)
     assert final is not None
     return str(final.state[CLAVE_DIRECTORIO])

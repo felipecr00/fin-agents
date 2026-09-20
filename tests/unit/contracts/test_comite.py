@@ -81,7 +81,7 @@ class TestRunStateConAprobacion:
         assert RunState.model_validate_json(acta.model_dump_json()) == acta
 
     def test_sin_aprobacion_sigue_siendo_valida(self, run_state_inicial: RunState) -> None:
-        """Modo comando (apps/pipeline, scripts) y actas de S7: ``aprobacion`` es None."""
+        """Modo comando (comando/pipeline, scripts) y actas de S7: ``aprobacion`` es None."""
         assert run_state_inicial.aprobacion is None
 
     def test_aprobacion_de_otro_universo_no_entra_al_acta(

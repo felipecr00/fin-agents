@@ -2,7 +2,7 @@
 
 - Fecha: 2026-09-20
 - Sprint: S11
-- Estado: propuesta (checkpoint 2 de S11)
+- Estado: aceptada (2026-09-20, checkpoint 2 de S11: reparto proporcional y cota por defecto confirmados)
 
 ## Contexto
 S10 dejó las No-Trade Zones (`PlanInercia`) SEÑALANDO desviaciones sin decir qué hacer con

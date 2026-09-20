@@ -196,7 +196,7 @@ run-local:      ## UI de desarrollo de ADK
 	uv run adk web src/investmentsys
 
 eval:           ## evalset del analista contra el modelo real (S5, ADR-010); ver el Makefile
-	uv run --group eval adk eval apps/market_analyst tests/eval/market_analyst.evalset.json \
+	uv run --group eval adk eval tests/eval/agentes/market_analyst tests/eval/market_analyst.evalset.json \
 		--config_file_path tests/eval/test_config.json
 
 clean:

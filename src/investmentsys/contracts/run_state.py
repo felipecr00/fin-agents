@@ -69,7 +69,7 @@ class RunState(ContractBase):
         default=None,
         description=(
             "Resumen presentado al usuario y su confirmación, cuando la corrida la convocó el "
-            "Director (ADR-014). None = corrida en modo comando (apps/pipeline, scripts)."
+            "Director (ADR-014). None = corrida en modo comando (comando/pipeline, scripts)."
         ),
     )
     etapa: EtapaCorrida = EtapaCorrida.INICIADA
