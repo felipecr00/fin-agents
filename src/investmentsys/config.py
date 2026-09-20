@@ -304,6 +304,7 @@ class FintualConfig(_Seccion):
 
 class CorridasConfig(_Seccion):
     directorio: Path
+    transmitir_hitos_en_vivo: bool
 
 
 class ReproducibilidadConfig(_Seccion):

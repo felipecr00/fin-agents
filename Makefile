@@ -35,7 +35,7 @@ type:
 	$(UV) run mypy src
 
 test:
-	$(UV) run pytest tests/unit tests/golden tests/integration tests/test_gate_security.py tests/test_atribucion.py -q
+	$(UV) run pytest tests/unit tests/golden tests/integration tests/test_gate_security.py tests/test_atribucion.py tests/test_hitos_en_vivo.py -q
 
 nombres:        ## DoD de S9: nombres comerciales de modelos fuera de config.yaml (debe salir vacío)
 	$(UV) run python -m tests.unit.test_nombres_de_modelos

@@ -180,6 +180,9 @@ sensibilidad:
 corridas:
   # RunState y reporte de cada corrida: <directorio>/<run_id>/ (relativo a la raíz del repo).
   directorio: runs
+  # ADR-021: los hitos del comité se muestran en el chat MIENTRAS corre (cola de eventos de la
+  # invocación de ADK, API privada con cercos). false = solo bitácora + cronología al cierre.
+  transmitir_hitos_en_vivo: true
 
 reproducibilidad:
   semilla: 42

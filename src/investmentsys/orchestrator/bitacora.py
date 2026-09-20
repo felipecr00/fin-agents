@@ -115,6 +115,12 @@ def _mmss(delta: timedelta) -> str:
     return f"{segundos // 60:02d}:{segundos % 60:02d}"
 
 
+def linea_con_tiempo(hito: HitoComite, inicio: datetime) -> str:
+    """``+01:05`` **Escéptico (Validador)** · ronda 1: VETO…: igual en vivo que al cierre."""
+    ronda = f" · ronda {hito.iteracion}" if hito.iteracion else ""
+    return f"`+{_mmss(hito.timestamp - inicio)}` **{hito.fase.value}**{ronda}: {hito.detalle}"
+
+
 def renderizar_cronologia(hitos: tuple[HitoComite, ...]) -> str:
     """Bloque markdown con la deliberación completa; vacío si no hubo hitos."""
     if not hitos:
@@ -126,9 +132,8 @@ def renderizar_cronologia(hitos: tuple[HitoComite, ...]) -> str:
         f"Constructor ⇄ Escéptico, {vetos} veto{'s' if vetos != 1 else ''}, "
         f"duración total {_mmss(cronologia.duracion)} (mm:ss)."
     )
+    inicio = cronologia.hitos[0].timestamp
     lineas = [
-        f"{i}. `+{_mmss(cronologia.transcurrido(h))}` **{h.fase.value}**"
-        f"{f' · ronda {h.iteracion}' if h.iteracion else ''}: {h.detalle}"
-        for i, h in enumerate(cronologia.hitos, start=1)
+        f"{i}. {linea_con_tiempo(h, inicio)}" for i, h in enumerate(cronologia.hitos, start=1)
     ]
     return "\n".join([TITULO_CRONOLOGIA, "", resumen, "", *lineas])

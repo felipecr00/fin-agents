@@ -46,7 +46,11 @@ from investmentsys.contracts import (
     Universe,
 )
 from investmentsys.data import PriceProvider
-from investmentsys.orchestrator.bitacora import CLAVE_HITOS, renderizar_cronologia
+from investmentsys.orchestrator.bitacora import (
+    CLAVE_HITOS,
+    linea_con_tiempo,
+    renderizar_cronologia,
+)
 from investmentsys.orchestrator.corrida import (
     CLAVE_APROBACION,
     CLAVE_DIRECTORIO,
@@ -72,6 +76,7 @@ from investmentsys.tools.estado import (
     volcar,
 )
 from investmentsys.tools.ficha import CLAVE_ANEXO
+from investmentsys.tools.hitos_en_vivo import transmitir
 
 CLAVE_SOLICITUD = CLAVE_SOLICITUD_COMITE
 FASE_SOLICITAR = "solicitar"
@@ -319,16 +324,24 @@ class ComiteTools:
         mensaje = types.Content(
             role="user", parts=[types.Part(text=_material_para_el_analista(resumen))]
         )
+        en_vivo, enviados = self.config.corridas.transmitir_hitos_en_vivo, 0
         try:
             async for evento in runner.run_async(
                 user_id=ctx.user_id, session_id=sesion.id, new_message=mensaje
             ):
                 # Los hitos suben a la sesión del Director A MEDIDA que ocurren (el delta de
                 # cada nodo trae la lista completa): si la corrida revienta, lo ya deliberado
-                # no se pierde con la sesión anidada.
-                hitos = (evento.actions.state_delta or {}).get(CLAVE_HITOS)
-                if hitos:
-                    ctx.state[CLAVE_HITOS] = hitos
+                # no se pierde con la sesión anidada. Y, si se puede, al chat EN VIVO (ADR-021).
+                crudos = (evento.actions.state_delta or {}).get(CLAVE_HITOS)
+                if not crudos:
+                    continue
+                ctx.state[CLAVE_HITOS] = crudos
+                hitos = [HitoComite.model_validate(c) for c in crudos]
+                for hito in hitos[enviados:]:
+                    en_vivo = en_vivo and await transmitir(
+                        ctx, linea_con_tiempo(hito, hitos[0].timestamp)
+                    )
+                enviados = len(hitos)
         finally:
             await runner.close()
         final = await sesiones.get_session(
