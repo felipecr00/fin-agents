@@ -39,6 +39,9 @@ SEPARADOR = "\n\n---\n\n"
 # Separador invisible (U+2063) que abre el anexo: ningún renderizador lo muestra y permite
 # recortar del historial exactamente lo que añadió el código.
 MARCA_ANEXO = "\u2063\u2063"
+CIERRE_SIN_TEXTO = (
+    "Aquí está el resultado; el detalle y su origen van debajo. Dime cómo quieres seguir."
+)
 NOTA_ANEXO = (
     "bloque ya redactado por código: se anexa solo al final de tu respuesta. No lo copies ni "
     "lo reconstruyas; coméntalo."
@@ -89,16 +92,26 @@ def anexar_al_cierre(
     if any(p.function_call or p.function_response for p in partes_previas):
         return None  # el turno sigue: todavía hay herramientas por correr
     bloques = _bloques_del_turno(callback_context.state, callback_context.invocation_id)
-    if not bloques:
+    # S10: el modelo a veces cierra el turno SIN texto (visto en el eval y en la demo reales:
+    # 3 de 8 turnos). La ficha se entrega igual, y el turno nunca queda mudo: un cierre vacío
+    # confundía además al modelo en el turno siguiente (contestó la pregunta anterior).
+    mudo = not any(p.text and p.text.strip() and not p.thought for p in partes_previas)
+    if mudo:
+        partes_previas = [*partes_previas, types.Part(text=CIERRE_SIN_TEXTO)]
+    elif not bloques:
         return None
-    # S10: tras una persona el modelo puede cerrar SIN texto (visto con el modelo real). La
-    # ficha se entrega igual: no depende de que el Director diga algo.
-    rol = contenido.role if contenido is not None else "model"
+    rol = contenido.role if contenido is not None and contenido.role else "model"
+    if not bloques:
+        return llm_response.model_copy(
+            update={"content": types.Content(role=rol, parts=partes_previas)}
+        )
     callback_context.state[CLAVE_ANEXOS_TURNO] = None
     # La marca va en su propia línea: los títulos de los bloques deben empezar su línea limpios.
     anexo = f"\n\n{MARCA_ANEXO}{SEPARADOR}{SEPARADOR.join(bloques)}"
     partes = partes_previas
-    ultima = next((i for i in reversed(range(len(partes))) if partes[i].text), None)
+    ultima = next(
+        (i for i in reversed(range(len(partes))) if partes[i].text and not partes[i].thought), None
+    )
     if ultima is None:
         partes.append(types.Part(text=anexo.lstrip()))
     else:  # mismo Part: para la interfaz y para el historial es UNA respuesta

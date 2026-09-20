@@ -322,19 +322,34 @@ class GestorDatos:
         )
 
     # ------------------------------------------- datos diarios de la fuente (S10)
-    def dividendos(self, universo: Universe | None = None) -> dict[str, tuple[Dividendo, ...]]:
-        """Ex-dividendos recientes de cada activo del universo. Solo historia: no se proyecta."""
+    def dividendos(
+        self, universo: Universe | None = None, activos: tuple[str, ...] | None = None
+    ) -> dict[str, tuple[Dividendo, ...]]:
+        """Ex-dividendos recientes de los ``activos`` (por defecto, todo el universo).
+
+        Solo historia: no se proyecta ninguna fecha futura.
+        """
         universo = universo or self.universo()
         dias = self.config.fintual.dias_historia_dividendos
         desde = self.reloj().date() - timedelta(days=dias)
         fuente = self._fuente()
-        return {a: fuente.dividendos(a, desde) for a in universo.activos}
+        return {a: fuente.dividendos(a, desde) for a in self._del_universo(universo, activos)}
 
-    def cierres(self, universo: Universe | None = None) -> dict[str, CierreDiario | None]:
-        """Último cierre (crudo y ajustado) de cada activo del universo, según la fuente."""
+    def cierres(
+        self, universo: Universe | None = None, activos: tuple[str, ...] | None = None
+    ) -> dict[str, CierreDiario | None]:
+        """Último cierre (crudo y ajustado) de los ``activos``, según la fuente."""
         universo = universo or self.universo()
         fuente = self._fuente()
-        return {a: fuente.ultimo_cierre(a) for a in universo.activos}
+        return {a: fuente.ultimo_cierre(a) for a in self._del_universo(universo, activos)}
+
+    @staticmethod
+    def _del_universo(universo: Universe, activos: tuple[str, ...] | None) -> tuple[str, ...]:
+        pedidos = activos if activos is not None else universo.activos
+        ajenos = sorted(set(pedidos) - set(universo.activos))
+        if ajenos:
+            raise GestorError(f"fuera del universo vigente: {ajenos}")
+        return pedidos
 
     # ---------------------------------------------------------------- interno
     def _fuente(self) -> FuenteActivos:

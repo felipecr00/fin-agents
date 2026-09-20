@@ -199,6 +199,18 @@ def test_cierres_crudo_y_ajustado_con_su_fecha(
     assert salida["cierres"]["VOOG"] is None and "VOOG" in salida["sin_cierre_reciente"]
 
 
+def test_con_ticker_solo_ese_activo_y_solo_si_esta_en_el_universo(
+    gestor_fintual: GestorFintualTools, ctx: ToolContext
+) -> None:
+    """Visto en la demo real: «¿último ex-dividendo de BNS?» llega con ticker="BNS"."""
+    salida = gestor_fintual.gestionar_datos_y_fricciones("dividendos", ctx, ticker="bns")
+    assert salida["status"] == "success" and list(salida["ex_dividendos"]) == ["BNS"]
+    cierres = gestor_fintual.gestionar_datos_y_fricciones("cierres", ctx, ticker="BNS")
+    assert list(cierres["cierres"]) == ["BNS"]
+    ajeno = gestor_fintual.gestionar_datos_y_fricciones("dividendos", ctx, ticker="AAPL")
+    assert ajeno["status"] == "error" and "no está en el universo vigente" in ajeno["mensaje"]
+
+
 def test_sin_fuente_de_mercado_es_un_error_del_gestor(
     tmp_path: Path, config: Config, ctx: ToolContext
 ) -> None:

@@ -21,7 +21,8 @@ CABLEADO = f"""\
   el detalle del universo vigente (capitalizaciones, cobertura de los stress, advertencias por
   activo: úsala cuando pregunten por ese detalle o por la historia de un activo); "dividendos"
   da las fechas ex-dividendo recientes (solo historia: la fuente no publica el calendario
-  futuro; no proyectes la próxima fecha); "cierres" da el último cierre y el cierre ajustado;
+  futuro; no proyectes la próxima fecha); "cierres" da el último cierre y el cierre ajustado
+  (ambas, de todo el universo o, con `ticker`, de un solo activo del universo);
   "montos" traduce la cartera objetivo que está sobre la mesa a montos en US$ y la compara con
   la cartera actual bajo las bandas de inercia: dentro de banda la orden es HOLD obligatorio;
   FUERA_DE_BANDA solo señala que un activo quedó sobreponderado o subponderado: NO es una orden.

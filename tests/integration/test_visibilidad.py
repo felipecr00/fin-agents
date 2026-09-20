@@ -13,6 +13,7 @@ import pytest
 from google.adk.models.llm_request import LlmRequest
 
 from investmentsys.agents.anexos import (
+    CIERRE_SIN_TEXTO,
     CLAVE_ANEXOS_TURNO,
     MARCA_ANEXO,
 )
@@ -195,3 +196,13 @@ def test_si_el_director_cierra_sin_texto_la_ficha_de_la_persona_llega_igual(
     assert "- Fuente: **Estadístico** · herramienta `estimar_mercado`" in cierre
     assert PREFIJO_NO_VALIDADO in cierre
     assert turno.estado.get(CLAVE_ANEXOS_TURNO) is None, "entregado: no se repite"
+    # Y el turno no queda mudo: un cierre vacío en el historial confundía al modelo después.
+    assert cierre.split(SEPARADOR)[0] == CIERRE_SIN_TEXTO
+
+
+def test_un_cierre_vacio_sin_bloques_tampoco_deja_mudo_el_turno(
+    config: Config, gestor: GestorDatos, tmp_path: Path
+) -> None:
+    guion = [Llamada("ajustar_restricciones", peso_max=0.8), ""]
+    (turno,), _ = _charlar(config, gestor, tmp_path, guion, ["sube el tope a 80 %"])
+    assert turno.textos("director") == [CIERRE_SIN_TEXTO]

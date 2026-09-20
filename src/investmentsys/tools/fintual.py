@@ -18,7 +18,7 @@ from google.adk.tools.tool_context import ToolContext
 
 from investmentsys.config import Config
 from investmentsys.contracts import DISCLAIMER_OPERATIVO, OrdenInercia, PlanInercia, Universe
-from investmentsys.data_manager import GestorDatos
+from investmentsys.data_manager import GestorDatos, GestorError
 from investmentsys.fintual import plan_inercia
 from investmentsys.tools.estado import (
     CLAVE_UNIVERSO,
@@ -54,8 +54,8 @@ ARGUMENTOS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "refrescar_cap": (("ticker",), ("prior_cap", "prior_metodologia")),
     "aceptar_prior_neutral": ((), ()),
     "diagnosticar": ((), ()),
-    "dividendos": ((), ()),
-    "cierres": ((), ()),
+    "dividendos": ((), ("ticker",)),
+    "cierres": ((), ("ticker",)),
     "montos": ((), ()),
 }
 
@@ -83,6 +83,19 @@ def _situacion(desviacion: float, en_banda: bool) -> str:
     if en_banda:
         return "en banda"
     return "sobreponderado" if desviacion > 0 else "subponderado"
+
+
+def _activos_pedidos(universo: Universe, ticker: str | None) -> tuple[str, ...]:
+    """Todo el universo o solo ``ticker``: ningún dato de un activo que el Gestor no validó."""
+    if not ticker:
+        return universo.activos
+    pedido = ticker.strip().upper()
+    if pedido not in universo.activos:
+        raise GestorError(
+            f"{pedido} no está en el universo vigente ({', '.join(universo.activos)}): "
+            "incorpóralo antes de pedir sus datos"
+        )
+    return (pedido,)
 
 
 def _rechazo(tipo: str, motivo: str) -> dict[str, Any]:
@@ -137,8 +150,9 @@ class GestorFintualTools:
           qué limita una historia corta, si es apto y el bloque ``prior`` (``tiene_cap``).
         - "diagnosticar": detalle del universo vigente (capitalizaciones, ventana común,
           cobertura de los stress, advertencias por activo).
-        - "dividendos": fechas ex-dividendo recientes y monto por acción de cada activo.
-        - "cierres": último cierre y cierre ajustado de cada activo, con su fecha.
+        - "dividendos" (ticker?): fechas ex-dividendo recientes y monto por acción; de todo el
+          universo o, con ticker, solo de ese activo del universo.
+        - "cierres" (ticker?): último cierre y cierre ajustado, con su fecha; ídem.
         - "montos": la cartera objetivo que está sobre la mesa traducida a montos en US$ (2
           decimales) y comparada con la cartera actual bajo las bandas de inercia (No-Trade
           Zones): HOLD obligatorio dentro de banda. No lleva argumentos: los pesos NO se pasan.
@@ -202,10 +216,10 @@ class GestorFintualTools:
             return heredadas.diagnosticar(ctx)
         try:
             universo = leer(ctx.state, CLAVE_UNIVERSO, Universe)
-            if operacion == "dividendos":
-                return self._dividendos(universo)
-            if operacion == "cierres":
-                return self._cierres(universo)
+            if operacion in ("dividendos", "cierres"):
+                activos = _activos_pedidos(universo, ticker)
+                lectura = self._dividendos if operacion == "dividendos" else self._cierres
+                return lectura(universo, activos)
             return self._montos(ctx)
         except (
             *ERRORES_DEL_GESTOR,
@@ -215,8 +229,8 @@ class GestorFintualTools:
         ) as exc:
             return _error(exc)
 
-    def _dividendos(self, universo: Universe) -> dict[str, Any]:
-        pagos = self.gestor.dividendos(universo)
+    def _dividendos(self, universo: Universe, activos: tuple[str, ...]) -> dict[str, Any]:
+        pagos = self.gestor.dividendos(universo, activos)
         return {
             "status": "success",
             "universe_version": universo.version,
@@ -236,8 +250,8 @@ class GestorFintualTools:
             "disclaimer": DISCLAIMER_OPERATIVO,
         }
 
-    def _cierres(self, universo: Universe) -> dict[str, Any]:
-        cierres = self.gestor.cierres(universo)
+    def _cierres(self, universo: Universe, activos: tuple[str, ...]) -> dict[str, Any]:
+        cierres = self.gestor.cierres(universo, activos)
         return {
             "status": "success",
             "universe_version": universo.version,
