@@ -23,7 +23,7 @@ COMA := ,
 EVALSET ?= tests/eval/market_analyst.evalset.json
 APP ?= pipeline
 
-.PHONY: install lint type test nombres check universo update-prices run-local eval eval-analista eval-director evalset sensibilidad comparar clean deploy-dev url-dev corrida-dev logs-dev deploy-prod corrida-prod
+.PHONY: install lint type test nombres check universo update-prices run-local bitacora eval eval-analista eval-director evalset sensibilidad comparar clean deploy-dev url-dev corrida-dev logs-dev deploy-prod corrida-prod
 
 install:        ## dependencias con uv
 	$(UV) sync
@@ -53,6 +53,9 @@ update-prices:  ## paso 1 del ritual mensual: Tiingo → validar → data/series
 
 run-local:      ## UI de ADK: elige `equipo` (el Director, entrada por defecto); `pipeline` = modo comando
 	$(UV) run adk web apps
+
+bitacora:       ## sigue EN VIVO la bitácora del comité desde otra terminal: make bitacora [RUN=<run_id>]
+	$(UV) run python scripts/ver_bitacora.py $(RUN)
 
 eval: eval-analista eval-director  ## los dos evalsets contra el modelo REAL; código 1 si algún caso falla
 

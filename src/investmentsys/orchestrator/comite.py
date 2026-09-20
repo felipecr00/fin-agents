@@ -36,6 +36,7 @@ from investmentsys.config import Config
 from investmentsys.contracts import (
     AprobacionComite,
     EstadoPrior,
+    HitoComite,
     MarketViews,
     PriorProvenance,
     ResumenComite,
@@ -45,6 +46,7 @@ from investmentsys.contracts import (
     Universe,
 )
 from investmentsys.data import PriceProvider
+from investmentsys.orchestrator.bitacora import CLAVE_HITOS, renderizar_cronologia
 from investmentsys.orchestrator.corrida import (
     CLAVE_APROBACION,
     CLAVE_DIRECTORIO,
@@ -66,6 +68,7 @@ from investmentsys.tools.estado import (
     exigir_sello,
     leer,
     leer_fecha,
+    leer_lista,
     volcar,
 )
 from investmentsys.tools.ficha import CLAVE_ANEXO
@@ -273,13 +276,24 @@ class ComiteTools:
             invocacion_solicitud=solicitud.invocacion,
             invocacion_confirmacion=ctx.invocation_id,
         )
+        ctx.state[CLAVE_HITOS] = []  # la cronología es la de ESTA corrida
         try:
             final = await self._correr_pipeline(ctx, aprobacion)
         except (EtapaFallidaError, ViewsInvalidasError) as exc:
-            return {"status": "error", "tipo": type(exc).__name__, "mensaje": str(exc)}
+            return {
+                "status": "error",
+                "tipo": type(exc).__name__,
+                "mensaje": str(exc),
+                CLAVE_ANEXO: self._cronologia(ctx.state),
+            }
         for clave in CLAVES_DEL_ACTA:
             ctx.state[clave] = final.get(clave)
-        return self._salida(RunState.model_validate(final[CLAVE_RUN_STATE]), final)
+        salida = self._salida(RunState.model_validate(final[CLAVE_RUN_STATE]), final)
+        return {**salida, CLAVE_ANEXO: self._cronologia(ctx.state)}
+
+    @staticmethod
+    def _cronologia(estado: Estado) -> str:
+        return renderizar_cronologia(leer_lista(estado, CLAVE_HITOS, HitoComite))
 
     async def _correr_pipeline(
         self, ctx: ToolContext, aprobacion: AprobacionComite
@@ -306,10 +320,15 @@ class ComiteTools:
             role="user", parts=[types.Part(text=_material_para_el_analista(resumen))]
         )
         try:
-            async for _ in runner.run_async(
+            async for evento in runner.run_async(
                 user_id=ctx.user_id, session_id=sesion.id, new_message=mensaje
             ):
-                pass
+                # Los hitos suben a la sesión del Director A MEDIDA que ocurren (el delta de
+                # cada nodo trae la lista completa): si la corrida revienta, lo ya deliberado
+                # no se pierde con la sesión anidada.
+                hitos = (evento.actions.state_delta or {}).get(CLAVE_HITOS)
+                if hitos:
+                    ctx.state[CLAVE_HITOS] = hitos
         finally:
             await runner.close()
         final = await sesiones.get_session(

@@ -17,6 +17,12 @@ from investmentsys.contracts.fintual import (
     OrdenInercia,
     PlanInercia,
 )
+from investmentsys.contracts.hitos_comite import (
+    CronologiaComite,
+    EventoComite,
+    FaseComite,
+    HitoComite,
+)
 from investmentsys.contracts.mesa_trabajo import (
     CategoriaPizarra,
     Especialista,
@@ -76,13 +82,17 @@ __all__ = [
     "CategoriaPizarra",
     "ContractBase",
     "Criterio",
+    "CronologiaComite",
     "DecisionInercia",
     "DiagnosticoCartera",
     "Especialista",
     "EstadoPrior",
     "EtapaCorrida",
+    "EventoComite",
+    "FaseComite",
     "Fraccion",
     "Frecuencia",
+    "HitoComite",
     "ItemPizarra",
     "LimiteActivo",
     "LimiteGlobal",
