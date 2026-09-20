@@ -6,6 +6,7 @@
     uv run python scripts/universo.py incorporar QQQ --aceptar-neutral
     uv run python scripts/universo.py refrescar-cap BNS --cap 0.12 --metodologia "cap bursátil"
     uv run python scripts/universo.py aceptar-neutral
+    uv run python scripts/universo.py retirar BNS
 
 Las caps van en US$ billones (10^12). `resolver` y `diagnosticar` no modifican nada; el resto
 cambia `data/universo.json` (otra `universe_version`) y deja rastro en el historial.
@@ -32,6 +33,7 @@ def main() -> int:
     sub.add_parser("diagnosticar")
     sub.add_parser("aceptar-neutral")
     sub.add_parser("resolver").add_argument("ticker")
+    sub.add_parser("retirar").add_argument("ticker")
     for nombre in ("incorporar", "refrescar-cap"):
         p = sub.add_parser(nombre)
         p.add_argument("ticker")
@@ -56,6 +58,8 @@ def main() -> int:
             )
         elif args.accion == "refrescar-cap":
             gestor.refrescar_cap(args.ticker.upper(), args.cap, args.metodologia)
+        elif args.accion == "retirar":
+            gestor.retirar(args.ticker)
         elif args.accion == "aceptar-neutral":
             gestor.aceptar_prior_neutral()
         print(gestor.diagnosticar().model_dump_json(indent=2))

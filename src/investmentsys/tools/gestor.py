@@ -24,6 +24,7 @@ from investmentsys.tools.estado import (
     CLAVE_QUANT_ESTIMATES,
     CLAVE_RESTRICCIONES_SESION,
     CLAVE_SOLICITUD_COMITE,
+    CLAVE_SOLICITUD_NEUTRAL,
     CLAVE_UNIVERSO,
     Estado,
     volcar,
@@ -37,6 +38,19 @@ SELLADOS = (
     (CLAVE_QUANT_ESTIMATES, "estimaciones del Estadístico", "vuelve a llamar a estimar_mercado"),
     (CLAVE_CANDIDATOS, "carteras candidatas", "vuelve a construirlas"),
     (CLAVE_DIAGNOSTICOS_CARTERA, "diagnósticos de carteras del usuario", "vuelve a diagnosticar"),
+)
+
+
+SOLO_LECTURA = (
+    "este despliegue no admite cambios de universo (el almacén de datos es de solo lectura: "
+    "{detalle}). Haz el cambio en local (make run-local o make universo) y vuelve a desplegar"
+)
+NEUTRAL_EXIGE_OTRO_TURNO = (
+    "degradar el prior requiere confirmación explícita en un turno posterior; presenta la "
+    "advertencia todo-o-nada y espera. Afecta a TODOS los activos del universo ({activos}): "
+    "las capitalizaciones presentes ({con_cap}) dejan de usarse y el prior pasa a ser "
+    "equiponderado, con el sesgo documentado en ADR-013. Si el usuario confirma en su "
+    "siguiente mensaje, vuelve a llamar a aceptar_prior_neutral"
 )
 
 
@@ -184,13 +198,48 @@ class GestorTools:
             lambda: self.gestor.refrescar_cap(ticker.strip().upper(), prior_cap, prior_metodologia),
         )
 
+    def retirar(self, ticker: str, tool_context: ToolContext) -> dict[str, Any]:
+        """Saca un activo del universo de trabajo. Su serie de precios se conserva en disco.
+
+        Cambia el universo (otra ``universe_version``): ver ``resultados_obsoletos``.
+
+        Args:
+            ticker: activo que está en el universo, p. ej. "BNS".
+        """
+        return self._cambiar(tool_context, lambda: self.gestor.retirar(ticker))
+
     def aceptar_prior_neutral(self, tool_context: ToolContext) -> dict[str, Any]:
         """Degrada el prior de TODO el universo a equal-weight (ADR-013). Todo o nada.
 
-        Solo tras la confirmación explícita del usuario, advertido de que afecta a todos los
-        activos y del sesgo de equal-weight. Cambia el universo: ver ``resultados_obsoletos``.
+        Custodia por turnos: la primera llamada NO degrada; devuelve la advertencia que debes
+        presentar. Solo una llamada en un turno POSTERIOR del usuario, sobre el mismo universo,
+        ejecuta. Cambia el universo: ver ``resultados_obsoletos``.
         """
-        return self._cambiar(tool_context, self.gestor.aceptar_prior_neutral)
+        try:
+            universo = self.gestor.universo()
+        except ERRORES_DEL_GESTOR as exc:
+            return _error(exc)
+        estado = tool_context.state
+        pendiente = estado.get(CLAVE_SOLICITUD_NEUTRAL) or {}
+        advertido = pendiente.get("universe_version") == universo.version
+        if not advertido or pendiente.get("invocacion") == tool_context.invocation_id:
+            if not advertido:
+                estado[CLAVE_SOLICITUD_NEUTRAL] = {
+                    "universe_version": universo.version,
+                    "invocacion": tool_context.invocation_id,
+                }
+            con_cap = [d.ticker for d in universo.diagnosticos if d.tiene_cap]
+            return {
+                "status": "rechazado",
+                "tipo": "ConfirmacionPendiente",
+                "motivo": NEUTRAL_EXIGE_OTRO_TURNO.format(
+                    activos=", ".join(universo.activos), con_cap=", ".join(con_cap) or "ninguna"
+                ),
+            }
+        salida = self._cambiar(tool_context, self.gestor.aceptar_prior_neutral)
+        if salida["status"] == "success":
+            estado[CLAVE_SOLICITUD_NEUTRAL] = None
+        return salida
 
     def diagnosticar(self, tool_context: ToolContext) -> dict[str, Any]:
         """Estado del universo vigente: activos con su diagnóstico, ventana común, cobertura
@@ -217,6 +266,8 @@ class GestorTools:
             informe = self.gestor.diagnosticar(nuevo)
         except ERRORES_DEL_GESTOR as exc:
             return _error(exc)
+        except OSError as exc:  # contenedor: data/ es de solo lectura para el proceso
+            return _error(GestorError(SOLO_LECTURA.format(detalle=exc)))
         return {
             "status": "success",
             "universe_version": nuevo.version,
@@ -232,6 +283,7 @@ class GestorTools:
             for f in (
                 self.resolver,
                 self.incorporar,
+                self.retirar,
                 self.aceptar_prior_neutral,
                 self.refrescar_cap,
                 self.diagnosticar,

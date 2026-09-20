@@ -158,9 +158,10 @@ demo revelen como problema real, con evidencia).
 
 ## Estado
 
-**PR 1 de 2 cerrado** (rama `sprint/S8-director-pr1`, 2026-09-19). El sprint sigue abierto:
-el evalset de 12+ casos, el cambio de app por defecto, el documento de operación y la demo
-completa del DoD son del PR 2.
+**Sprint cerrado con el PR 2** (rama `sprint/S8-director-pr2`, 2026-09-19). PR 1 de 2: el
+Director y sus herramientas (mergeado, PR #11). PR 2 de 2: blindaje, evals y promoción. Lo del
+PR 2 está al final, en "Cierre del sprint (PR 2)"; lo anterior es el Estado del PR 1 tal como
+quedó, porque es la memoria de por qué se hizo cada cosa.
 
 ### Logrado en el PR 1
 - Tarea menor: `comparacion.leer_corrida` — un acta pre-S7 falla con "RunState de esquema
@@ -233,13 +234,100 @@ VB?", "convoca al comité"). Ruteo correcto en los tres; las cifras citadas (0.7
 - Prueba manual del usuario en adk web (hito b, 2026-09-19): hecha; no observó ruteos
   incorrectos. Los cuatro desvíos de arriba son los únicos registrados en este PR.
 
-### Pendiente (PR 2 y huecos detectados)
-- PR 2 completo: evalset (12 casos + los desvíos de arriba), `apps/equipo` como app por
-  defecto en adk web y despliegue, documento de operación, demo del DoD.
-- Huecos frente al spec fuente, sin herramienta hoy (no estaban en el brief del PR 1):
-  retirar un activo del universo ("saca BNS") y ajustar las restricciones de la sesión. El
-  Director debe decir que no puede; decidir en el PR 2 si se construyen.
-- `aceptar_prior_neutral` se apoya solo en la instrucción para la confirmación explícita; si
-  la prueba manual muestra que el LLM se la salta, aplicarle la custodia por turnos del comité.
-- `TiingoFuente(hoy=date.today())` se fija al arrancar `apps/equipo`: un servidor que viva
-  varios días seguirá con la fecha de arranque.
+### Pendiente al cerrar el PR 1 (resuelto en el PR 2, ver abajo)
+- PR 2 completo; herramientas para retirar activos y ajustar restricciones; custodia de
+  `aceptar_prior_neutral`. Sigue pendiente: `TiingoFuente(hoy=date.today())` se fija al
+  arrancar `apps/equipo` (un servidor que viva varios días conserva la fecha de arranque).
+
+## Cierre del sprint (PR 2)
+
+### Logrado
+- **Evalset del Director**: 19 casos en `tests/eval/casos_director.yaml` (los 12 del spec + 7
+  desvíos observados), con su formato documentado dentro del archivo. Arnés propio y delgado
+  (`evaluacion/director.py`: preparar almacén, correr turnos, verificar criterios; ADR-015 con
+  el costo aceptado): un mundo aislado por caso, y el MISMO código en `make check` (LLM
+  guionado: conducta ideal de los 19 casos + 7 conductas malas que su criterio debe detectar) y
+  en `make eval-director` contra Gemini. `make eval` = `eval-analista` + `eval-director`.
+- **Custodia por turnos de `aceptar_prior_neutral`** (decisión A): la primera llamada nunca
+  degrada; devuelve el mensaje instructivo con los activos afectados. Tests de secuencia mala y
+  buena. Re-corrida del caso `degradar_a_neutral`: Gemini volvió a intentar degradar en el turno
+  de "la opción c"; la herramienta lo rechazó, el Director presentó la advertencia y degradó
+  solo tras el "sí, confirmo". El caso pasó en todas las corridas posteriores.
+- **Herramientas nuevas** (decisión B): `retirar` (Gestor + tool + `make universo
+  ARGS="retirar X"`; declara obsoletos, conserva la serie como caché, rastro en el historial) y
+  `ajustar_restricciones` (`portfolio.sesion_ajustada`, puro; origen `ajuste_usuario`; un pedido
+  infactible devuelve el error de los chequeos del contrato, sin ruido de pydantic, y las
+  vigentes no cambian). Caso `capacidades`: el Director no ofrece lo que ninguna tool atiende.
+- **Saludo** (decisión C): `diagnosticar` admitido, nada que calcule o cambie. La aclaración
+  "presentar el universo aplica al inicio de la sesión, no a cada consulta" vive en el CABLEADO;
+  la instrucción aprobada (`instruccion.py`) no se tocó.
+- **Errores de escritura del Gestor como errores de dominio**: en el contenedor `data/` es de
+  solo lectura; las tools responden "este despliegue no admite cambios de universo: hazlos en
+  local y redespliega" en vez de reventar.
+- **Promoción**: `docs/operacion.md` presenta los dos puntos de entrada (`equipo` para el día a
+  día, `pipeline` como modo comando), el alta conversacional y qué hacer con un prior pendiente.
+  dev (Cloud Run) sirve todas las apps: `equipo` está disponible allí desde el merge del PR 1.
+  `make deploy-prod APP=…` queda parametrizado y su valor por defecto NO cambió (`pipeline`):
+  **no se ejecutó ningún despliegue manual; la promoción a prod la decide el usuario tras operar
+  dev.**
+- `make check` verde: 585 tests.
+
+### Evidencia de `make eval` (gemini-3.5-flash, temperatura 0.2, 2026-09-19)
+- Analista: 11/11.
+- Director, con los criterios definitivos: **19/19, 19/19, 19/19** en tres corridas completas
+  consecutivas. Entre la primera y la segunda hubo una corrida inválida (0/19 "sin evaluación"):
+  se cayó el DNS de la máquina; no dice nada del Director y no se cuenta, pero probó los topes
+  del arnés (terminó y lo reportó en vez de colgarse).
+- Camino hasta ahí, porque es lo que enseña. Corridas completas: 17/19 → 17/19 → 19/19 → 17/19
+  → 18/19 → 19/19 ×3 (7 fallos), más 3 fallos en re-corridas parciales de dos casos: 10 en
+  total, **9 del CRITERIO y 1 del Director**:
+  - 4 por negación: el Director nombraba lo prohibido para negarlo ("no podemos… monitoreo en
+    tiempo real", "sin necesidad de degradar a prior neutral", "no constituye una recomendación
+    aprobada", una lista bajo "Fuera de alcance (no podemos hacer)"). De ahí el criterio
+    `solo_negado`, en el que una viñeta hereda la negación de su encabezado.
+  - 5 por exigir o vetar una palabra concreta: pedir la confirmación con "?", decir "cartera" y
+    no "portafolio", mencionar el comité ante una petición ambigua (2 veces), y vetar "noticias"
+    cuando hablaba de las que aporta el usuario.
+  - **1 real**: ante "tengo 50/30/20…" escribió "80% en acciones de EE. UU.", sumando él 50 y
+    30. Ninguna tool dio ese número: aritmética del LLM. Se corrigió en el cableado ("tampoco
+    hagas aritmética propia con cifras"), no relajando `cifras_respaldadas`.
+  - Una corrida se quedó colgada >8 min en un caso que, aislado, terminó en 25 s: de ahí los
+    topes (llamadas al LLM por turno, tiempo por caso); exceder uno = caso fallido.
+- "hola" produce conversación, no una corrida: fijado por el caso `saludo` (solo admite
+  `diagnosticar`; efectos: universo sin cambios, sin acta).
+
+### Demo del DoD (`uv run python scripts/demo_director.py`, Gemini real, almacén aislado)
+Sesión de 9 turnos: saludo → A (`estimar_mercado`, exploratorio) → B (`market_analyst` +
+`construir_candidatos`, ambos `validado: false`) → alta de AAPL (`resolver` → confirmación →
+`incorporar`, cap de la fuente) → alta de QQQ (`resolver` → pregunta del prior → `incorporar` con
+la cap del Nasdaq-100 aportada por el usuario) → C (`solicitar` → resumen → "sí, confirmo" →
+`ejecutar`). Acta COMPLETADA y aprobada en la primera iteración, con el universo de 6 activos,
+procedencias (AAPL `fuente`, el resto `usuario`), tabla π, restricciones 2 %-70 % y
+`aprobacion` con el resumen presentado y las dos marcas de tiempo; sección "Aprobación del
+usuario" en el informe. Queda en `runs/demos/director_<marca>/` (transcripción y acta).
+Observación: en el turno de "convoca al comité" llamó a `solicitar` DOS veces en paralelo (con
+y sin material); la segunda solicitud reemplaza a la primera y el token usado fue el vigente.
+Inofensivo —un token viejo se rechaza con mensaje—, pero es ruido a vigilar.
+
+### Aprendizajes del PR 2
+- Un criterio de texto que no entiende la negación falla más que el agente. Antes de tocar un
+  criterio, leer la conversación (`runs/evals/<id>/conversaciones.md`): de 9 fallos, 1 era real.
+- `adk eval` no sirve cuando los casos cambian el mundo: su métrica no ve estado ni disco, evalúa
+  un `root_agent` compartido con `parallelism=4` y no prepara nada por caso (ADR-015).
+- `diagnosticar` re-adopta el universo del DISCO: la situación de partida de un caso se fabrica
+  en el almacén (`preparar`), no en el estado de sesión.
+- La custodia que vive en el prompt no custodia: el mismo patrón de turnos de ADR-014 resolvió
+  el prior neutral, y el eval lo demuestra en cada corrida.
+
+### Pendiente / futuro
+- **Latencia del saludo**: 9 de 15 primeros turnos de la línea base empiezan con
+  `diagnosticar` (solo lectura). Si la latencia molesta, cachear el diagnóstico del universo por
+  `universe_version` (en el estado de sesión o en el Gestor) y dárselo al Director en el estado
+  de la instrucción, para que presentar el universo no cueste una llamada a herramienta.
+- Promoción de `equipo` a prod (Agent Engine): decisión del usuario tras operar dev. Requiere
+  decidir dónde vive el universo en la nube si se quieren altas desde allí (hoy: solo lectura).
+- `TiingoFuente(hoy=…)` fijada al arrancar la app.
+- Dos `solicitar` en paralelo en un mismo turno (ver la demo): vigilar; si molesta, que la
+  segunda solicitud idéntica devuelva la primera en vez de reemplazarla.
+- Los criterios de texto son toscos por diseño; si el Director cambia de modelo, esperar una
+  ronda de falsos positivos antes de concluir nada.

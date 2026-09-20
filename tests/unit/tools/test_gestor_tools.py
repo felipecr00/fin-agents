@@ -15,8 +15,10 @@ from investmentsys.tools import (
     CLAVE_UNIVERSO,
     NucleoTools,
 )
+from investmentsys.tools.estado import CLAVE_SOLICITUD_NEUTRAL
 from investmentsys.tools.gestor import GestorTools
 from tests.almacen import FuenteFalsa, cap_fuente, panel_referencia, sembrar_gestor, serie_sintetica
+from tests.unit.tools.conftest import Turnos
 
 FIN = panel_referencia().index[-1]
 
@@ -50,6 +52,7 @@ def test_declaraciones_visibles_para_el_llm(gestor_tools: GestorTools) -> None:
     assert list(declaraciones) == [
         "resolver",
         "incorporar",
+        "retirar",
         "aceptar_prior_neutral",
         "refrescar_cap",
         "diagnosticar",
@@ -110,15 +113,103 @@ class TestCambiosDeUniverso:
     ) -> None:
         assert gestor_tools.incorporar("AAPL", ctx)["resultados_obsoletos"] == []
 
-    def test_etf_sin_cap_entra_con_el_prior_pendiente_y_neutral_es_todo_o_nada(
+    def test_retirar_declara_obsoletos_y_conserva_la_serie_como_cache(
+        self, gestor_tools: GestorTools, tools: NucleoTools, ctx: ToolContext
+    ) -> None:
+        assert tools.estimar_mercado(ctx)["status"] == "success"
+        serie = gestor_tools.gestor.directorio_series / "BNS.csv"
+        contenido = serie.read_bytes()
+
+        salida = gestor_tools.retirar("bns", ctx)
+        assert salida["status"] == "success"
+        assert [a["ticker"] for a in salida["activos"]] == ["VOOG", "IBIT", "VB"]
+        assert ctx.state[CLAVE_UNIVERSO]["version"] == salida["universe_version"]
+        assert _resultados(salida) == ["estimaciones del Estadístico"]
+        assert serie.read_bytes() == contenido, "la serie se conserva como caché"
+        historial = gestor_tools.gestor.ruta_historial.read_text("utf-8").splitlines()
+        assert '"accion": "retirar"' in historial[-1] and '"ticker": "BNS"' in historial[-1]
+        assert tools.estimar_mercado(ctx)["status"] == "success"  # el universo nuevo se estima
+
+    def test_retirar_lo_que_no_esta_es_un_error_del_gestor(
         self, gestor_tools: GestorTools, ctx: ToolContext
     ) -> None:
-        alta = gestor_tools.incorporar("QQQ", ctx)
-        assert alta["estado_prior"] == "pendiente" and "QQQ" in alta["mensaje_prior"]
-        neutral = gestor_tools.aceptar_prior_neutral(ctx)
-        assert neutral["estado_prior"] == "neutral"
-        assert ctx.state[CLAVE_UNIVERSO]["prior_neutral_aceptado"] is True
+        salida = gestor_tools.retirar("NVDA", ctx)
+        assert salida["status"] == "error" and "no está en el universo" in salida["mensaje"]
 
+    def test_almacen_de_solo_lectura_es_un_error_de_dominio_que_dice_que_hacer(
+        self, gestor_tools: GestorTools, ctx: ToolContext, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """En el contenedor ``data/`` es de root: el tool se explica en vez de reventar."""
+
+        def sin_permiso(*_: object, **__: object) -> None:
+            raise PermissionError(13, "Permission denied", "/app/data/universo.json")
+
+        monkeypatch.setattr("investmentsys.data_manager.gestor._escribir_atomico", sin_permiso)
+        previa = ctx.state[CLAVE_UNIVERSO]["version"]
+        salida = gestor_tools.retirar("BNS", ctx)
+        assert salida["status"] == "error" and salida["tipo"] == "GestorError"
+        assert "no admite cambios de universo" in salida["mensaje"]
+        assert "en local" in salida["mensaje"]
+        assert ctx.state[CLAVE_UNIVERSO]["version"] == previa
+
+
+class TestCustodiaDelPriorNeutral:
+    """ADR-015 §A: degradar TODO el prior exige un turno del usuario tras la advertencia."""
+
+    def test_secuencia_mala_todo_en_un_turno_no_degrada(
+        self, gestor_tools: GestorTools, turnos: Turnos
+    ) -> None:
+        ctx = turnos("inv-1")
+        assert gestor_tools.incorporar("QQQ", ctx)["estado_prior"] == "pendiente"
+        for _ in range(3):  # insistir en el mismo turno no cambia nada
+            salida = gestor_tools.aceptar_prior_neutral(ctx)
+            assert salida["status"] == "rechazado"
+            assert salida["motivo"].startswith(
+                "degradar el prior requiere confirmación explícita en un turno posterior; "
+                "presenta la advertencia todo-o-nada y espera"
+            )
+            assert "VOOG, BNS, IBIT, VB, QQQ" in salida["motivo"]
+        assert not gestor_tools.gestor.universo().prior_neutral_aceptado
+
+    def test_secuencia_buena_advertencia_y_confirmacion_en_otro_turno(
+        self, gestor_tools: GestorTools, turnos: Turnos
+    ) -> None:
+        primero = turnos("inv-1")
+        gestor_tools.incorporar("QQQ", primero)
+        assert gestor_tools.aceptar_prior_neutral(primero)["status"] == "rechazado"
+        segundo = turnos("inv-2")  # el usuario vio la advertencia y confirmó
+        salida = gestor_tools.aceptar_prior_neutral(segundo)
+        assert salida["status"] == "success" and salida["estado_prior"] == "neutral"
+        assert segundo.state[CLAVE_UNIVERSO]["prior_neutral_aceptado"] is True
+        assert segundo.state[CLAVE_SOLICITUD_NEUTRAL] is None
+
+    def test_sin_advertencia_previa_un_turno_nuevo_tampoco_basta(
+        self, gestor_tools: GestorTools, turnos: Turnos
+    ) -> None:
+        """ "Sí, neutral" sin haber visto la advertencia: la primera llamada siempre advierte."""
+        gestor_tools.incorporar("QQQ", turnos("inv-1"))
+        assert gestor_tools.aceptar_prior_neutral(turnos("inv-2"))["status"] == "rechazado"
+        assert gestor_tools.aceptar_prior_neutral(turnos("inv-3"))["status"] == "success"
+
+    def test_si_el_universo_cambia_tras_la_advertencia_hay_que_advertir_de_nuevo(
+        self, gestor_tools: GestorTools, turnos: Turnos
+    ) -> None:
+        gestor_tools.incorporar("QQQ", turnos("inv-1"))
+        assert gestor_tools.aceptar_prior_neutral(turnos("inv-1"))["status"] == "rechazado"
+        gestor_tools.retirar("BNS", turnos("inv-2"))
+        salida = gestor_tools.aceptar_prior_neutral(turnos("inv-3"))
+        assert salida["status"] == "rechazado" and "BNS" not in salida["motivo"]
+        assert gestor_tools.aceptar_prior_neutral(turnos("inv-4"))["status"] == "success"
+
+    def test_sin_caps_pendientes_el_error_es_el_del_gestor(
+        self, gestor_tools: GestorTools, turnos: Turnos
+    ) -> None:
+        gestor_tools.aceptar_prior_neutral(turnos("inv-1"))
+        salida = gestor_tools.aceptar_prior_neutral(turnos("inv-2"))
+        assert salida["status"] == "error" and "nada que degradar" in salida["mensaje"]
+
+
+class TestOtrosCambios:
     def test_cap_del_usuario_exige_metodologia(
         self, gestor_tools: GestorTools, ctx: ToolContext
     ) -> None:

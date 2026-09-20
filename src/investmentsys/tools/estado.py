@@ -23,6 +23,7 @@ CLAVE_RESTRICCIONES_SESION = "restricciones_sesion"
 CLAVE_PRIOR = "prior"
 # Exploratorio (S8): fuera de todo lo que lee RunState; nunca es una validación del comité.
 CLAVE_DIAGNOSTICOS_CARTERA = "diagnosticos_cartera"
+CLAVE_SOLICITUD_NEUTRAL = "solicitud_prior_neutral"  # custodia por turnos (ADR-015 §A)
 CLAVE_SOLICITUD_COMITE = "solicitud_comite"  # gate del comité (ADR-014): resumen + token
 
 M = TypeVar("M", bound=BaseModel)

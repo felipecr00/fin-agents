@@ -1,0 +1,10 @@
+{
+  "description": "Director de Análisis: conversa, consulta especialistas y convoca al comité formal con confirmación del usuario. Herramienta de análisis; no es asesoría financiera.",
+  "min_instances": 0,
+  "max_instances": 1,
+  "resource_limits": {
+    "cpu": "1",
+    "memory": "2Gi"
+  },
+  "container_concurrency": 3
+}
