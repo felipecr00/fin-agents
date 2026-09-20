@@ -2,7 +2,8 @@
 
 - Fecha: 2026-09-20
 - Sprint: S9
-- Estado: propuesta (pendiente de aprobación en el checkpoint 1 de S9)
+- Estado: aceptada (2026-09-20, checkpoint 1 de S9: "la pizarra no es un motor de cálculo nuevo;
+  es una ventana estructurada en Markdown hacia la memoria a corto plazo del equipo")
 
 ## Contexto
 S9 pide `contracts/mesa_trabajo.py` (`MesaDeTrabajoState`, `ItemPizarra` con categoria,
@@ -63,5 +64,7 @@ Desviaciones frente al contrato dibujado en la propuesta: `categoria` y `origen`
 - Un resultado nuevo en el estado (S10-S11: fricciones Fintual, hitos del comité) necesita su
   rama en `construir_mesa` y su silla en `ATIENDE`; olvidar la silla rompe al construir el
   equipo, olvidar la rama solo lo omite de la tabla (cubrirlo con test al añadirlo).
-- El acta del comité (`RunState` en el estado tras `ejecutar`) NO está en la mesa: la mesa es el
-  espacio exploratorio. Si se quiere una fila "Acta", es una categoría nueva (decisión abierta).
+- El acta del comité (`RunState` en el estado tras `ejecutar`) NO está en la mesa: la mesa muestra
+  los datos, reglas e hipótesis EN JUEGO antes de operar; el acta es un resultado.
+- Auditoría previa a la ejecución: si hay elementos obsoletos, la tabla lo avisa con su cuenta
+  antes de la nota de pie. La tabla la entrega el código (ADR-017), no la narración.
