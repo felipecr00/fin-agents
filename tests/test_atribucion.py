@@ -173,7 +173,12 @@ def test_los_bloques_que_redacta_el_codigo_siempre_atribuyen(
         "Listo.",
     ]
     texto = _responder(
-        config, gestor, tmp_path, guion, "estima, diagnostica, propón y muestra", **PERSONAS
+        config,
+        gestor,
+        tmp_path,
+        guion,
+        "estima, diagnostica mi cartera 50/30/20, propón y muestra",
+        **PERSONAS,
     )
     for bloque in (
         "### Mesa de trabajo",

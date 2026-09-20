@@ -23,6 +23,9 @@ from investmentsys.evaluacion.criterios import ResultadoCriterio
 # Una "cifra" es un número con decimales o un porcentaje: lo que un lector tomaría por un dato.
 # Los enteros sueltos (numeración de listas, "4 activos", años) no se exigen respaldados.
 CIFRA = re.compile(r"(?<![\w.,])-?\d+(?:[.,]\d+)?\s?%|(?<![\w.,])-?\d+[.,]\d+")
+# Un monto con separador de miles ("9,739.94", "US$ 2,243.52"): una sola cifra, no dos.
+MILES = re.compile(r"-?\d{1,3}(?:,\d{3})+(?:\.\d+)?")
+CIFRA_CON_MILES = re.compile(r"(?<![\w.,])-?\d{1,3}(?:,\d{3})+(?:\.\d+)?\s?%?|" + CIFRA.pattern)
 NUMERO = re.compile(r"-?\d+(?:\.\d+)?(?:[eE]-?\d+)?")
 PORCENTAJE = 100.0
 VINETA = re.compile(r"^(?:[*\-•]|\d+[.)])\s")
@@ -157,7 +160,8 @@ def lineas_no_negadas(texto: str) -> list[str]:
     afirmadas: list[str] = []
     encabezado_niega = False
     for linea in normalizar(texto).splitlines():
-        limpia = linea.strip()
+        # "fuera de banda" es un estado de las No-Trade Zones (S10), no una negación.
+        limpia = linea.strip().replace("fuera de banda", "fuera-de-banda")
         if not limpia or set(limpia) <= set("-*_"):  # vacía o separador: no corta la lista
             continue
         niega = any(n in f"{limpia} " for n in NEGACIONES)
@@ -175,6 +179,25 @@ def _numeros_de(fuentes: Iterable[str]) -> list[float]:
     return [float(n) for fuente in fuentes for n in NUMERO.findall(fuente)]
 
 
+def _lecturas(cifra: str) -> list[str]:
+    """Cómo puede leerse una cifra escrita: "9,739.94" es un monto con separador de miles;
+    "0,75" es un decimal con coma. Ante la duda ("9,739") valen las dos lecturas."""
+    crudo = cifra.replace("%", "").strip()
+    lecturas = []
+    if MILES.fullmatch(crudo):
+        lecturas.append(crudo.replace(",", ""))
+    if crudo.count(",") <= 1 and not ("," in crudo and "." in crudo):
+        lecturas.append(crudo.replace(",", "."))
+    return lecturas
+
+
+def _respalda(valores: list[float], lectura: str) -> bool:
+    decimales = len(lectura.partition(".")[2])
+    objetivo = abs(float(lectura))
+    candidatos = (abs(v) * escala for v in valores for escala in (1.0, PORCENTAJE))
+    return any(round(c, decimales) == round(objetivo, decimales) for c in candidatos)
+
+
 def cifras_sin_respaldo(texto: str, fuentes: Iterable[str]) -> list[str]:
     """Cifras del texto que ninguna fuente respalda, ni redondeadas ni como porcentaje.
 
@@ -183,12 +206,8 @@ def cifras_sin_respaldo(texto: str, fuentes: Iterable[str]) -> list[str]:
     """
     valores = _numeros_de(fuentes)
     sin_respaldo = []
-    for cifra in CIFRA.findall(texto):
-        crudo = cifra.replace("%", "").strip().replace(",", ".")
-        decimales = len(crudo.partition(".")[2])
-        objetivo = abs(float(crudo))
-        candidatos = (abs(v) * escala for v in valores for escala in (1.0, PORCENTAJE))
-        if not any(round(c, decimales) == round(objetivo, decimales) for c in candidatos):
+    for cifra in CIFRA_CON_MILES.findall(texto):
+        if not any(_respalda(valores, lectura) for lectura in _lecturas(cifra)):
             sin_respaldo.append(cifra.strip())
     return sin_respaldo
 

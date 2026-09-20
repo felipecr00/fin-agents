@@ -44,8 +44,9 @@ def _con(tool: str, redactar: Callable[[dict[str, Any]], Any]) -> Callable[[LlmR
     return lambda peticion: redactar(_salida(peticion, tool))
 
 
-def _cifra_de(texto: str) -> str:
-    return str(CIFRA.findall(texto)[0]).strip()
+def _cifra_de(recibido: dict[str, Any]) -> str:
+    """Una cifra de lo que la persona le devolvió al Director (para re-narrarla, mal hecho)."""
+    return str(CIFRA.findall(recibido["respuesta_de_la_persona"])[0]).strip()
 
 
 CORRELACION = "¿qué correlación hay entre VOOG y VB?"
@@ -285,8 +286,9 @@ GUIONES: dict[str, dict[str, list[Any]]] = {
             _con(
                 NOMBRE_TOOL,
                 lambda s: (
-                    f"Según el Gestor de Datos la orden global es {s['orden_global']}: fuera de "
-                    f"banda están {s['fuera_de_banda']}. No es una orden de compra; mira la ficha."
+                    f"Según el Gestor de Datos la orden global es {s['orden_global']} sobre US$ "
+                    f"{s['valor_cartera_usd']:,.2f}: fuera de banda están {s['fuera_de_banda']}."
+                    "\nNo es una orden: no indica comprar ni vender nada; mira la ficha."
                 ),
             ),
         ],
@@ -337,7 +339,7 @@ MALOS: dict[str, tuple[dict[str, list[Any]], str]] = {
                 Llamada("estadistico", pregunta="¿qué tan volátil es IBIT?"),
                 _con(
                     "estadistico",
-                    lambda s: f"El Estadístico estimó una volatilidad de {_cifra_de(s['result'])}.",
+                    lambda s: f"El Estadístico estimó una volatilidad de {_cifra_de(s)}.",
                 ),
             ],
             "estadistico": GUIONES["delegacion_estadistico_con_confianza"]["estadistico"],
@@ -350,12 +352,23 @@ MALOS: dict[str, tuple[dict[str, list[Any]], str]] = {
                 Llamada("esceptico", pregunta="¿cómo la ves?", pesos=PESOS),
                 _con(
                     "esceptico",
-                    lambda s: f"Diagnóstico exploratorio: caída máxima {_cifra_de(s['result'])}.",
+                    lambda s: f"Diagnóstico exploratorio: caída máxima {_cifra_de(s)}.",
                 ),
             ],
             "esceptico": ESCEPTICO_IDEAL,
         },
         "turno1.cifras_atribuidas",
+    ),
+    "montos_sin_cifras_del_llm": (  # visto con el modelo real: FUERA_DE_BANDA → «Vender»
+        {
+            "director": [
+                *PROPUESTA,
+                gestor_op("montos"),
+                "Según el Gestor de Datos, VOOG está fuera de banda. Acción indicada: vender.",
+            ],
+            "analista": [BORRADOR_GOLDEN],
+        },
+        "turno2.solo_negado",
     ),
     "delegacion_esceptico_sobre_la_mesa": (  # el Escéptico emite un veredicto fuera del comité
         {

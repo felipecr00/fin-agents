@@ -17,7 +17,7 @@ from google.adk.tools.function_tool import FunctionTool
 from google.adk.tools.tool_context import ToolContext
 
 from investmentsys.config import Config
-from investmentsys.contracts import DISCLAIMER_OPERATIVO, PlanInercia, Universe
+from investmentsys.contracts import DISCLAIMER_OPERATIVO, OrdenInercia, PlanInercia, Universe
 from investmentsys.data_manager import GestorDatos
 from investmentsys.fintual import plan_inercia
 from investmentsys.tools.estado import (
@@ -69,10 +69,20 @@ NOTA_CIERRES = (
 )
 NOTA_MONTOS = (
     "Dentro de su banda de inercia la orden de un activo es HOLD obligatorio. FUERA_DE_BANDA "
-    "solo SEÑALA la desviación: no es una orden de compra ni de venta, y este equipo no calcula "
-    "todavía cuánto comprar con aportes. Los montos objetivo son la cartera objetivo expresada "
-    "en US$ sobre el valor de cartera de config.yaml."
+    "solo SEÑALA que el peso actual se alejó del objetivo más que la banda (sobreponderado o "
+    "subponderado): NO es una orden. No le digas al usuario que compre ni que venda nada, ni "
+    "cuánto: este equipo todavía no calcula cómo corregir una desviación (se hará con aportes "
+    "nuevos, sin ventas), y una venta tiene costo tributario que aquí no se estimó. Los montos "
+    "objetivo son la cartera objetivo expresada en US$ sobre el valor de cartera de config.yaml."
 )
+SIN_ORDEN = "ninguna: solo se señala la desviación; no indiques comprar ni vender"
+HOLD_OBLIGATORIO = "HOLD obligatorio: dentro de banda no se opera"
+
+
+def _situacion(desviacion: float, en_banda: bool) -> str:
+    if en_banda:
+        return "en banda"
+    return "sobreponderado" if desviacion > 0 else "subponderado"
 
 
 def _rechazo(tipo: str, motivo: str) -> dict[str, Any]:
@@ -87,10 +97,12 @@ def resumir_plan(plan: PlanInercia) -> dict[str, Any]:
         "cartera_objetivo": plan.origen_objetivo,
         "valor_cartera_usd": plan.valor_cartera_usd,
         "orden_global": plan.orden_global.value,
-        "fuera_de_banda": [d.activo for d in plan.decisiones if d.orden.value != "HOLD"],
+        "fuera_de_banda": [d.activo for d in plan.decisiones if d.orden is not OrdenInercia.HOLD],
         "por_activo": {
             d.activo: {
                 "orden": d.orden.value,
+                "situacion": _situacion(d.desviacion, d.orden is OrdenInercia.HOLD),
+                "accion": HOLD_OBLIGATORIO if d.orden is OrdenInercia.HOLD else SIN_ORDEN,
                 "peso_objetivo": d.peso_objetivo,
                 "peso_actual": d.peso_actual,
                 "desviacion": d.desviacion,

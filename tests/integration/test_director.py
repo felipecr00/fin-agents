@@ -131,7 +131,8 @@ class TestConsultaAUnEspecialista:
         (voz,) = turno.textos("estadistico")
         assert cifras_sin_respaldo(voz, [salida]) == []
         (recibido,) = turno.respuestas("estadistico")
-        assert recibido == {"result": voz}
+        assert recibido["respuesta_de_la_persona"] == voz
+        assert "No la repitas" in recibido["nota"] and "Estadístico" in recibido["nota"]
         (cierre,) = turno.textos("director")
         assert str(salida["correlaciones"]["VOOG-VB"]) not in cierre.split(MARCA_ANEXO)[0]
         # La ficha la recogió la persona (ADR-019) y la anexa el Director al cerrar el turno.
@@ -243,6 +244,47 @@ class TestConsultaAUnEspecialista:
             salida["cartera_evaluada"] == "cartera hrp propuesta por el Constructor (exploratoria)"
         )
         assert salida["pesos_evaluados"] == candidatos["candidatos"]["hrp"]["pesos"]
+
+    def test_pesos_copiados_de_la_mesa_se_miden_como_de_la_mesa_no_como_del_usuario(
+        self, config: Config, gestor: GestorDatos, tmp_path: Path
+    ) -> None:
+        """Visto con el modelo real: el Director copió la propuesta en ``pesos``."""
+
+        def copiar_la_propuesta(peticion: LlmRequest) -> Llamada:
+            s = _ultima_salida(peticion, "construir_candidatos")
+            pesos = s["candidatos"][s["recomendado"]]["pesos"]
+            return Llamada("esceptico", pregunta="¿qué te preocupa de esta cartera?", pesos=pesos)
+
+        llm = LlmPorAgente(
+            director=[
+                Llamada("market_analyst", request="views de partida"),
+                Llamada("construir_candidatos"),
+                copiar_la_propuesta,
+                "Ya respondió el Escéptico.",
+            ],
+            analista=[BORRADOR_GOLDEN],
+            esceptico=_esceptico(lambda s: f"Medí la {s['cartera_evaluada']}. Exploratorio."),
+        )
+        (turno,) = _charlar(config, gestor, llm, tmp_path, ["propón y dime qué te preocupa"])
+        (salida,) = turno.respuestas("diagnosticar_cartera")
+        assert salida["status"] == "success"
+        assert "propuesta por el Constructor" in salida["cartera_evaluada"]
+
+    def test_pesos_que_no_escribio_el_usuario_ni_estan_en_la_mesa_se_rechazan_sin_diagnosticar(
+        self, config: Config, gestor: GestorDatos, tmp_path: Path
+    ) -> None:
+        inventados = {"VOOG": 0.6, "VB": 0.4}
+        llm = LlmPorAgente(
+            director=[
+                Llamada("esceptico", pregunta="¿cómo la ves?", pesos=inventados),
+                "Necesito que me escribas los pesos de tu cartera en números.",
+            ]
+        )
+        (turno,) = _charlar(config, gestor, llm, tmp_path, ["tengo mitad y mitad, ¿cómo la ves?"])
+        (rechazo,) = turno.respuestas("esceptico")
+        assert rechazo["status"] == "rechazado" and rechazo["tipo"] == "PesosSinProcedencia"
+        assert turno.llamadas("esceptico") == [], "la persona ni siquiera corrió"
+        assert not turno.estado.get(CLAVE_DIAGNOSTICOS_CARTERA)
 
     def test_sin_cartera_sobre_la_mesa_el_esceptico_no_inventa_una(
         self, config: Config, gestor: GestorDatos, tmp_path: Path

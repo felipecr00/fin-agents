@@ -243,7 +243,11 @@ def test_montos_usa_la_propuesta_de_la_mesa_y_la_cartera_de_config(
     assert salida["orden_global"] == "FUERA_DE_BANDA"
     assert salida["fuera_de_banda"] == ["VOOG", "VB"]
     assert por_activo["BNS"]["orden"] == "HOLD" and por_activo["IBIT"]["orden"] == "HOLD"
-    assert "no es una orden de compra ni de venta" in salida["nota"]
+    assert "NO es una orden" in salida["nota"] and "ni que venda" in salida["nota"]
+    assert por_activo["VOOG"]["situacion"] == "sobreponderado"
+    assert por_activo["VB"]["situacion"] == "subponderado"
+    assert por_activo["BNS"]["accion"].startswith("HOLD obligatorio")
+    assert "no indiques comprar ni vender" in por_activo["VOOG"]["accion"]
     json.dumps(salida)
 
     ficha = construir_ficha(NOMBRE_TOOL, salida)
@@ -300,7 +304,10 @@ def test_lo_que_devuelve_montos_es_un_plan_de_inercia_valido(
             "origen_objetivo": s["cartera_objetivo"],
             "valor_cartera_usd": s["valor_cartera_usd"],
             "orden_global": s["orden_global"],
-            "decisiones": [{"activo": a, **d} for a, d in s["por_activo"].items()],
+            "decisiones": [
+                {"activo": a, **{k: v for k, v in d.items() if k not in ("situacion", "accion")}}
+                for a, d in s["por_activo"].items()
+            ],
         }
     )
     assert plan.orden_global.value == s["orden_global"]

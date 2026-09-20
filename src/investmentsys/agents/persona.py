@@ -9,6 +9,8 @@ Lo que una persona es, por construcción y no por prompt:
 
 from __future__ import annotations
 
+from typing import Any
+
 from google.adk.agents.llm_agent import LlmAgent
 from google.adk.agents.readonly_context import ReadonlyContext
 from google.adk.models.base_llm import BaseLlm
@@ -37,7 +39,9 @@ Reglas de toda persona del equipo
 - No tienes otras capacidades: no buscas noticias, no predices precios, no ejecutas órdenes y
   no construyes carteras. Si la pregunta pide eso, di que no es tu silla y responde solo lo tuyo.
 - La ficha de origen de tu resultado se anexa sola al final del turno: no la escribas.
-- Responde lo que se preguntó, breve y sin tablas largas. Cierra con: "{disclaimer}"
+- Responde lo que se preguntó y nada más: como mucho unas 150 palabras, sin tablas. Di cada
+  cifra UNA sola vez, redondeada (porcentajes con uno o dos decimales); nunca pegues al lado el
+  valor crudo de la herramienta ni nombres de campos. Cierra con: "{disclaimer}"
 
 Universo vigente de la sesión: {universo}
 """
@@ -84,3 +88,25 @@ def crear_persona(
             seed=config.reproducibilidad.semilla,
         ),
     )
+
+
+NOTA_AL_DIRECTOR = (
+    "El usuario YA LEYÓ esta respuesta completa, en la voz de {persona}. No la repitas, no la "
+    "resumas y no cites NINGUNA de sus cifras. Tu cierre: de una a tres frases que solo "
+    "coordinan (qué sigue, a quién más conviene oír, o en qué discrepa de otro especialista), "
+    "sin proponer tú valores ni umbrales."
+)
+
+
+def resultado_para_el_director(persona: str, respuesta: Any) -> dict[str, Any] | None:
+    """Lo que el Director recibe de una persona: su texto, con la regla JUNTO al texto.
+
+    Visto con el modelo real (S10): con la regla solo en el cableado, el Director re-narraba las
+    cifras de la persona. ``None`` si la persona no devolvió texto (un rechazo previo, p. ej.).
+    """
+    if not isinstance(respuesta, str):
+        return None
+    return {
+        "respuesta_de_la_persona": respuesta,
+        "nota": NOTA_AL_DIRECTOR.format(persona=persona),
+    }

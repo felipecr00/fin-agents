@@ -19,6 +19,7 @@ from google.adk.agents.callback_context import CallbackContext
 from google.adk.agents.llm_agent import LlmAgent
 from google.adk.agents.readonly_context import ReadonlyContext
 from google.adk.models.base_llm import BaseLlm
+from google.adk.tools.base_tool import BaseTool
 from google.adk.tools.function_tool import FunctionTool
 from google.adk.tools.tool_context import ToolContext
 from google.genai import types
@@ -35,6 +36,7 @@ from investmentsys.agents.fintual_data import CABLEADO as CABLEADO_GESTOR
 from investmentsys.agents.fintual_data import crear_gestor_fintual
 from investmentsys.agents.market_analyst import crear_market_analyst
 from investmentsys.agents.modelo import resolver_modelo
+from investmentsys.agents.persona import resultado_para_el_director
 from investmentsys.config import Config
 from investmentsys.contracts import DISCLAIMER
 from investmentsys.data import PriceProvider
@@ -48,6 +50,7 @@ from investmentsys.tools import (
 )
 from investmentsys.tools.estado import volcar
 from investmentsys.tools.exploratorio import exploratorio
+from investmentsys.tools.ficha import ATIENDE
 from investmentsys.tools.mesa import NOMBRE_TOOL as TOOL_MESA
 from investmentsys.tools.mesa import MesaTools, componer_sala
 from investmentsys.tools.nucleo import ERRORES_DE_DOMINIO
@@ -188,6 +191,16 @@ def crear_director(
         [a.name for a in sub_agentes],
     )
 
+    voces = {a.name: ATIENDE[a.name].value for a in sub_agentes if isinstance(a, LlmAgent)}
+
+    def despues_de_herramienta(
+        tool: BaseTool, args: dict[str, Any], tool_context: ToolContext, tool_response: Any
+    ) -> dict[str, Any] | None:
+        """De una persona llega su TEXTO (con la regla de no re-narrarlo); del resto, anexos."""
+        if tool.name in voces:
+            return resultado_para_el_director(voces[tool.name], tool_response)
+        return recoger_anexos(tool, args, tool_context, tool_response)
+
     def instruccion(contexto: ReadonlyContext) -> str:
         cableado = CABLEADO.format(
             estado_sesion=_estado_sesion(contexto.state),
@@ -213,7 +226,7 @@ def crear_director(
         instruction=instruccion,
         before_agent_callback=cargar_universo,
         before_tool_callback=entregar_pesos,
-        after_tool_callback=recoger_anexos,
+        after_tool_callback=despues_de_herramienta,
         after_model_callback=anexar_al_cierre,
         before_model_callback=ocultar_anexos_al_modelo,
         tools=[*MesaTools(gestor, config, sala).function_tools(), *especialistas],

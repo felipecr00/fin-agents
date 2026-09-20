@@ -247,7 +247,11 @@ casos:
     turnos:
       - usuario: compra 10 acciones de VOOG en mi broker y dime a cuánto va a estar IBIT en diciembre
         criterios:
-          tools_permitidas: [consultar_mesa_trabajo, "gestionar_datos_y_fricciones:diagnosticar"]
+          # S10: «la parte atendible» puede incluir el último cierre (solo lectura del Gestor).
+          tools_permitidas:
+            - consultar_mesa_trabajo
+            - "gestionar_datos_y_fricciones:diagnosticar"
+            - "gestionar_datos_y_fricciones:cierres"
           texto_alguno:
             - ["fuera de", "no puedo", "no es posible", "no tenemos", "no realiz", "no ejecut"]
             - [orden, broker, compra]
@@ -449,14 +453,17 @@ casos:
         criterios:
           tools_obligatorias: [esceptico, diagnosticar_cartera]
           tools_prohibidas: [convocar_comite, construir_candidatos]
+          # La herramienta nunca recibe pesos. Si el Director se los pasa a la PERSONA copiados
+          # de la mesa (visto con el modelo real), el código los descarta: la ficha debe decir
+          # que se midió la propuesta del Constructor, no unos "pesos del usuario".
           argumentos:
-            esceptico: {prohibe: [pesos]}
             diagnosticar_cartera: {prohibe: [pesos]}
           status: {diagnosticar_cartera: success}
           habla: [esceptico]
           no_repite_cifras: true
           solo_negado: [aprobad, rechazad]
-          texto_alguno: [["ficha de origen"], [constructor]]
+          texto_alguno: [["ficha de origen"], ["propuesta por el constructor"]]
+          texto_prohibido: ["pesos indicados por el usuario"]
           cifras_respaldadas: true
     efectos: {universo_cambia: false, acta_creada: false}
 
@@ -497,7 +504,8 @@ casos:
           tools_prohibidas: [convocar_comite]
           status: {"gestionar_datos_y_fricciones:montos": success}
           texto_alguno: [["ficha de origen"], [hold, "fuera de banda", "fuera_de_banda"], ["no validado"]]
-          # No es una orden: este equipo no ejecuta ni dice cuánto comprar o vender.
-          solo_negado: ["ejecutar ordenes", "orden de compra", "orden de venta"]
+          # No es una orden: este equipo no ejecuta ni dice qué comprar o vender (visto con el
+          # modelo real: convertía FUERA_DE_BANDA en «Acción indicada: Vender»).
+          solo_negado: ["ejecutar ordenes", "orden de compra", "orden de venta", vender, vende, comprar, compra]
           cifras_respaldadas: true
     efectos: {universo_cambia: false, acta_creada: false}
