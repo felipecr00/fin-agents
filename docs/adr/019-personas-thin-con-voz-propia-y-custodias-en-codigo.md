@@ -75,3 +75,19 @@ poner un LLM entre el Director y la herramienta:
 - La persona no ve la conversación: lo que necesite debe ir en `pregunta` o estar en la mesa.
 - La ficha, el prefijo y la mesa siguen siendo del código; ninguna custodia se mueve al prompt.
 - El arnés de evaluación cambia (lee ramas); los 22 casos existentes se re-corren sobre él.
+
+## Enmienda tras el eval y la demo reales (2026-09-20)
+- **La regla de no re-narrar viaja con el dato.** Con la regla solo en el cableado, el Director
+  repetía las cifras de la persona. Lo que recibe ahora es `{respuesta_de_la_persona, nota}`
+  (`agents/persona.py: resultado_para_el_director`).
+- **Custodia de procedencia de los pesos.** El Director copió los pesos de la mesa en `pesos`
+  pese a la instrucción. `entregar_pesos` solo acepta como "del usuario" números que el usuario
+  escribió en la sesión; si coinciden con la cartera de la mesa, se descartan y se mide la de la
+  mesa con su procedencia real; cualquier otra cosa se rechaza sin consultar a la persona.
+- **Un cierre vacío del modelo no deja el turno mudo ni sin ficha** (`agents/anexos.py`): se
+  vio en el eval y en 3 de 8 turnos de la primera demo, y confundía al modelo en el turno
+  siguiente. `agents/director/anexos.py` pasó a `agents/anexos.py`.
+- **Las personas se ven en `adk web`** como mensajes propios: el plan B (entregar su texto como
+  bloque anexado) no hizo falta.
+- Sigue en el prompt, sin custodia: "no hables por una persona sin consultarla" (visto una vez).
+

@@ -91,3 +91,16 @@ Hechos medidos:
   tributario consultivo y el override son S11 y consumirán `PlanInercia`.
 - Todo output operativo lleva el disclaimer "estimación algorítmica, no asesoría tributaria ni
   financiera".
+
+## Enmienda tras el eval y la demo reales (2026-09-20)
+- **El plan B no hizo falta**: los casos de alta, baja, prior neutral y cap inventada pasaron en
+  todas las corridas del eval real con la tool única.
+- **`dividendos` y `cierres` admiten `ticker`** (un activo del universo): en la demo, «¿último
+  ex-dividendo de BNS?» llegó con `ticker="BNS"` y la tool lo rechazaba.
+- **`montos` cierra la puerta a comprar/vender en el dato**: el Director convertía
+  `FUERA_DE_BANDA` en «Acción indicada: Vender». Cada activo trae ahora `situacion`
+  (sobreponderado | subponderado | en banda) y `accion` ("ninguna: no indiques comprar ni
+  vender" | "HOLD obligatorio"). Son campos de la salida de la tool, no del contrato.
+- Una capacidad nueva movió casos viejos del evalset (`cierres` en «fuera de alcance»,
+  «monitoreo de dividendos» en «capacidades»): el cableado dice que son consultas puntuales.
+
