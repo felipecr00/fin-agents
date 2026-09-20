@@ -294,7 +294,19 @@ class ComiteTools:
         for clave in CLAVES_DEL_ACTA:
             ctx.state[clave] = final.get(clave)
         salida = self._salida(RunState.model_validate(final[CLAVE_RUN_STATE]), final)
-        return {**salida, CLAVE_ANEXO: self._cronologia(ctx.state)}
+        # La deliberación también como DATO: el Director puede explicar un veto de una ronda
+        # anterior (``razones_rechazo`` solo trae las de la última), y las cifras del bloque
+        # anexado quedan respaldadas por la salida de la herramienta.
+        deliberacion = [
+            {
+                "fase": h.fase.value,
+                "ronda": h.iteracion,
+                "evento": h.evento.value,
+                "detalle": h.detalle,
+            }
+            for h in leer_lista(ctx.state, CLAVE_HITOS, HitoComite)
+        ]
+        return {**salida, "deliberacion": deliberacion, CLAVE_ANEXO: self._cronologia(ctx.state)}
 
     @staticmethod
     def _cronologia(estado: Estado) -> str:

@@ -262,6 +262,8 @@ class TestEjecutar:
         assert leer_bitacora(Path(salida["acta"]) / ARCHIVO_BITACORA) == hitos
         assert salida[CLAVE_ANEXO] == renderizar_cronologia(hitos)
         assert salida[CLAVE_ANEXO].startswith(TITULO_CRONOLOGIA)
+        # Y como dato: toda cifra del bloque anexado está también en la salida de la herramienta.
+        assert [d["detalle"] for d in salida["deliberacion"]] == [h.detalle for h in hitos]
 
     def test_si_la_corrida_revienta_lo_deliberado_no_se_pierde(
         self, config: Config, turnos: Turnos, tmp_path: Path

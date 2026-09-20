@@ -57,13 +57,17 @@ NO_EJECUTA = (
     "decides."
 )
 NOTA_PLAN = (
-    "El bloque del plan (tabla, escenarios, supuestos y disclaimer) se anexa solo: no lo copies. "
-    "Las compras son la asignación del flujo nuevo; NO propongas ventas: el plan por defecto no "
-    "vende. Los escenarios con venta son INFORMACIÓN con su costo fiscal estimado, no "
-    "recomendaciones ni prohibiciones; una venta con pérdida es tax-loss harvesting, estrategia "
-    "legítima. Solo si el usuario pide EXPLÍCITAMENTE forzar un escenario pese a su advertencia, "
-    "y en un turno posterior a este, llama a operacion='forzar_orden' con el id del escenario y "
-    "este token. No es asesoría tributaria ni financiera."
+    "El bloque del plan (tabla, escenarios con su costo fiscal, supuestos y disclaimer) se anexa "
+    "solo al final de tu respuesta: NO lo rehagas. No titules una sección «Plan de Compra Neta» "
+    "ni listes los escenarios uno por uno con sus cifras. Di en dos o tres frases, atribuyendo al "
+    "Gestor de Datos: a qué activos va el flujo, que el plan por defecto NO vende, y qué queda "
+    "fuera de banda para los próximos flujos; y remite al bloque. Los escenarios con venta son "
+    "INFORMACIÓN, no recomendaciones ni prohibiciones: no aconsejes vender ni no vender, y no "
+    "invites a forzar ninguno (el bloque ya explica cómo pedirlo). Una venta con pérdida es "
+    "tax-loss harvesting, estrategia legítima. Solo si el usuario pide EXPLÍCITAMENTE forzar un "
+    "escenario pese a su advertencia, y en un turno posterior a este, llama a "
+    "operacion='forzar_orden' con el id del escenario y este token. No es asesoría tributaria "
+    "ni financiera."
 )
 
 
@@ -371,8 +375,10 @@ class PlanOperativoTools:
             "compras_usd": {c.activo: c.monto_usd for c in resultante.compras if c.monto_usd},
             "acta_operativa": str(archivo) if archivo else None,
             "nota": (
-                "El override y la advertencia cruzada quedaron en el acta operativa; el bloque se "
-                "anexa solo. " + NO_EJECUTA
+                "El override y la advertencia cruzada quedaron en el acta operativa; el bloque "
+                "«Override registrado» se anexa solo: no lo rehagas ni repitas sus cifras. "
+                "Confirma en dos frases que quedó registrado y que el sistema no ejecuta nada. "
+                + NO_EJECUTA
             ),
             "disclaimer": resultante.disclaimer,
             CLAVE_ANEXO: renderizar_override(override, archivo),

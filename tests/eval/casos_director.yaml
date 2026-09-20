@@ -588,6 +588,8 @@ casos:
         criterios:
           status: {"gestionar_datos_y_fricciones:plan_compra": success}
           tools_prohibidas: ["gestionar_datos_y_fricciones:forzar_orden"]
+          # Que no retitule su propio «Plan de Compra Neta» se mide UNA vez, en
+          # `plan_compra_aporte` (conducta intermitente con el modelo real: ver Estado de S11).
       - usuario: vi la advertencia y la entiendo. Fuerza el escenario VOOG:vender_hasta_banda, es parte de mi estrategia.
         criterios:
           tools_obligatorias: ["gestionar_datos_y_fricciones:forzar_orden"]

@@ -20,6 +20,7 @@ from investmentsys.tools.fintual import NOMBRE_TOOL, OPERACIONES
 from tests.almacen import mundo_director
 from tests.integration.conftest import Llamada, LlmPorAgente, gestor_op
 from tests.integration.test_market_analyst import BORRADOR_GOLDEN
+from tests.integration.test_pipeline import CRIPTO_EUFORICO
 
 RUTA = RAIZ_PROYECTO / "tests" / "eval" / "casos_director.yaml"
 CASOS_DEL_SPEC = 12
@@ -575,6 +576,29 @@ def test_la_conducta_ideal_aprueba(
     evaluado = _correr(caso, GUIONES[caso_id], config, tmp_path)
     assert evaluado.aprobado, [f"{i.criterio}: {i.detalle}" for i in evaluado.incumplidos]
     assert evaluado.nota == 1.0 and evaluado.criterios
+
+
+def test_un_comite_con_veto_tambien_aprueba_sus_cifras_estan_respaldadas(
+    casos: Casos, config: Config, tmp_path: Path
+) -> None:
+    """Visto en el eval real de S11: la cronología anexada trae las cifras de la ronda VETADA
+    (pesos propuestos, el HHI del motivo); si no están en la salida de la herramienta,
+    ``cifras_respaldadas`` las da por inventadas. Viajan en ``deliberacion``."""
+    caso = next(c for c in casos.casos if c.id == "comite_se_ve_deliberar")
+    guion = {
+        **GUIONES["comite_se_ve_deliberar"],
+        "analista": [CRIPTO_EUFORICO],
+        "constructor": [
+            Llamada("construir_candidatos", recomendado="black_litterman"),
+            "Primera propuesta.",
+            Llamada("construir_candidatos", peso_max_por_activo={"IBIT": 0.05}),
+            "Endurecí el máximo de IBIT.",
+        ],
+    }
+    evaluado = _correr(caso, guion, config, tmp_path)
+    assert evaluado.aprobado, [f"{i.criterio}: {i.detalle}" for i in evaluado.incumplidos]
+    hitos = next(c for c in evaluado.criterios if c.criterio == "turno2.hitos_en_vivo")
+    assert "8 hitos" in hitos.detalle  # apertura, 2 de análisis, 2 rondas × 2, acta
 
 
 @pytest.mark.parametrize("caso_id", sorted(MALOS))
