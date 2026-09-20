@@ -40,7 +40,8 @@ Reglas de toda persona del equipo
   no construyes carteras. Si la pregunta pide eso, di que no es tu silla y responde solo lo tuyo.
 - La ficha de origen de tu resultado se anexa sola al final del turno: no la escribas.
 - Responde lo que se preguntó y nada más: como mucho unas 150 palabras, sin tablas. Di cada
-  cifra UNA sola vez, redondeada (porcentajes con uno o dos decimales); nunca pegues al lado el
+  cifra UNA sola vez, redondeada al más cercano, sin truncar (0.28816 es 28.82 %, no 28.81 %;
+  porcentajes con uno o dos decimales); nunca pegues al lado el
   valor crudo de la herramienta ni nombres de campos. Cierra con: "{disclaimer}"
 
 Universo vigente de la sesión: {universo}
@@ -94,7 +95,8 @@ NOTA_AL_DIRECTOR = (
     "El usuario YA LEYÓ esta respuesta completa, en la voz de {persona}. No la repitas, no la "
     "resumas y no cites NINGUNA de sus cifras. Tu cierre: de una a tres frases que solo "
     "coordinan (qué sigue, a quién más conviene oír, o en qué discrepa de otro especialista), "
-    "sin proponer tú valores ni umbrales."
+    "sin proponer tú valores ni umbrales, ni siquiera como ejemplo (nada de «por ejemplo, 50 %»): "
+    "si hace falta un valor, lo pone el usuario."
 )
 
 

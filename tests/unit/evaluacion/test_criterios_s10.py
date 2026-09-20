@@ -76,3 +76,13 @@ def test_una_tool_que_despacha_por_operacion_se_observa_como_tool_operacion() ->
         "gestionar_datos_y_fricciones:montos"
     )
     assert nombre_observado("estimar_mercado", {}) == "estimar_mercado"
+
+
+def test_truncar_no_es_redondear_el_detector_no_se_afloja() -> None:
+    """Decisión de S10: se probó admitir el truncado y 0.7578 pasó a respaldar "0.75"."""
+    fuentes = ['{"max_drawdown": 0.28816, "correlacion": 0.7578}']
+    assert cifras_sin_respaldo("drawdown del 28.82 %", fuentes) == []
+    assert cifras_sin_respaldo("drawdown del 28.81 %; correlación 0.75", fuentes) == [
+        "28.81 %",
+        "0.75",
+    ]
