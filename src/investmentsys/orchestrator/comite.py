@@ -8,7 +8,10 @@
   presentado y la confirmación (``RunState.aprobacion``).
 
 La custodia es la secuencia: no existe un ``confirmacion_usuario: bool`` que el propio LLM
-pueda rellenar. El token muere con cualquier cambio de ``universe_version`` o de lo resumido.
+pueda rellenar. El token muere con cualquier cambio de ``universe_version`` o de lo resumido, y
+(S9) solo vale en el turno del usuario INMEDIATAMENTE posterior al que presentó la orden: un
+"sí" confirma lo que el usuario acaba de leer, no algo de hace cinco mensajes. Toda falta a la
+secuencia es una ``ViolacionGateError`` controlada (``tests/test_gate_security.py``).
 """
 
 from __future__ import annotations
@@ -83,6 +86,25 @@ CLAVES_DEL_ACTA = (CLAVE_RUN_STATE, CLAVE_REPORTE, CLAVE_DIRECTORIO)
 
 class GateComiteError(ValueError):
     """El comité no se puede convocar (todavía): el mensaje dice qué falta y cómo resolverlo."""
+
+
+class ViolacionGateError(GateComiteError):
+    """Se intentó ``ejecutar`` fuera de la secuencia del gate: sin token vigente, en el mismo
+    turno de la solicitud, con turnos de por medio o tras un cambio de lo aprobado."""
+
+
+def _turno_anterior(ctx: ToolContext) -> str | None:
+    """``invocation_id`` del turno inmediatamente anterior al actual, según los eventos.
+
+    Cada mensaje del usuario abre una invocación de ADK y todos los eventos del turno (el del
+    usuario incluido) la llevan: el último id distinto del actual es el turno anterior.
+    """
+    previos = [
+        e.invocation_id
+        for e in ctx.session.events
+        if e.invocation_id and e.invocation_id != ctx.invocation_id
+    ]
+    return previos[-1] if previos else None
 
 
 def _rechazo(exc: Exception) -> dict[str, Any]:
@@ -209,30 +231,37 @@ class ComiteTools:
     async def _ejecutar(self, ctx: ToolContext, token: str) -> dict[str, Any]:
         cruda = ctx.state.get(CLAVE_SOLICITUD)
         if not token or cruda is None:
-            raise GateComiteError(
+            raise ViolacionGateError(
                 "no hay una solicitud vigente: llama primero a fase='solicitar', presenta el "
                 "resumen al usuario y espera su confirmación"
             )
         solicitud = SolicitudComite.model_validate(cruda)
         if token != solicitud.token:
-            raise GateComiteError("token desconocido o ya usado: vuelve a fase='solicitar'")
+            raise ViolacionGateError("token desconocido o ya usado: vuelve a fase='solicitar'")
         if ctx.invocation_id == solicitud.invocacion:
-            raise GateComiteError(
+            raise ViolacionGateError(
                 "el resumen se pidió en este mismo turno: el usuario aún no lo ha visto. "
                 "Preséntaselo y espera su respuesta; el token sigue vigente"
+            )
+        if _turno_anterior(ctx) != solicitud.invocacion:
+            ctx.state[CLAVE_SOLICITUD] = None
+            raise ViolacionGateError(
+                "token invalidado: la orden se presentó hace más de un turno y la confirmación "
+                "debe seguir inmediatamente a la orden. Vuelve a fase='solicitar', presenta la "
+                "orden vigente y espera la respuesta del usuario"
             )
         vigente = leer(ctx.state, CLAVE_UNIVERSO, Universe)
         aprobado = solicitud.resumen
         if vigente.version != aprobado.universe_version:
             ctx.state[CLAVE_SOLICITUD] = None
-            raise GateComiteError(
+            raise ViolacionGateError(
                 f"token invalidado: el universo cambió desde la solicitud (se aprobó "
                 f"{aprobado.universe_version[:12]}… y el vigente es {vigente.version[:12]}…). Lo "
                 "que el usuario aprobó ya no es lo que se correría: vuelve a fase='solicitar'"
             )
         if self._resumir(ctx.state, aprobado.material_usuario) != aprobado:
             ctx.state[CLAVE_SOLICITUD] = None
-            raise GateComiteError(
+            raise ViolacionGateError(
                 "token invalidado: las restricciones, la fecha o las views de partida cambiaron "
                 "desde la solicitud: vuelve a fase='solicitar' y presenta el resumen nuevo"
             )

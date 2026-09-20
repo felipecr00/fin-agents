@@ -8,6 +8,7 @@ from collections.abc import Callable
 import pytest
 from google.adk.agents import LlmAgent
 from google.adk.agents.invocation_context import InvocationContext
+from google.adk.events.event import Event
 from google.adk.sessions import InMemorySessionService
 from google.adk.tools import ToolContext
 
@@ -44,6 +45,9 @@ def turnos() -> Turnos:
     sesion = asyncio.run(servicio.create_session(app_name="tests", user_id="tests", state=inicial))
 
     def turno(invocation_id: str) -> ToolContext:
+        # Como el Runner: el mensaje del usuario abre la invocación y queda en los eventos.
+        if invocation_id not in {e.invocation_id for e in sesion.events}:
+            sesion.events.append(Event(invocation_id=invocation_id, author="user"))
         invocacion = InvocationContext(
             session_service=servicio,
             invocation_id=invocation_id,

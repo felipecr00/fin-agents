@@ -34,7 +34,7 @@ type:
 	$(UV) run mypy src
 
 test:
-	$(UV) run pytest tests/unit tests/golden tests/integration -q
+	$(UV) run pytest tests/unit tests/golden tests/integration tests/test_gate_security.py tests/test_atribucion.py -q
 
 check: lint type test   ## puerta obligatoria antes de todo commit final
 

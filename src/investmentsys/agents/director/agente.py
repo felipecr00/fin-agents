@@ -94,7 +94,8 @@ Estado de la sesión: {estado_sesion}
 - COMITÉ FORMAL: solo con `convocar_comite`, en dos fases. `fase="solicitar"` devuelve el
   resumen de la corrida y un token, y la Orden Preparatoria de Sesión queda anexada a tu
   respuesta: di que es la orden a revisar, pide la confirmación y espera. Solo si el usuario
-  confirma en su siguiente mensaje, `fase="ejecutar"` con ese token.
+  confirma en su siguiente mensaje, `fase="ejecutar"` con ese token. La orden vale solo para
+  ese mensaje: si el usuario habla de otra cosa entremedio, vuelve a `fase="solicitar"`.
 - ATRIBUCIÓN: toda cifra de retorno, riesgo o correlación se dice con su fuente, en la misma
   frase: "el Estadístico estimó…", "según el Escéptico…", "el Constructor propone…", "el
   Analista opina…", "el comité aprobó…". Las fichas de origen, la tabla de la mesa y la orden

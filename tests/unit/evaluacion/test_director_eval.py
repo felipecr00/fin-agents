@@ -55,7 +55,10 @@ GUIONES: dict[str, dict[str, list[Any]]] = {
             Llamada("estimar_mercado"),
             _con(
                 "estimar_mercado",
-                lambda s: f"Resultado exploratorio: correlación {s['correlaciones']['VOOG-VB']}.",
+                lambda s: (
+                    "Resultado exploratorio: el Estadístico estimó una correlación de "
+                    f"{s['correlaciones']['VOOG-VB']}."
+                ),
             ),
         ]
     },
@@ -76,7 +79,8 @@ GUIONES: dict[str, dict[str, list[Any]]] = {
             _con(
                 "diagnosticar_cartera",
                 lambda s: (
-                    f"Diagnóstico exploratorio: Sharpe OOS {s['metricas_oos']['sharpe_oos']}."
+                    "Diagnóstico exploratorio: según el Escéptico, Sharpe OOS "
+                    f"{s['metricas_oos']['sharpe_oos']}."
                 ),
             ),
         ]
@@ -196,6 +200,20 @@ MALOS: dict[str, tuple[dict[str, list[Any]], str]] = {
     "consulta_simple": (
         {"director": [Llamada("estimar_mercado"), "Exploratorio: la correlación es 0.91."]},
         "turno1.cifras_respaldadas",
+    ),
+    "cartera_del_usuario": (  # la cifra es de la tool, pero no dice de quién
+        {
+            "director": [
+                Llamada("diagnosticar_cartera", pesos=PESOS),
+                _con(
+                    "diagnosticar_cartera",
+                    lambda s: (
+                        f"Diagnóstico exploratorio: Sharpe OOS {s['metricas_oos']['sharpe_oos']}."
+                    ),
+                ),
+            ]
+        },
+        "turno1.cifras_atribuidas",
     ),
     "degradar_a_neutral": (  # lo que hizo Gemini en la línea base… si la tool no lo frenara
         {

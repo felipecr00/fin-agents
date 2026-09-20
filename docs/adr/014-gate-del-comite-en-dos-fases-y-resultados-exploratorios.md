@@ -82,3 +82,15 @@ código puro (`portfolio/cartera_usuario.py`), sin renormalizar.
   repetir `solicitar`.
 - Para `validado: false` en las salidas de `estimar_mercado` y `construir_candidatos` (que no
   se modifican), el Director las expone con un envoltorio que añade la marca: hito (b).
+
+## Enmienda (S9, 2026-09-20): el token vale solo en el turno inmediatamente posterior
+El spec de S9 y la propuesta v2 (§12.2) piden que `ejecutar` exija "un token emitido en el turno
+inmediatamente anterior". Hasta S8 bastaba con que fuera un turno DISTINTO del de la solicitud.
+Ahora `ejecutar` compara la invocación de la solicitud con la del turno anterior, leída de los
+eventos de la sesión (`_turno_anterior`); con turnos de por medio el token muere y hay que
+volver a `solicitar`, que re-presenta la Orden Preparatoria. Motivo: un "sí" confirma lo que el
+usuario acaba de leer, no una orden de hace cinco mensajes. Costo aceptado: una pregunta
+intercalada obliga a re-solicitar (una llamada determinista, sin LLM adicional relevante).
+Toda falta a la secuencia es una `ViolacionGateError` (subclase de `GateComiteError`) que la
+herramienta devuelve como `status="rechazado"`; `tests/test_gate_security.py` fija sobre el
+Runner real la semántica de `invocation_id` y del orden de eventos de la que esto depende.

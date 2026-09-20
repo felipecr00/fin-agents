@@ -2,7 +2,7 @@
 
 - Fecha: 2026-09-20
 - Sprint: S9
-- Estado: propuesta (pendiente de aprobación en el checkpoint 2 de S9)
+- Estado: aceptada (2026-09-20, checkpoint 2 de S9)
 
 ## Contexto
 S9 pide que cada respuesta lleve una ficha de origen determinista (especialista, herramienta,

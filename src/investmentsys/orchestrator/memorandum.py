@@ -55,6 +55,7 @@ def renderizar_memorandum(resumen: ResumenComite, max_iteraciones: int) -> str:
             "",
             QUE_HARA.format(max_iteraciones=max_iteraciones),
             "",
-            f"La orden vale una vez y caduca si cambia cualquiera de estos parámetros. {PREGUNTA}",
+            "La orden vale una vez, para tu siguiente mensaje, y caduca si cambia cualquiera de "
+            f"estos parámetros. {PREGUNTA}",
         ]
     )

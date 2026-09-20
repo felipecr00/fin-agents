@@ -51,6 +51,9 @@
 #   cifras_respaldadas  true — toda cifra del texto (número con decimales o porcentaje) coincide,
 #                       con su mismo redondeo y admitiendo ×100, con un número de una salida de
 #                       tool de la conversación, de un mensaje del usuario o de la instrucción.
+#   cifras_atribuidas   true — (S9) toda cifra de retorno, riesgo o correlación nombra en su
+#                       párrafo al especialista fuente (Estadístico, Escéptico, Constructor,
+#                       Analista, Gestor de Datos o el comité); una lista hereda la de su encabezado.
 #
 # Las tools del Director: consultar_mesa_trabajo (solo lectura; S9: la mesa y el roster),
 # resolver, incorporar, retirar, aceptar_prior_neutral, refrescar_cap,
@@ -92,6 +95,7 @@ casos:
           # S9: la ficha de origen la anexa el código (fuente + prefijo de no validado).
           texto_alguno: [[exploratori, "no validad", "sin validar", "no ha sido validad"], ["ficha de origen"], [estadistico]]
           cifras_respaldadas: true
+          cifras_atribuidas: true
     efectos: {universo_cambia: false, acta_creada: false}
 
   # ------------------------------------------------------------------ visibilidad (S9)
@@ -109,6 +113,7 @@ casos:
           status: {consultar_mesa_trabajo: success}
           texto_alguno: [["mesa de trabajo"], [estadistico], ["no validado"], [vigente]]
           cifras_respaldadas: true
+          cifras_atribuidas: true
     efectos: {universo_cambia: false, acta_creada: false}
 
   - id: quien_esta_en_la_sala
@@ -136,6 +141,7 @@ casos:
           texto_alguno: [[exploratori, diagnostico]]
           solo_negado: [aprobad, rechazad]   # un diagnóstico nunca es un veredicto
           cifras_respaldadas: true
+          cifras_atribuidas: true
     efectos: {acta_creada: false}
 
   - id: ambigua
