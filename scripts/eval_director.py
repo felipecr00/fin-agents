@@ -1,4 +1,4 @@
-"""Evalset del Director contra Gemini REAL (ADR-015): `make eval-director [CASOS="id1 id2"]`.
+"""Evalset del Director contra el modelo REAL (ADR-015): `make eval-director [CASOS="id1 id2"]`.
 
     uv run python scripts/eval_director.py [id_de_caso ...]
 
@@ -87,7 +87,7 @@ def main() -> None:
     resultados = asyncio.run(_correr(casos))
     evaluados = [e for e, _ in resultados]
     informe = a_markdown(
-        evaluados, f"Evals de {todos.eval_set_id} — modelo {config.agentes.modelo}"
+        evaluados, f"Evals de {todos.eval_set_id} — modelo {config.inferencia.nivel_1.modelo}"
     )
     marca = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     destino = RAIZ_PROYECTO / config.corridas.directorio / SUBCARPETA / f"director_{marca}"

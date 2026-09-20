@@ -28,7 +28,7 @@ def main() -> None:
     config = cargar_config()
     resultado = leer_resultado(ultimo_resultado(Path(sys.argv[1]).resolve()))
     casos = casos_evaluados(resultado)
-    titulo = f"Evals de {resultado.eval_set_id} — modelo {config.agentes.modelo}"
+    titulo = f"Evals de {resultado.eval_set_id} — modelo {config.inferencia.nivel_1.modelo}"
     informe = a_markdown(casos, titulo)
     print(informe)
     destino = RAIZ_PROYECTO / config.corridas.directorio / SUBCARPETA

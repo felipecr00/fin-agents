@@ -23,7 +23,7 @@ de servicio. Verificado el 2026-09-17 contra la guía oficial (`google.github.io
 
 Evidencia medida (local, 2026-09-17): `adk api_server apps` —el mismo proceso que corre dentro
 del contenedor en **ambos** destinos— sirvió el `Workflow` raíz por HTTP: `POST /apps/pipeline/
-users/u1/sessions` + `POST /run` completaron una corrida real con `gemini-3.5-flash` en 24 s
+users/u1/sessions` + `POST /run` completaron una corrida real con el modelo de Nivel 1 en 24 s
 (13 eventos, veredicto APROBADA, `runs/20260917T140754_899029Z/`), sin errores en el log. Como
 Agent Engine ejecuta ese mismo `adk api_server`, el riesgo abierto en ADR-005 ("¿despliega
 Agent Engine un `Workflow` raíz?") deja de depender de la serialización de `AdkApp`; se
@@ -42,20 +42,20 @@ Nuestro agente (`apps/pipeline`) no es autocontenido: importa `investmentsys` (`
    - `--no-allow-unauthenticated`; se invoca con identity token.
    - Sesiones `memory://` y `--max-instances=1` (con sesiones en memoria, dos instancias
      romperían "crear sesión → correr"). Dev es desechable; la durabilidad es de prod.
-   - Gemini por **API key desde Secret Manager**
-     (`--set-secrets GOOGLE_API_KEY=gemini-api-key:<versión>`, versión fija), leída por una
+   - El LLM de Nivel 1 por **API key desde Secret Manager**
+     (`--set-secrets GOOGLE_API_KEY=<secreto de la llave>:<versión>`, versión fija), leída por una
      cuenta de servicio de ejecución propia cuyo único permiso es `secretAccessor` sobre ese
      secreto. La llave es de **Vertex AI en modo express** (API key de GCP restringida a
      `aiplatform.googleapis.com`) con `GOOGLE_GENAI_USE_ENTERPRISE=True` y **sin**
      `GOOGLE_CLOUD_PROJECT`/`GOOGLE_CLOUD_LOCATION` en el entorno. Medido el 2026-09-17: con
      proyecto y región definidos el SDK ignora la llave y usa ADC; sin el flag la manda a
      `generativelanguage` y recibe 403 `API_KEY_SERVICE_BLOCKED`. La llave free tier de la
-     Gemini API usada en S3 tiene 20 peticiones/día por modelo (~4 corridas): inservible.
+     API de AI Studio usada en S3 tiene 20 peticiones/día por modelo (~4 corridas): inservible.
 2. **Prod = `adk deploy agent_engine`** (camino "standard deployment" de la guía) con
    `--extra_packages src/investmentsys config.yaml data`, `requirements.txt` generado con
    `uv export --locked --no-dev` (mismas versiones que dev y local) y `--agent_engine_id`
    para actualizar siempre la misma instancia. Sesiones administradas
-   (`agentengine://`, el valor por defecto del despliegue). Gemini vía Vertex AI con la
+   (`agentengine://`, el valor por defecto del despliegue). El LLM de Nivel 1 vía Vertex AI con la
    identidad del servicio: **prod no tiene ningún secreto**.
 3. **`RAIZ_PROYECTO` se localiza subiendo desde `config.py` hasta encontrar `config.yaml`**,
    en vez de `parents[2]`: da el mismo resultado en el repo y funciona en `/app` de ambos
@@ -74,7 +74,7 @@ Nuestro agente (`apps/pipeline`) no es autocontenido: importa `investmentsys` (`
   admite paquetes extra; habría que vendorizar `investmentsys`, `config.yaml` y los datos dentro
   de `apps/pipeline/`. Además instala dependencias sin lock.
 - **Dev también con Vertex AI en lugar de API key**: eliminaría el único secreto y haría que
-  dev y prod usen el mismo backend de Gemini (S3 ya enseñó que los backends difieren: el 400
+  dev y prod usen el mismo backend del modelo (S3 ya enseñó que los backends difieren: el 400
   por `additionalProperties`). Resuelto a medias por la llave que consiguió el usuario: es de
   Vertex AI (modo express), así que dev ya usa el backend de prod y sigue ejercitando Secret
   Manager. Pasar dev a la identidad del servicio (sin llave) sigue siendo cambiar dos flags.
@@ -102,11 +102,11 @@ Nuestro agente (`apps/pipeline`) no es autocontenido: importa `investmentsys` (`
 - Dev y prod usan el mismo backend (Vertex AI); solo cambia la credencial (llave express en
   dev, identidad del servicio en prod). **Dev y prod van en `us-central1`** (decisión del
   usuario; `southamerica-west1` no sirve el modelo).
-- Los Gemini 3.x solo se sirven en el endpoint `global` de Vertex. Medido el 2026-09-17: el
+- los modelos de Nivel 1 vigentes solo se sirven en el endpoint `global` de Vertex. Medido el 2026-09-17: el
   primer despliegue a Agent Engine sirvió el `Workflow` raíz (cierra el riesgo de ADR-005) y
   el quant calculó, pero el analista recibió 404 porque la plantilla de ADK fija
   `GOOGLE_CLOUD_LOCATION=us-central1`. Solución: `agentes.ubicacion_vertex: global` en
-  `config.yaml` y `agents/modelo.py`, que entrega un `Gemini(client_kwargs={"location": …})`
+  `config.yaml` y `agents/modelo.py`, que entrega el cliente del modelo con `client_kwargs={"location": …}`
   —el patrón que documenta ADK— solo cuando el cliente va a Vertex con proyecto. Las sesiones
   administradas siguen en la región del recurso.
 - Agent Engine mantiene por defecto 1 instancia encendida (`min_instances` = 1, máx. 100):

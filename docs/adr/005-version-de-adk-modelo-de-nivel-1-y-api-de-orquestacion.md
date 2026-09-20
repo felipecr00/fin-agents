@@ -1,4 +1,7 @@
-# ADR 005: Versión de google-adk, modelo Gemini y API de orquestación
+# ADR 005: Versión de google-adk, modelo de Nivel 1 y API de orquestación
+
+> Nota (S9, ADR-018): los nombres comerciales de modelos se retiraron de este documento; la
+> asignación real de cada nivel de inferencia vive solo en `config.yaml: inferencia`.
 
 - Fecha: 2026-09-17
 - Sprint: S3
@@ -17,13 +20,13 @@ google-genai 2.24.0):
 | Workflow agents | `SequentialAgent`, `ParallelAgent`, `LoopAgent(max_iterations=…)`; el bucle se corta con `EventActions(escalate=True)`. **Los tres están marcados `@deprecated` en 2.9.1** ("in favor of Workflow and will be removed in a future version"). La documentación web todavía no lo menciona. |
 | Grafo | `google.adk.workflow.Workflow(edges=[…])`, `JoinNode`, `START`, rutas con `Event(route=…)`, `RetryConfig`. Nodos: agentes, funciones `(ctx: Context)` o workflows. Los ciclos **no** se acotan solos. |
 | Function tools | Función Python con type hints y docstring, envuelta por `google.adk.tools.function_tool.FunctionTool`; `ToolContext` (alias de `google.adk.agents.context.Context`) se inyecta por anotación y da acceso a `state` y `actions`. Retorno preferido: `dict` con `status`. |
-| `output_schema` + `tools` | Solo nativo en Gemini vía Vertex (`gemini_output_schema_and_tools`); con API key ADK cae a un tool `set_model_response` "que puede no ser fiable". |
-| Autenticación | Variables de entorno: `GOOGLE_API_KEY` (Gemini API) o `GOOGLE_CLOUD_PROJECT` + `GOOGLE_CLOUD_LOCATION` + `GOOGLE_GENAI_USE_ENTERPRISE=True` (Google Cloud; 2.9.1 aún acepta `GOOGLE_GENAI_USE_VERTEXAI`). |
+| `output_schema` + `tools` | Solo nativo en el proveedor de Nivel 1 vía Vertex (una opción de ADK dedicada a ese proveedor); con API key ADK cae a un tool `set_model_response` "que puede no ser fiable". |
+| Autenticación | Variables de entorno: `GOOGLE_API_KEY` (API de AI Studio) o `GOOGLE_CLOUD_PROJECT` + `GOOGLE_CLOUD_LOCATION` + `GOOGLE_GENAI_USE_ENTERPRISE=True` (Google Cloud; 2.9.1 aún acepta `GOOGLE_GENAI_USE_VERTEXAI`). |
 
-Modelos Gemini de texto estables hoy (página de modelos y changelog de la Gemini API):
-`gemini-3.8-flash` (GA 2026-09-02), `3.7-flash`, `3.6-flash`, `3.5-flash`, `3.5-flash-lite`,
-`2.5-flash`, `2.5-pro`. El único Pro de la serie 3 es `gemini-3.1-pro-preview` (preview).
-`gemini-2.0-flash` está apagado.
+Modelos de texto estables del proveedor a la fecha (página de modelos y changelog de la API de
+AI Studio): la familia rápida de la serie 3 en cuatro versiones —la más nueva, GA el
+2026-09-02— más una variante ligera, y la serie 2.5 en variantes rápida y grande. El único
+modelo grande de la serie 3 está en preview. La serie 2.0 está apagada.
 
 Spike (fuera del repo, LLM falso, 2.9.1): la topología de S3
 `[analista ∥ quant] → constructor ⇄ validador (máx. 2) → reporter` se ejecutó con ambas
@@ -34,7 +37,7 @@ son funciones `(ctx)` y no hay avisos.
 ## Decisión
 1. **Versión**: fijar `google-adk==2.9.1` en `pyproject.toml` (hoy `>=2.9,<3`). Subir de
    versión es un cambio deliberado con su PR, no un efecto de `uv lock`.
-2. **Modelo**: `gemini-3.5-flash`, como id fijo en `config.yaml` (`agentes.modelo`), nunca
+2. **Modelo**: el modelo de Nivel 1, como id fijo en `config.yaml` (`agentes.modelo`), nunca
    un alias `-latest`.
 3. **Orquestación**: construir el orquestador con `Workflow` en lugar de
    `SequentialAgent`/`ParallelAgent`/`LoopAgent`. El tope de iteraciones
@@ -50,11 +53,11 @@ es GA y tiene id fijo, requisito de reproducibilidad y de los endpoints regional
 (donde el alias `-latest` "may not work").
 
 ## Alternativas descartadas
-- **`gemini-3.8-flash`**: más nuevo, pero con 15 días en GA y sin referencias en ADK 2.9.1.
+- **la versión siguiente del modelo de Nivel 1**: más nuevo, pero con 15 días en GA y sin referencias en ADK 2.9.1.
   Cambiarlo es una línea de `config.yaml`; se reevalúa en S5 con evalsets.
-- **`gemini-3.1-pro-preview` / `gemini-2.5-pro`**: un preview no se fija en un sistema
-  reproducible; 2.5-pro es una generación anterior y más caro para una tarea que no lo pide.
-- **`gemini-flash-latest`**: el modelo cambiaría sin que cambie el repo.
+- **El modelo grande de la serie 3 (preview) / el grande de la serie 2.5**: un preview no se
+  fija en un sistema reproducible; el de la serie 2.5 es una generación anterior y más caro para una tarea que no lo pide.
+- **El alias `-latest` de la familia rápida**: el modelo cambiaría sin que cambie el repo.
 - **Workflow agents clásicos** (lo que dice literalmente el spec de S3): funcionan hoy, pero
   nacerían deprecados y habría que migrarlos antes de S4. Se mantiene la topología del spec;
   cambia la clase que la ejecuta.

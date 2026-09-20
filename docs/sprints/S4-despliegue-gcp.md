@@ -38,7 +38,7 @@ Cerrado el 2026-09-17 (rama `sprint/S4-despliegue-gcp`, PR contra `main`). Proye
   solo autenticado, 0-1 instancias, llave de Vertex AI (modo express) en Secret Manager con
   versión fija, leída por `fin-agents-run` (único permiso: `secretAccessor` sobre ese secreto).
 - **Prod — Agent Engine** (`reasoningEngines/456971875910680576`): `make deploy-prod` con
-  `--extra_packages`, `requirements.txt` exportado de `uv.lock`, sesiones administradas, Gemini
+  `--extra_packages`, `requirements.txt` exportado de `uv.lock`, sesiones administradas, el LLM
   con la identidad del servicio (sin secretos) y escalado 0-1 (`.agent_engine_config.json`).
   **Agent Engine sirve el `Workflow` raíz**: cerrado el riesgo abierto en ADR-005.
 - **CI/CD**: `deploy.yaml` (merge a `main` → `make check` → dev; prod solo `workflow_dispatch`)
@@ -56,10 +56,10 @@ Cerrado el 2026-09-17 (rama `sprint/S4-despliegue-gcp`, PR contra `main`). Proye
   6 llamadas, 7.751 + 5.498 tokens ≈ US$0,06) y la puesta en marcha de WIF paso a paso.
 - `make check` verde: 236 tests (16 nuevos).
 
-### Añadido tras el cierre (rama `sprint/S4-reintentos-gemini`)
+### Añadido tras el cierre (rama `sprint/S4-reintentos-modelo`)
 - Reintentos del modelo: la llave de Vertex AI en modo express devolvió 429 en 3 de ~10
   corridas del 2026-09-17 (cuota por minuto) y cada uno tumbaba la corrida. `resolver_modelo`
-  entrega siempre un `Gemini` con `HttpRetryOptions` desde `agentes.reintentos_modelo`
+  entrega siempre el cliente del modelo con `HttpRetryOptions` desde `agentes.reintentos_modelo`
   (6 intentos; esperas 2-4-8-16-32 s). Verificado con una API local falsa (dos 429 → respuesta
   correcta en 3 peticiones; sin reintentos, `_ResourceExhaustedError`) y con corrida real.
 
@@ -90,8 +90,8 @@ Cerrado el 2026-09-17 (rama `sprint/S4-despliegue-gcp`, PR contra `main`). Proye
   producción, disco de solo lectura) destapó casi todo antes del primer despliegue.
 - Credenciales de google-genai: con `GOOGLE_CLOUD_PROJECT`/`LOCATION` definidos el SDK ignora
   la API key y usa ADC; una llave restringida a `aiplatform` necesita
-  `GOOGLE_GENAI_USE_ENTERPRISE=True`; los Gemini 3.x solo se sirven en `global`. La llave free
-  tier de la Gemini API (20 peticiones/día por modelo) no sirve ni para una tarde de pruebas.
+  `GOOGLE_GENAI_USE_ENTERPRISE=True`; los modelos de Nivel 1 vigentes solo se sirven en `global`. La llave free
+  tier de la API de AI Studio (20 peticiones/día por modelo) no sirve ni para una tarde de pruebas.
 - Los valores por defecto de la nube cuestan: Agent Engine deja 1 instancia encendida (≈ US$60
   al mes) si no se declara `min_instances: 0`.
 - `read -s` en un comando pensado para pegarse o ejecutarse con un botón crea secretos vacíos:

@@ -2,12 +2,12 @@
 #
 # Quién los corre: `investmentsys.evaluacion.director` (arnés propio, NO `adk eval`). El mismo
 # arnés se usa en `make check` con un LLM guionado (tests/unit/evaluacion/test_director_eval.py)
-# y en `make eval-director` contra Gemini real. Cada caso corre en un MUNDO AISLADO: un almacén
+# y en `make eval-director` contra el modelo real. Cada caso corre en un MUNDO AISLADO: un almacén
 # sembrado con el universo de referencia (VOOG, BNS, IBIT, VB, caps de procedencia `usuario`)
 # y una fuente de mercado falsa que conoce dos tickers más:
 #   AAPL  acción con capitalización en la fuente  → alta sin fricción
 #   QQQ   ETF sin capitalización en la fuente     → hay que resolver el prior
-# Cualquier otro ticker no existe. Nada toca `data/`, `runs/` ni la red (salvo Gemini).
+# Cualquier otro ticker no existe. Nada toca `data/`, `runs/` ni la red (salvo el modelo real).
 #
 # ---------------------------------------------------------------------------- FORMATO
 # eval_set_id, nombre, descripcion: metadatos del evalset.

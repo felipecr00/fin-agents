@@ -195,7 +195,7 @@ check: lint type test   ## puerta obligatoria antes de todo commit final
 run-local:      ## UI de desarrollo de ADK
 	uv run adk web src/investmentsys
 
-eval:           ## evalset del analista contra Gemini real (S5, ADR-010); ver el Makefile
+eval:           ## evalset del analista contra el modelo real (S5, ADR-010); ver el Makefile
 	uv run --group eval adk eval apps/market_analyst tests/eval/market_analyst.evalset.json \
 		--config_file_path tests/eval/test_config.json
 
@@ -245,7 +245,7 @@ con CI verde. Así la IA físicamente no puede integrar código roto.
 
 ---
 
-## 7. Prompt de arranque para Claude Code (primera sesión, Sprint 0)
+## 7. Prompt de arranque para el asistente de código (primera sesión, Sprint 0)
 
 > Lee CLAUDE.md completo. El sprint activo es S0 (docs/sprints/S0-harness.md).
 > Ejecuta el Sprint 0 en este orden: (1) estructura de carpetas y pyproject con

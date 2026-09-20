@@ -48,7 +48,7 @@ def crear_reporter(
     return LlmAgent(
         name=NOMBRE,
         description="Redacta la narrativa del informe final desde RunState.",
-        model=resolver_modelo(config.agentes, modelo),
+        model=resolver_modelo(config, NOMBRE, modelo),
         instruction=instruccion,
         output_key=clave_salida,
         generate_content_config=types.GenerateContentConfig(

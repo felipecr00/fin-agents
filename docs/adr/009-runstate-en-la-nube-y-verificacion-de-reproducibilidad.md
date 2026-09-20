@@ -39,7 +39,7 @@ corrida no mide nada.
 ## Alternativas descartadas
 - **Comparar dos corridas completas** (remota y local): falla por el LLM aunque el núcleo sea
   idéntico; obligaría a "ajustar" la comparación hasta que pase.
-- **Temperatura 0 + semilla del modelo** para forzar views iguales: Gemini no garantiza
+- **Temperatura 0 + semilla del modelo** para forzar views iguales: el proveedor no garantiza
   determinismo ni entre llamadas ni entre backends (API vs. Vertex), y cambiaría el
   comportamiento del analista solo para satisfacer un test.
 - **Endpoint remoto con views inyectadas** (saltarse al analista en la nube): añade una

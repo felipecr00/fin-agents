@@ -10,7 +10,7 @@ financiera.
 | Dónde | Cloud Run, servicio `fin-agents-dev` | Vertex AI Agent Engine (Agent Runtime), `fin-agents-prod` |
 | Proyecto / región | `ai-exploratory` / `us-central1` | ídem; el modelo se pide a `global` (`agentes.ubicacion_vertex`) |
 | Empaquetado | `Dockerfile` + `uv sync --locked`, construido por Cloud Build | plantilla de `adk deploy agent_engine` + `requirements.txt` exportado de `uv.lock` |
-| Gemini | Vertex AI modo express: API key en Secret Manager (`gemini-api-key`) | Vertex AI con la identidad del servicio; sin secretos |
+| LLM de Nivel 1 | Vertex AI modo express: API key en Secret Manager (el secreto de `config.yaml: inferencia.nivel_1.secreto_llave`) | Vertex AI con la identidad del servicio; sin secretos |
 | Sesiones | en memoria, 1 instancia máx. (desechable) | administradas por Agent Engine (persisten el `RunState`) |
 | Acceso | solo autenticado (identity token, `roles/run.invoker`) | IAM de Vertex AI (access token, `roles/aiplatform.user`) |
 | Se despliega | en cada merge a `main` | a mano: Actions → deploy → Run workflow → `prod` |
@@ -155,7 +155,7 @@ A mano (mismos comandos que usa el workflow), con `gcloud auth login` y, para pr
 Sin `AGENT_ENGINE_ID`, `deploy-prod` crea una instancia **nueva** (y otra factura de cómputo):
 úsalo solo la primera vez y guarda el id en la variable `AGENT_ENGINE_ID` de GitHub.
 
-Rotar la llave de Gemini de dev: `gcloud secrets versions add gemini-api-key --data-file=-` y
+Rotar la llave del modelo de dev: `gcloud secrets versions add <inferencia.nivel_1.secreto_llave> --data-file=-` y
 `make deploy-dev PROYECTO=… VERSION_SECRETO=<n>` (la versión va fijada, no `latest`).
 
 ## Verificar (corrida real + replay)
@@ -172,7 +172,7 @@ desviación máxima 8.9e-16; prod 140 valores, 1.3e-15; tolerancia 1e-8.
   o cambia de rama; no es un fallo numérico.
 - `DIFERENCIA …`: el núcleo dio otro número en la nube. Es un hallazgo: no subas la tolerancia.
 - HTTP 403 en dev: a tu usuario le falta `roles/run.invoker` sobre el servicio.
-- HTTP 500: error dentro de la corrida; mira los logs. Los 429/503 de Gemini se reintentan
+- HTTP 500: error dentro de la corrida; mira los logs. Los 429/503 del modelo se reintentan
   solos (`agentes.reintentos_modelo`: 6 intentos, ≈ 1 min de espera en total); si aun así
   llega uno, la cuota está agotada de verdad: espera unos minutos.
 
@@ -182,7 +182,7 @@ Todo en local; nada de esto se despliega ni entra en CI salvo sus tests unitario
 
 | Comando | Qué hace | LLM | Salida |
 |---|---|---|---|
-| `make eval` | los dos evalsets contra Gemini real: `eval-analista` (11 casos, `adk eval`) y `eval-director` (19 casos, arnés propio con un almacén aislado por caso, [ADR-015](adr/015-evaluacion-del-director-con-arnes-propio-y-promocion-de-apps-equipo.md)); código 1 si alguno falla ([ADR-010](adr/010-evaluacion-del-analista-con-metrica-determinista-en-adk-eval.md)) | sí | `runs/evals/<id>.md` y `apps/market_analyst/.adk/eval_history/` |
+| `make eval` | los dos evalsets contra el modelo real: `eval-analista` (11 casos, `adk eval`) y `eval-director` (19 casos, arnés propio con un almacén aislado por caso, [ADR-015](adr/015-evaluacion-del-director-con-arnes-propio-y-promocion-de-apps-equipo.md)); código 1 si alguno falla ([ADR-010](adr/010-evaluacion-del-analista-con-metrica-determinista-en-adk-eval.md)) | sí | `runs/evals/<id>.md` y `apps/market_analyst/.adk/eval_history/` |
 | `make eval EVALSET=tests/eval/market_analyst.evalset.json:ambigua_bns` | un solo caso | sí | ídem |
 | `make eval-director CASOS="saludo degradar_a_neutral"` | solo esos casos del Director (sin `CASOS`, los 19); cada caso en un almacén aislado, sin tocar `data/` ni Tiingo; un caso que no termina en 5 min cuenta como fallido | sí | `runs/evals/director_<marca>/` (`resumen.md` y `conversaciones.md`) |
 | `uv run python scripts/demo_director.py` | sesión completa de demostración (A → B → altas → comité) en un almacén aislado | sí | `runs/demos/director_<marca>/` (transcripción y acta) |
@@ -218,7 +218,7 @@ Todo en local; nada de esto se despliega ni entra en CI salvo sus tests unitario
 
 | Concepto | Precio | Para este proyecto |
 |---|---|---|
-| Gemini 3.5 Flash | US$1,50 / 1M tokens de entrada, US$9,00 / 1M de salida (incluye *thinking*) | Medido en prod: corrida de 2 iteraciones = 6 llamadas, 7.751 + 5.498 tokens ≈ **US$0,06**; de 1 iteración ≈ US$0,04 |
+| Modelo de Nivel 1 (`config.yaml`) | US$1,50 / 1M tokens de entrada, US$9,00 / 1M de salida (incluye *thinking*) | Medido en prod: corrida de 2 iteraciones = 6 llamadas, 7.751 + 5.498 tokens ≈ **US$0,06**; de 1 iteración ≈ US$0,04 |
 | Cloud Run (dev) | por vCPU-s y GiB-s mientras atiende; escala a cero | Una corrida ≈ 30-60 s de 1 vCPU/1 GiB. Dentro de la capa gratuita (180.000 vCPU-s/mes) → **≈ US$0** |
 | Cloud Build | 2.500 min-build gratis/mes | Un build ≈ 2-3 min → **≈ US$0** con decenas de merges al mes |
 | Artifact Registry | 0,5 GB gratis; luego ≈ US$0,10/GB-mes | Cada imagen ≈ 0,4 GB y se acumulan: **limpia versiones viejas** de `cloud-run-source-deploy` o pon una política de limpieza |
@@ -235,10 +235,10 @@ o desde la consola.
 
 | Identidad | Para qué | Permisos |
 |---|---|---|
-| `fin-agents-run@…` | cuenta con la que corre el contenedor de dev | `secretmanager.secretAccessor` solo sobre `gemini-api-key` |
+| `fin-agents-run@…` | cuenta con la que corre el contenedor de dev | `secretmanager.secretAccessor` solo sobre el secreto de la llave del LLM |
 | `<nº>-compute@developer…` | la usa Cloud Build para construir | `run.builder` |
 | `fin-agents-deployer@…` | la suplanta GitHub Actions vía WIF | `run.sourceDeveloper`, `serviceusage.serviceUsageConsumer`, `aiplatform.user` (proyecto); `iam.serviceAccountUser` solo sobre `fin-agents-run` (identidad del servicio) y sobre `<nº>-compute@developer…` (identidad del build) |
-| Agente de servicio de Agent Engine | corre prod y llama a Gemini | lo gestiona Google |
+| Agente de servicio de Agent Engine | corre prod y llama al LLM de Nivel 1 | lo gestiona Google |
 
 ## Workload Identity Federation: puesta en marcha (una sola vez)
 

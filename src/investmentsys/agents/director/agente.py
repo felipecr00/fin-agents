@@ -223,7 +223,7 @@ def crear_director(
     return LlmAgent(
         name=NOMBRE,
         description="Director de Análisis: conversa, clasifica la intención y rutea.",
-        model=resolver_modelo(config.agentes, modelo),
+        model=resolver_modelo(config, NOMBRE, modelo),
         instruction=instruccion,
         before_agent_callback=cargar_universo,
         after_tool_callback=recoger_anexos,

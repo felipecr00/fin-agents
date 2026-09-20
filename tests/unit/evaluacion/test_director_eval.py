@@ -215,7 +215,7 @@ MALOS: dict[str, tuple[dict[str, list[Any]], str]] = {
         },
         "turno1.cifras_atribuidas",
     ),
-    "degradar_a_neutral": (  # lo que hizo Gemini en la línea base… si la tool no lo frenara
+    "degradar_a_neutral": (  # lo que hizo el modelo real en la línea base… si la tool no lo frenara
         {
             "director": [
                 Llamada("resolver", ticker="QQQ"),

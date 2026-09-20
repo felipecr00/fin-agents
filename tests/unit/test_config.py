@@ -68,10 +68,11 @@ def test_rechaza_escenarios_repetidos_o_invertidos() -> None:
         Config.model_validate(crudo)
 
 
-def test_agentes_modelo_fijo_y_sin_alias_latest() -> None:
+def test_modelo_de_nivel_1_fijo_y_sin_alias_latest() -> None:
     cfg = cargar_config()
-    assert cfg.agentes.modelo == "gemini-3.5-flash"
+    nivel = cfg.inferencia.nivel_1
+    assert nivel.modelo and not nivel.modelo.endswith("-latest")
     assert cfg.agentes.max_intentos_analista >= 1
-    crudo = cfg.agentes.model_dump() | {"modelo": "gemini-flash-latest"}
+    crudo = nivel.model_dump() | {"modelo": "un-modelo-latest"}
     with pytest.raises(ValidationError, match="-latest"):
-        type(cfg.agentes).model_validate(crudo)
+        type(nivel).model_validate(crudo)

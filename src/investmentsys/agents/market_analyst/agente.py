@@ -237,7 +237,7 @@ def crear_market_analyst(
     llm = LlmAgent(
         name=f"{NOMBRE}_llm",
         description="Redacta views de mercado en formato Black-Litterman.",
-        model=resolver_modelo(config.agentes, modelo),
+        model=resolver_modelo(config, NOMBRE, modelo),
         instruction=instruccion,
         output_schema=MarketViewsBorrador,
         output_key=CLAVE_BORRADOR,

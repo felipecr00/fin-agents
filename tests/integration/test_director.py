@@ -424,7 +424,7 @@ class TestAltaConversacional:
     def test_degradar_a_neutral_exige_un_turno_del_usuario_tras_la_advertencia(
         self, config: Config, gestor: GestorDatos, tmp_path: Path
     ) -> None:
-        """Lo que hizo Gemini en la línea base (ADR-015): elegir "c" y degradar en el acto."""
+        """Lo que hizo el modelo en la línea base (ADR-015): elegir "c" y degradar en el acto."""
         llm = LlmPorAgente(
             director=[
                 Llamada("incorporar", ticker="QQQ"),

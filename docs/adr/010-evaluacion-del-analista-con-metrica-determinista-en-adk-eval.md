@@ -53,7 +53,7 @@ Verificado el 2026-09-18 en `adk.dev/evaluate/` y en el paquete instalado (googl
    esperado no es señal; ante contradicción, callar o confianza acotada; el conocimiento
    general no supera ese tope; sin material, opinar desde conocimiento general con el tope.
 
-### Evidencia (gemini-3.5-flash, temperatura 0.2, 2026-09-18)
+### Evidencia (modelo de Nivel 1, temperatura 0.2, 2026-09-18)
 | Agente | Casos | Corrida 1 | Corrida 2 | Corrida 3 |
 |---|---|---|---|---|
 | Instrucción de S3 (línea base) | 10 | 9/10 | 9/10 | 8/10 |

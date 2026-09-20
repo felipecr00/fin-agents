@@ -7,7 +7,8 @@ PROYECTO ?= $(GOOGLE_CLOUD_PROJECT)
 REGION ?= us-central1
 SERVICIO_DEV ?= fin-agents-dev
 SA_EJECUCION ?= fin-agents-run@$(PROYECTO).iam.gserviceaccount.com
-SECRETO_GEMINI ?= gemini-api-key
+# Nombre del secreto con la llave del LLM: sale de config.yaml (inferencia.nivel_1.secreto_llave).
+SECRETO_LLM ?= $(shell sed -n 's/^ *secreto_llave: *//p' config.yaml)
 VERSION_SECRETO ?= 1
 # Opcional (S6): con SECRETO_TIINGO=tiingo-api-key dev recibe TIINGO_API_KEY. Vacío por defecto:
 # hoy ninguna corrida remota actualiza datos y un secreto inexistente tumbaría el despliegue.
@@ -22,7 +23,7 @@ COMA := ,
 EVALSET ?= tests/eval/market_analyst.evalset.json
 APP ?= pipeline
 
-.PHONY: install lint type test check universo update-prices run-local eval eval-analista eval-director evalset sensibilidad comparar clean deploy-dev url-dev corrida-dev logs-dev deploy-prod corrida-prod
+.PHONY: install lint type test nombres check universo update-prices run-local eval eval-analista eval-director evalset sensibilidad comparar clean deploy-dev url-dev corrida-dev logs-dev deploy-prod corrida-prod
 
 install:        ## dependencias con uv
 	$(UV) sync
@@ -35,6 +36,9 @@ type:
 
 test:
 	$(UV) run pytest tests/unit tests/golden tests/integration tests/test_gate_security.py tests/test_atribucion.py -q
+
+nombres:        ## DoD de S9: nombres comerciales de modelos fuera de config.yaml (debe salir vacío)
+	$(UV) run python -m tests.unit.test_nombres_de_modelos
 
 check: lint type test   ## puerta obligatoria antes de todo commit final
 
@@ -50,7 +54,7 @@ update-prices:  ## paso 1 del ritual mensual: Tiingo → validar → data/series
 run-local:      ## UI de ADK: elige `equipo` (el Director, entrada por defecto); `pipeline` = modo comando
 	$(UV) run adk web apps
 
-eval: eval-analista eval-director  ## los dos evalsets contra Gemini REAL; código 1 si algún caso falla
+eval: eval-analista eval-director  ## los dos evalsets contra el modelo REAL; código 1 si algún caso falla
 
 eval-analista:  ## evalset del analista con `adk eval` y métrica propia (ADR-010)
 # `adk eval` siempre termina en 0 e imprime una tabla muy ancha: el resumen por caso y el código
@@ -78,7 +82,7 @@ deploy-dev:     ## Cloud Run (dev): Cloud Build construye el Dockerfile y despli
 	gcloud run deploy $(SERVICIO_DEV) --source . \
 		--project $(PROYECTO) --region $(REGION) \
 		--service-account $(SA_EJECUCION) \
-		--set-secrets GOOGLE_API_KEY=$(SECRETO_GEMINI):$(VERSION_SECRETO)$(if $(SECRETO_TIINGO),$(COMA)TIINGO_API_KEY=$(SECRETO_TIINGO):$(VERSION_SECRETO_TIINGO),) \
+		--set-secrets GOOGLE_API_KEY=$(SECRETO_LLM):$(VERSION_SECRETO)$(if $(SECRETO_TIINGO),$(COMA)TIINGO_API_KEY=$(SECRETO_TIINGO):$(VERSION_SECRETO_TIINGO),) \
 		--set-env-vars GOOGLE_GENAI_USE_ENTERPRISE=True \
 		--no-allow-unauthenticated \
 		--min-instances 0 --max-instances 1 \

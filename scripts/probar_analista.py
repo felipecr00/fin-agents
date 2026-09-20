@@ -1,4 +1,4 @@
-"""Corrida REAL del Analista de Mercados contra Gemini (necesita credenciales).
+"""Corrida REAL del Analista de Mercados contra el modelo real (necesita credenciales).
 
     uv run python scripts/probar_analista.py ["contexto opcional para el analista"]
 
@@ -53,10 +53,10 @@ async def correr(mensaje: str) -> MarketViews:
 def main() -> None:
     load_dotenv(RAIZ_PROYECTO / ".env")
     if not any(os.environ.get(v) for v in VARIABLES):
-        sys.exit("Sin credenciales de Gemini en el entorno ni en .env (ver .env.example).")
+        sys.exit("Sin credenciales del modelo en el entorno ni en .env (ver .env.example).")
     mensaje = sys.argv[1] if len(sys.argv) > 1 else "Dame tus views para este universo."
     views = asyncio.run(correr(mensaje))
-    print(f"\nModelo: {cargar_config().agentes.modelo}")
+    print(f"\nModelo: {cargar_config().inferencia.nivel_1.modelo}")
     print("MarketViews validado contra el contrato:")
     print(views.model_dump_json(indent=2))
 

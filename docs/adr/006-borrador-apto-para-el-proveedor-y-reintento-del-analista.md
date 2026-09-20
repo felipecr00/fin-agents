@@ -1,4 +1,4 @@
-# ADR 006: El analista emite un borrador apto para Gemini; el contrato lo construye el código
+# ADR 006: El analista emite un borrador apto para el proveedor del LLM; el contrato lo construye el código
 
 - Fecha: 2026-09-17
 - Sprint: S3
@@ -13,7 +13,7 @@ reintento si la salida no valida. Medido sin red con google-adk 2.9.1 / google-g
   `horizonte_meses` y `confianza`) y `patternProperties` (`coeficientes: dict[Ticker, float]`)
   no están permitidos, ni con API key ni con Vertex. El test
   `test_gemini_acepta_el_esquema_del_borrador_pero_no_el_contrato` lo fija.
-- Corrida real (2026-09-17, `gemini-3.5-flash`, API key): la Gemini API además devuelve
+- Corrida real (2026-09-17, el modelo de Nivel 1, API key): la API de AI Studio además devuelve
   `400 INVALID_ARGUMENT` ante `additional_properties`, que el conversor local sí acepta; lo
   genera `extra="forbid"`. El borrador no lo usa y el mismo test lo vigila.
 - Si el JSON del modelo no valida contra `output_schema`, `LlmAgent` lanza
@@ -41,7 +41,7 @@ reintento si la salida no valida. Medido sin red con google-adk 2.9.1 / google-g
 - **Relajar `MarketViews`** (quitar `gt`, cambiar el `dict`): debilita un contrato aprobado
   para acomodar a un proveedor; exigiría tocar `portfolio/` y sus tests.
 - **`response_json_schema` a mano con el JSON Schema del contrato**: ADK no lo valida, y no
-  pude comprobar sin credenciales que Gemini acepte `patternProperties`.
+  pude comprobar sin credenciales que el proveedor acepte `patternProperties`.
 - **`after_model_callback`**: puede sustituir la respuesta, no pedir otra.
 - **`RetryConfig` del nodo**: reintento ciego con backoff; el modelo repetiría el error.
 

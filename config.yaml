@@ -101,9 +101,34 @@ validacion:
     - {nombre: tasas_2022, desde: 2022-01-31, hasta: 2022-12-31}
     - {nombre: cripto_2025_26, desde: 2025-08-31, hasta: 2026-06-30}
 
+# Abstracción de inferencia (enmienda v2 §4, ADR-018). ESTE es el único archivo del repo donde
+# aparece el nombre comercial de un modelo: docs y código hablan de niveles. Rotar un modelo es
+# cambiar estas líneas; `tests/unit/test_nombres_de_modelos.py` vigila que siga siendo así.
+inferencia:
+  # Nivel 1 — Frontier LLM: razonamiento, síntesis y redacción. Id fijo, nunca un alias -latest
+  # (ADR-005). `cliente` es la clase de ADK que lo sirve ("módulo:Clase"). Las credenciales van
+  # por variables de entorno; `secreto_llave` es el nombre del secreto de dev en Secret Manager.
+  nivel_1:
+    cliente: google.adk.models.google_llm:Gemini
+    modelo: gemini-3.5-flash
+    secreto_llave: gemini-api-key
+  # Nivel 2 — Edge/cuantizado (NLP local): sin asignar; nada lo usa todavía (S12+).
+  nivel_2: null
+  # Nivel 3 — determinista: código puro (quant/, portfolio/, risk/, data_manager/). Nunca un LLM.
+  nivel_3: determinista
+  # Qué nivel atiende a cada agente con LLM.
+  asignaciones:
+    director: nivel_1
+    market_analyst: nivel_1
+    constructor: nivel_1
+    reporter: nivel_1
+  # Marcas que no pueden aparecer fuera de este archivo (lo verifica un test y `make nombres`).
+  nombres_vetados: [gemini, claude, gpt, whisper, finbert, sonnet]
+  # Nombres que impone el tooling y no son menciones de un modelo: el archivo de instrucciones
+  # del asistente de código (lo referencian Dockerfile y pyproject) y su carpeta de ajustes.
+  excepciones_de_tooling: [CLAUDE.md, .claude]
+
 agentes:
-  # ADR-005: id fijo, nunca un alias -latest. Las credenciales van por variables de entorno.
-  modelo: gemini-3.5-flash
   temperatura: 0.2
   # Intentos del analista hasta que su salida valide contra MarketViews (incluye el primero).
   max_intentos_analista: 3
@@ -113,9 +138,9 @@ agentes:
   max_views: 4
   confianza_max_sin_conviccion: 0.5
   # ADR-008: en Vertex AI con proyecto (prod) el modelo se pide al endpoint global; la región
-  # del despliegue (us-central1) no sirve los Gemini 3.x. Con API key no se usa.
+  # del despliegue (us-central1) no sirve el modelo de Nivel 1. Con API key no se usa.
   ubicacion_vertex: global
-  # Un 429/503 de Gemini es transitorio (cuota por minuto, picos de demanda) y sin reintentos
+  # Un 429/503 del modelo es transitorio (cuota por minuto, picos de demanda) y sin reintentos
   # tumba la corrida entera. Esperas: 2, 4, 8, 16, 32 s (≈ 1 min en total, más jitter): cubre la
   # ventana de cuota por minuto y cabe en el timeout de 300 s de Cloud Run.
   reintentos_modelo:

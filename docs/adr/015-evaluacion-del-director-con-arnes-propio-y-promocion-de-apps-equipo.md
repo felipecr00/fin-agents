@@ -1,4 +1,4 @@
-# ADR 015: Evaluación del Director con un arnés propio (mismo arnés en CI y contra Gemini) y promoción de `apps/equipo`
+# ADR 015: Evaluación del Director con un arnés propio (mismo arnés en CI y contra el modelo real) y promoción de `apps/equipo`
 
 - Fecha: 2026-09-19
 - Sprint: S8 (PR 2 de 2)
@@ -10,7 +10,7 @@ mockeados en CI, corrida real documentada)", y que `apps/equipo` sea el punto de
 defecto. ADR-010 resolvió la evaluación del Analista con `adk eval` y una métrica propia; aquí
 las fuerzas son otras.
 
-### Línea base medida (gemini-3.5-flash, temperatura 0.2, 2026-09-19)
+### Línea base medida (modelo de Nivel 1, temperatura 0.2, 2026-09-19)
 15 escenarios (los 12 del spec + 3 desvíos del PR 1), una corrida cada uno, con un almacén
 aislado por caso y fuente de mercado falsa (sin tocar `data/` ni `runs/`):
 
@@ -67,7 +67,7 @@ Hallazgos:
    `Runner` real con un almacén aislado por caso (copia sembrada + fuente falsa, preparación
    declarada en el caso) y aplica criterios deterministas. El MISMO arnés corre (a) en
    `make check` con un LLM guionado con la conducta ideal de cada caso —más una variante mala
-   por criterio, para probar que el criterio detecta— y (b) en `make eval` contra Gemini real.
+   por criterio, para probar que el criterio detecta— y (b) en `make eval` contra el modelo real.
    "Evals mockeados en CI" y "corrida real" son el mismo código con distinto modelo.
 2. **Casos legibles** en `tests/eval/casos_director.yaml` (fuente de verdad, como ADR-010):
    conversación estática por turnos, preparación del almacén y criterios por turno.
@@ -96,7 +96,7 @@ Hallazgos:
   explícita en un turno posterior; presenta la advertencia todo-o-nada y espera", con los
   activos afectados. Solo una llamada en una invocación POSTERIOR, sobre el mismo universo,
   ejecuta; si el universo cambió entre medias, se advierte de nuevo. Verificado: en la
-  re-corrida del caso, Gemini volvió a llamar a `incorporar` + `aceptar_prior_neutral` en el
+  re-corrida del caso, el modelo volvió a llamar a `incorporar` + `aceptar_prior_neutral` en el
   turno de "la opción c"; la herramienta lo rechazó, el Director presentó la advertencia y
   degradó solo tras el "sí, confirmo" del turno siguiente.
 - **B. Se construyen las dos herramientas.** `GestorDatos.retirar` (universo nuevo sin el

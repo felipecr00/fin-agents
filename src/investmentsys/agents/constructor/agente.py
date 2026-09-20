@@ -83,7 +83,7 @@ def crear_constructor(
     return LlmAgent(
         name=NOMBRE,
         description="Decide técnica y límites; la herramienta calcula los candidatos.",
-        model=resolver_modelo(config.agentes, modelo),
+        model=resolver_modelo(config, NOMBRE, modelo),
         instruction=instruccion,
         tools=[FunctionTool(tools.construir_candidatos)],
         generate_content_config=types.GenerateContentConfig(
