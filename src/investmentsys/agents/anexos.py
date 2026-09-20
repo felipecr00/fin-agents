@@ -82,26 +82,28 @@ def recoger_anexos(
 def anexar_al_cierre(
     callback_context: CallbackContext, llm_response: LlmResponse
 ) -> LlmResponse | None:
-    contenido = llm_response.content
-    if llm_response.partial or contenido is None or not contenido.parts:
+    if llm_response.partial or llm_response.error_code:
         return None
-    if any(p.function_call or p.function_response for p in contenido.parts):
+    contenido = llm_response.content
+    partes_previas = list(contenido.parts or []) if contenido is not None else []
+    if any(p.function_call or p.function_response for p in partes_previas):
         return None  # el turno sigue: todavía hay herramientas por correr
     bloques = _bloques_del_turno(callback_context.state, callback_context.invocation_id)
     if not bloques:
         return None
+    # S10: tras una persona el modelo puede cerrar SIN texto (visto con el modelo real). La
+    # ficha se entrega igual: no depende de que el Director diga algo.
+    rol = contenido.role if contenido is not None else "model"
     callback_context.state[CLAVE_ANEXOS_TURNO] = None
     # La marca va en su propia línea: los títulos de los bloques deben empezar su línea limpios.
     anexo = f"\n\n{MARCA_ANEXO}{SEPARADOR}{SEPARADOR.join(bloques)}"
-    partes = list(contenido.parts)
+    partes = partes_previas
     ultima = next((i for i in reversed(range(len(partes))) if partes[i].text), None)
     if ultima is None:
         partes.append(types.Part(text=anexo.lstrip()))
     else:  # mismo Part: para la interfaz y para el historial es UNA respuesta
         partes[ultima] = types.Part(text=f"{partes[ultima].text}{anexo}")
-    return llm_response.model_copy(
-        update={"content": types.Content(role=contenido.role, parts=partes)}
-    )
+    return llm_response.model_copy(update={"content": types.Content(role=rol, parts=partes)})
 
 
 def ocultar_anexos_al_modelo(

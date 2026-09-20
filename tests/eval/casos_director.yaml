@@ -472,7 +472,9 @@ casos:
     turnos:
       - usuario: ¿qué le preocupa al Escéptico de la cartera propuesta?
         criterios:
-          # Sin cartera sobre la mesa no hay nada que diagnosticar: no se inventa una.
+          # Sin cartera sobre la mesa no hay nada que diagnosticar: no se inventa una. Y el
+          # Director no habla POR el Escéptico: lo consulta (visto con el modelo real).
+          tools_obligatorias: [esceptico]
           status_prohibido: {diagnosticar_cartera: success}
           tools_prohibidas: [convocar_comite]
           cifras_respaldadas: true

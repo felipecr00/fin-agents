@@ -122,8 +122,9 @@ class Criterios(_Modelo):
     no_repite_cifras: bool = Field(
         default=False,
         description=(
-            "El Director no repite las cifras que ya dijo una persona en el turno: coordina, "
-            "no re-narra (S10, ADR-019)."
+            "El Director no repite las cifras que ya dijo una persona en el turno (salvo las que "
+            "ya conocía: su instrucción, el usuario, turnos previos): coordina, no re-narra "
+            "(S10, ADR-019)."
         ),
     )
 
@@ -416,7 +417,14 @@ def evaluar(criterios: Criterios, turno: TurnoObservado, prefijo: str) -> list[R
     if criterios.no_repite_cifras:
         de_personas = {c.strip() for _, texto in turno.voces for c in CIFRA.findall(texto)}
         propio = turno.texto.split(MARCA_ANEXO)[0]  # el anexo va al final del último texto
-        repetidas = sorted({c.strip() for c in CIFRA.findall(propio)} & de_personas)
+        # Lo que el Director ya sabía por su cuenta (su instrucción, el usuario, turnos previos:
+        # p. ej. el tope de 70 % de la sesión) no es re-narrar a la persona.
+        sabidas = [*turno.respaldo_previo, turno.usuario]
+        repetidas = sorted(
+            c
+            for c in {c.strip() for c in CIFRA.findall(propio)} & de_personas
+            if cifras_sin_respaldo(c, sabidas)
+        )
         resultados.append(
             _resultado(
                 f"{prefijo}.no_repite_cifras",

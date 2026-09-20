@@ -181,3 +181,17 @@ def test_el_modelo_no_ve_en_su_historial_los_bloques_que_anexo_el_codigo(
     (propio,) = historial
     assert propio == "El Estadístico estimó la correlación.", "ni bloques ni notas que imitar"
     assert "Ficha de origen" not in propio and MARCA_ANEXO not in propio
+
+
+def test_si_el_director_cierra_sin_texto_la_ficha_de_la_persona_llega_igual(
+    config: Config, gestor: GestorDatos, tmp_path: Path
+) -> None:
+    """Visto con el modelo real (S10): tras la persona, el Director cerró con texto vacío."""
+    guion = [Llamada("estadistico", pregunta="¿correlación?"), ""]
+    (turno,), _ = _charlar(
+        config, gestor, tmp_path, guion, ["¿correlación?"], estadistico=ESTADISTICO
+    )
+    (cierre,) = turno.textos("director")
+    assert "- Fuente: **Estadístico** · herramienta `estimar_mercado`" in cierre
+    assert PREFIJO_NO_VALIDADO in cierre
+    assert turno.estado.get(CLAVE_ANEXOS_TURNO) is None, "entregado: no se repite"
