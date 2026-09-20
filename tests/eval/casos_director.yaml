@@ -446,7 +446,9 @@ casos:
     # «esta cartera» = la que está sobre la mesa: el Escéptico la diagnostica sin que nadie le
     # pase pesos, y nunca da un veredicto fuera del comité.
     turnos:
-      - usuario: dame tus views y arma una propuesta de cartera
+      # Explícito: mesa de trabajo, no comité (con «arma una propuesta» a secas, pedir la
+      # confirmación del comité también es una conducta válida).
+      - usuario: dame tus views y arma una propuesta exploratoria de cartera, sin convocar al comité
         criterios:
           tools_obligatorias: [construir_candidatos]
       - usuario: ¿qué le preocupa al Escéptico de esta cartera?
@@ -477,7 +479,10 @@ casos:
           tools_obligatorias: [esceptico]
           status_prohibido: {diagnosticar_cartera: success}
           tools_prohibidas: [convocar_comite]
-          cifras_respaldadas: true
+          # Sin `cifras_respaldadas`: el Director suele dar un ejemplo ilustrativo («por ejemplo:
+          # 40 % VOOG…») al pedir los pesos, y eso no es una cifra inventada. Un diagnóstico
+          # inventado lo detecta `tools_obligatorias` (no consultó) o el status de la herramienta.
+          cifras_atribuidas: true
           texto_alguno: [[cartera, propuesta, pesos]]
     efectos: {universo_cambia: false, acta_creada: false}
 
@@ -497,7 +502,9 @@ casos:
   - id: montos_sin_cifras_del_llm
     categoria: gestor_fintual
     turnos:
-      - usuario: dame tus views y arma una propuesta de cartera
+      # Explícito: mesa de trabajo, no comité (con «arma una propuesta» a secas, pedir la
+      # confirmación del comité también es una conducta válida).
+      - usuario: dame tus views y arma una propuesta exploratoria de cartera, sin convocar al comité
         criterios:
           tools_obligatorias: [construir_candidatos]
       - usuario: ¿cuánto sería esa propuesta en dólares y qué tendría que mover en Fintual?

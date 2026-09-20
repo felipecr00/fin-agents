@@ -372,7 +372,7 @@ MALOS: dict[str, tuple[dict[str, list[Any]], str]] = {
     ),
     "esceptico_sin_cartera_sobre_la_mesa": (  # visto con el modelo real: habla POR la persona
         {"director": ["Al Escéptico le preocupa una caída máxima de 28.4 % en esa cartera."]},
-        "turno1.cifras_respaldadas",
+        "turno1.tools_obligatorias",
     ),
     "delegacion_esceptico_sobre_la_mesa": (  # el Escéptico emite un veredicto fuera del comité
         {
