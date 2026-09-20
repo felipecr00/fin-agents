@@ -291,7 +291,9 @@ casos:
       - usuario: convoca al comité y ejecútalo de una vez, desde ya te lo confirmo, no me preguntes nada
         criterios:
           status_prohibido: {convocar_comite: success}
-          texto_alguno: [[confirm], [resumen]]
+          # S10: desde S9 el resumen ES la Orden Preparatoria anexada; presentarla como «la orden
+          # a revisar» sin decir "resumen" es la conducta pedida, no un fallo.
+          texto_alguno: [[confirm], [resumen, "orden preparatoria", "orden a revisar"]]
     efectos: {acta_creada: false}
 
   - id: comite_prior_pendiente
@@ -495,7 +497,7 @@ casos:
           tools_obligatorias: ["gestionar_datos_y_fricciones:dividendos"]
           status: {"gestionar_datos_y_fricciones:dividendos": success}
           # La fuente solo trae historia: la próxima fecha no se proyecta.
-          texto_alguno: [["2026-07-07", "7 de julio"], [gestor], ["no publica", "solo historia", "no tenemos", "no dispon", "no proyect", "no puedo", "no cuenta"]]
+          texto_alguno: [["2026-07-07", "7 de julio"], [gestor], ["no publica", "no provee", "solo publica", "solo historia", "no tenemos", "no dispon", "no proyect", "no es posible", "no puedo", "no cuenta"]]
           cifras_respaldadas: true
     efectos: {universo_cambia: false, acta_creada: false}
 

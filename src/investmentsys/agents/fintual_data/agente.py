@@ -28,6 +28,8 @@ CABLEADO = f"""\
   Nunca le digas al usuario que compre o venda algo, ni cuánto: eso todavía no lo calcula nadie
   del equipo. "montos" no lleva argumentos: los pesos no se pasan; si no hay cartera sobre la
   mesa, la herramienta lo rechaza y dice qué falta.
+  "dividendos" y "cierres" son consultas puntuales, cuando el usuario pregunta: el Gestor no
+  vigila el mercado ni avisa de dividendos o precios; no lo ofrezcas como seguimiento.
   Cambian el universo: "incorporar", "retirar" (ticker), "refrescar_cap" (cambia una
   capitalización congelada) y "aceptar_prior_neutral" (degrada el prior de TODO el universo).
   Un argumento que no corresponde a la operación se rechaza: manda solo los que la operación usa.
