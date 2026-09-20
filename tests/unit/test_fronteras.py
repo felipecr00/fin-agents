@@ -11,7 +11,17 @@ from investmentsys.config import RAIZ_PROYECTO
 
 PAQUETE = RAIZ_PROYECTO / "src" / "investmentsys"
 # S8: el Gestor de Datos también es puro; sus FunctionTools viven en tools/gestor.py.
-MODULOS_PUROS = ("quant", "portfolio", "risk", "contracts", "data", "comparacion", "data_manager")
+# S10: la gobernanza operativa (fintual/) es Nivel 3: también pura.
+MODULOS_PUROS = (
+    "quant",
+    "portfolio",
+    "risk",
+    "contracts",
+    "data",
+    "comparacion",
+    "data_manager",
+    "fintual",
+)
 PROHIBIDOS = ("google", "litellm", "openai", "anthropic")
 CAPAS_DE_AGENTES = ("investmentsys.tools", "investmentsys.agents", "investmentsys.orchestrator")
 
@@ -44,3 +54,17 @@ def test_lo_nuevo_de_s8_en_el_nucleo_puro_esta_bajo_vigilancia() -> None:
         "portfolio/cartera_usuario.py",
     ):
         assert (PAQUETE / relativo).is_file(), relativo
+
+
+def test_lo_nuevo_de_s10_en_el_nucleo_puro_esta_bajo_vigilancia() -> None:
+    for relativo in ("contracts/fintual.py", "fintual/no_trade_zones.py", "fintual/montos.py"):
+        assert (PAQUETE / relativo).is_file(), relativo
+
+
+def test_las_personas_no_importan_el_nucleo_puro_solo_tools() -> None:
+    """Un LlmAgent nunca produce cifras: a la matemática se llega solo vía ``tools/``."""
+    puros = tuple(f"investmentsys.{m}" for m in ("quant", "portfolio", "risk", "fintual"))
+    for persona in ("estadistico", "esceptico", "fintual_data"):
+        for archivo in sorted((PAQUETE / "agents" / persona).rglob("*.py")):
+            for nombre in _importados(archivo):
+                assert not nombre.startswith(puros), f"{persona}/{archivo.name} importa {nombre}"

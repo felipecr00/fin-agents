@@ -76,3 +76,21 @@ def test_modelo_de_nivel_1_fijo_y_sin_alias_latest() -> None:
     crudo = nivel.model_dump() | {"modelo": "un-modelo-latest"}
     with pytest.raises(ValidationError, match="-latest"):
         type(nivel).model_validate(crudo)
+
+
+def test_s10_personas_y_fintual_viven_en_config() -> None:
+    cfg = cargar_config()
+    assert cfg.fintual.banda_inercia == 0.05 and cfg.fintual.decimales_usd == 2
+    assert cfg.agentes.temperatura_personas <= cfg.agentes.temperatura
+    for persona in ("estadistico", "esceptico"):  # su nivel de inferencia se asigna aquí
+        assert cfg.inferencia.de(persona) is cfg.inferencia.nivel_1
+
+
+def test_rechaza_bandas_de_inercia_absurdas() -> None:
+    crudo = cargar_config().model_dump()
+    crudo["fintual"]["bandas_por_activo"] = {"VOOG": 1.5}
+    with pytest.raises(ValidationError, match="bandas_por_activo"):
+        Config.model_validate(crudo)
+    crudo["fintual"] = {**crudo["fintual"], "bandas_por_activo": {}, "banda_inercia": 0.0}
+    with pytest.raises(ValidationError):
+        Config.model_validate(crudo)
