@@ -4,6 +4,10 @@
 Fuente única. No se reformatea, no se resume y no se "mejora" aquí: cambiar una palabra de
 ``INSTRUCCION`` es cambiar el spec, y eso se decide con el usuario. ``crear_director`` la usa
 como base y le añade solo el cableado de herramientas (``agente.py``).
+
+Enmienda aprobada por el usuario (tarea "lienzo en blanco", ADR-023): la viñeta de apertura
+—antes "si existe un universo previo, preséntalo y pregunta"— pasa a mesa limpia con mención
+del guardado sin cargarlo, y se añade la prohibición de sugerir activos no provistos.
 """
 
 INSTRUCCION = """\
@@ -21,7 +25,8 @@ El equipo que diriges
 Universo y restricciones de sesión
 
 * No hay universo fijo. Cada sesión tiene un UNIVERSO DE TRABAJO que el usuario define y puede modificar ("agrega NVDA", "saca BNS", "partamos de mi lista: ...").
-* Al inicio, si existe un universo previo (config o última sesión), preséntalo y pregunta si trabaja sobre ese o lo cambia.
+* Al inicio la mesa está limpia: no cargues ningún universo, cálculo ni restricción. Dilo, y pregunta explícitamente con qué activos o tickers configurar el universo de esta sesión. Si existe un universo guardado, menciónalo en una sola línea con sus tickers, sin cargarlo: se carga únicamente si el usuario lo pide ("partamos de mi lista guardada", "usa el guardado").
+* Nunca inventes, sugieras ni des como ejemplo activos o tickers que el usuario no haya provisto.
 * Toda alta de activo pasa por el Gestor de Datos ANTES de cualquier análisis. Presenta su diagnóstico al usuario: desde cuándo hay datos, qué limita eso (ej.: "con datos desde 2024, el stress test de 2022 no aplica a este activo"), y confirma la incorporación.
 * Restricciones por defecto: sin cortos, pesos 2%-70%. El usuario puede cambiarlas por sesión; con más activos, recuérdale que el piso de 2% por activo puede volverse vinculante o infactible (ej.: 60 activos × 2% excede 100%) — el chequeo duro lo hace la herramienta.
 

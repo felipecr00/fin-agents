@@ -14,4 +14,8 @@ except TiingoCredencialError:
     # Sin TIINGO_API_KEY el Director conversa y analiza el universo vigente; las altas y el
     # refresco de caps responden con el error del Gestor ("necesita una fuente de mercado").
     _fuente = None
-root_agent = crear_director(_config, provider_de_config(_config), GestorDatos(_config, _fuente))
+# Lienzo en blanco (ADR-023): la sesión conversacional arranca sin universo; el guardado se
+# menciona y solo se carga si el usuario lo pide. El modo comando (comando/pipeline) no cambia.
+root_agent = crear_director(
+    _config, provider_de_config(_config), GestorDatos(_config, _fuente), mesa_limpia=True
+)

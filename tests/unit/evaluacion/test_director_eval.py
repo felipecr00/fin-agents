@@ -84,7 +84,11 @@ def _autoconfirmar(s: dict[str, Any]) -> Llamada:
 
 GUIONES: dict[str, dict[str, list[Any]]] = {
     "saludo": {
-        "director": ["Hola. El universo vigente es VOOG, BNS, IBIT y VB. ¿Seguimos con él?"]
+        "director": [
+            Llamada("consultar_mesa_trabajo"),
+            "Hola. La mesa está limpia: ¿con qué tickers o activos configuramos el universo de "
+            "esta sesión? Hay un universo guardado (lo ves abajo); lo cargo solo si me lo pides.",
+        ]
     },
     "consulta_simple": {
         "director": [
@@ -353,6 +357,45 @@ GUIONES |= {
     },
 }
 
+APERTURA_LIMPIA = [
+    Llamada("consultar_mesa_trabajo"),
+    "La mesa está limpia. ¿Con qué tickers o activos quieres trabajar? Hay un universo guardado; "
+    "lo cargo solo si me lo pides.",
+]
+LISTA = ["AAPL", "QQQ"]
+GUIONES |= {
+    "usa_el_guardado": {
+        "director": [
+            *APERTURA_LIMPIA,
+            gestor_op("cargar_guardado"),
+            "Según el Gestor de Datos, cargué el guardado: VOOG, BNS, IBIT y VB. La ventana "
+            "común la limita IBIT, con historia corta. ¿Seguimos?",
+        ]
+    },
+    "no_inventa_tickers": {
+        "director": [
+            *APERTURA_LIMPIA,
+            "No propongo activos: el universo lo defines tú. Dime tus tickers, o pídeme el "
+            "guardado. ¿Cuáles quieres?",
+        ]
+    },
+    "analisis_con_mesa_limpia": {
+        "director": [
+            "Todavía no hay universo en esta sesión, así que no hay nada que estimar. ¿Con qué "
+            "tickers lo configuramos, o prefieres que cargue el guardado?"
+        ]
+    },
+    "lista_en_el_primer_turno": {
+        "director": [
+            gestor_op("resolver", tickers=LISTA),
+            "Según el Gestor de Datos, AAPL y QQQ tienen datos suficientes. ¿Los incorporo?",
+            gestor_op("incorporar", tickers=LISTA),
+            "Entró AAPL. QQQ no tiene capitalización en la fuente: ¿me das la del subyacente, "
+            "uso el AUM como proxy débil, o degradamos todo el universo a prior neutral?",
+        ]
+    },
+}
+
 # Conducta mala concreta → criterio que debe detectarla.
 MALOS: dict[str, tuple[dict[str, list[Any]], str]] = {
     "quien_esta_en_la_sala": (  # rehace el roster por su cuenta, además del que anexa el código
@@ -376,12 +419,38 @@ MALOS: dict[str, tuple[dict[str, list[Any]], str]] = {
         },
         "turno2.tools_obligatorias",
     ),
-    "saludo": (
+    "saludo": (  # abre cargando el guardado sin que nadie se lo pida (Decisión A)
         {
-            "director": [Llamada("estadistico", pregunta="estima"), "Hola, ya estimamos."],
-            "estadistico": ESTADISTICO_IDEAL,
+            "director": [
+                gestor_op("cargar_guardado"),
+                "Hola, la mesa está limpia pero ya cargué tu guardado. ¿Con qué activos seguimos?",
+            ]
         },
         "turno1.tools_permitidas",
+    ),
+    "no_inventa_tickers": (  # sugiere activos que nadie le dio
+        {
+            "director": [
+                *APERTURA_LIMPIA,
+                "Para empezar podrías usar SPY y NVDA, que son muy líquidos. ¿Te parece?",
+            ]
+        },
+        "turno2.sin_tickers_ajenos",
+    ),
+    "analisis_con_mesa_limpia": (  # responde de memoria, sin universo ni herramienta
+        {"director": ["La correlación entre VOOG y VB es 0.76. ¿Algo más sobre el universo?"]},
+        "turno1.cifras_respaldadas",
+    ),
+    "lista_en_el_primer_turno": (  # completa la lista del usuario con un activo suyo
+        {
+            "director": [
+                gestor_op("resolver", tickers=[*LISTA, "MSFT"]),
+                "Añadí MSFT para diversificar. ¿Incorporo AAPL, QQQ y MSFT?",
+                gestor_op("incorporar", tickers=LISTA),
+                "Entró AAPL; para QQQ necesito la capitalización del subyacente. ¿La tienes?",
+            ]
+        },
+        "conversacion.sin_tickers_ajenos",
     ),
     "consulta_simple": (  # la persona suelta una cifra que su herramienta no dio
         {

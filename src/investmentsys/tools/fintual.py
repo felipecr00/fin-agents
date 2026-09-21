@@ -45,6 +45,7 @@ Operacion = Literal[
     "retirar",
     "refrescar_cap",
     "aceptar_prior_neutral",
+    "cargar_guardado",
     "diagnosticar",
     "dividendos",
     "cierres",
@@ -56,11 +57,13 @@ OPERACIONES: tuple[str, ...] = get_args(Operacion)
 
 # operación → (argumentos obligatorios, argumentos opcionales). Lo demás se rechaza.
 ARGUMENTOS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
-    "resolver": (("ticker",), ()),
-    "incorporar": (("ticker",), ("prior_cap", "prior_metodologia")),
+    # S-lienzo (ADR-023): `ticker` O `tickers` (una lista); se exige exactamente uno.
+    "resolver": ((), ("ticker", "tickers")),
+    "incorporar": ((), ("ticker", "tickers", "prior_cap", "prior_metodologia")),
     "retirar": (("ticker",), ()),
     "refrescar_cap": (("ticker",), ("prior_cap", "prior_metodologia")),
     "aceptar_prior_neutral": ((), ()),
+    "cargar_guardado": ((), ()),
     "diagnosticar": ((), ()),
     "dividendos": ((), ("ticker",)),
     "cierres": ((), ("ticker",)),
@@ -151,6 +154,7 @@ class GestorFintualTools:
         operacion: Operacion,
         tool_context: ToolContext,
         ticker: str | None = None,
+        tickers: list[str] | None = None,
         prior_cap: float | None = None,
         prior_metodologia: str | None = None,
         aporte_usd: float | None = None,
@@ -161,8 +165,10 @@ class GestorFintualTools:
         """Gestor de Datos y Fintual: universo de trabajo, datos de mercado y fricciones.
 
         Operaciones que NO modifican nada:
-        - "resolver" (ticker): diagnostica un ticker contra la fuente: desde cuándo hay datos,
-          qué limita una historia corta, si es apto y el bloque ``prior`` (``tiene_cap``).
+        - "resolver" (ticker | tickers): diagnostica un ticker contra la fuente: desde cuándo hay
+          datos, qué limita una historia corta, si es apto y el bloque ``prior`` (``tiene_cap``).
+          Con ``tickers`` (una lista) diagnostica todos y añade ``si_entran_todos``: la ventana
+          común que tendría el universo y quién la limita.
         - "diagnosticar": detalle del universo vigente (capitalizaciones, ventana común,
           cobertura de los stress, advertencias por activo).
         - "dividendos" (ticker?): fechas ex-dividendo recientes y monto por acción; de todo el
@@ -183,7 +189,14 @@ class GestorFintualTools:
           operativa con la advertencia que cruzó. Nunca la llames por iniciativa propia.
         Operaciones que CAMBIAN el universo (otra ``universe_version``; la respuesta lista en
         ``resultados_obsoletos`` lo que dejó de valer):
-        - "incorporar" (ticker, prior_cap?, prior_metodologia?): alta de un activo.
+        - "cargar_guardado": carga en la sesión el universo GUARDADO del Gestor, con sus
+          diagnósticos. SOLO si el usuario lo pide («usa el guardado», «partamos de mi lista
+          guardada»). Con la mesa limpia es la única vía para trabajar sobre él.
+        - "incorporar" (ticker | tickers, prior_cap?, prior_metodologia?): alta de un activo. Con
+          ``tickers`` (una lista), alta en lote: entran los que no requieren una decisión del
+          usuario; los que no tienen capitalización en la fuente quedan en
+          ``pendientes_de_prior`` con la pregunta que debes hacer. Con la mesa limpia, la primera
+          alta crea el universo de ESTA sesión solo con esos activos (no toca el guardado).
         - "retirar" (ticker): saca un activo; su serie se conserva en disco.
         - "refrescar_cap" (ticker, prior_cap?, prior_metodologia?): única vía para cambiar una
           capitalización congelada; sin prior_cap la toma de la fuente.
@@ -194,6 +207,8 @@ class GestorFintualTools:
         Args:
             operacion: una de las de arriba.
             ticker: símbolo del activo, p. ej. "NVDA". Solo en las operaciones que lo indican.
+            tickers: lista de símbolos que ESCRIBIÓ el usuario, para resolver o incorporar varios
+                a la vez. Nunca la completes ni añadas activos que él no nombró.
             prior_cap: capitalización que APORTA EL USUARIO, en US$ billones (10^12). Nunca la
                 estimes tú.
             prior_metodologia: obligatoria con prior_cap: de dónde sale, en palabras del usuario.
@@ -208,6 +223,7 @@ class GestorFintualTools:
             )
         dados = {
             "ticker": ticker,
+            "tickers": tickers or None,
             "prior_cap": prior_cap,
             "prior_metodologia": prior_metodologia,
             "aporte_usd": aporte_usd,
@@ -217,9 +233,14 @@ class GestorFintualTools:
         }
         obligatorios, opcionales = ARGUMENTOS[operacion]
         faltan = [a for a in obligatorios if dados[a] in (None, "")]
+        if "tickers" in opcionales and not dados["ticker"] and not dados["tickers"]:
+            faltan = ["ticker"]  # o `tickers`, para una lista
         sobran = [
             a for a, v in dados.items() if v is not None and a not in (*obligatorios, *opcionales)
         ]
+        if dados["tickers"] and "tickers" in opcionales:
+            # La cap es de UN activo: en lote cada pendiente se resuelve después, por separado.
+            sobran += [a for a in ("ticker", "prior_cap", "prior_metodologia") if dados[a]]
         if faltan or sobran:
             return {
                 "operacion": operacion,
@@ -235,10 +256,15 @@ class GestorFintualTools:
         heredadas = GestorTools(self.gestor)
         ticker = args["ticker"]
         cap, metodologia = args["prior_cap"], args["prior_metodologia"]
+        lista = args["tickers"]
         if operacion == "resolver":
-            return heredadas.resolver(ticker)
+            return heredadas.resolver_lista(lista) if lista else heredadas.resolver(ticker)
+        if operacion == "incorporar" and lista:
+            return heredadas.incorporar_lista(lista, ctx)
         if operacion == "incorporar":
             return heredadas.incorporar(ticker, ctx, cap, metodologia)
+        if operacion == "cargar_guardado":
+            return heredadas.cargar_guardado(ctx)
         if operacion == "retirar":
             return heredadas.retirar(ticker, ctx)
         if operacion == "refrescar_cap":

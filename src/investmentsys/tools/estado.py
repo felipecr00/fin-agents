@@ -29,6 +29,17 @@ CLAVE_SOLICITUD_COMITE = "solicitud_comite"  # gate del comité (ADR-014): resum
 # S10 (ADR-019): pesos que el usuario le dio al Director para el Escéptico; los pone un callback
 # del Director y los lee la tool de la persona, sin pasar por el LLM de la persona.
 CLAVE_PESOS_EN_CONSULTA = "pesos_en_consulta"
+# ADR-023 (lienzo en blanco): de dónde sale el universo de la sesión. "guardado" = el persistido
+# del Gestor (sus cambios se persisten, como siempre); "sesion" = efímero, vive solo aquí (sin
+# universo en el estado = mesa limpia). Sin la clave, rige "guardado": es el modo de S7-S11.
+CLAVE_ORIGEN_UNIVERSO = "origen_universo"
+ORIGEN_GUARDADO = "guardado"
+ORIGEN_SESION = "sesion"
+SIN_UNIVERSO = (
+    "no hay universo configurado en la sesión: la mesa está limpia. Antes de cualquier análisis "
+    "el usuario debe decir con qué activos trabajar (una lista de tickers) o pedir que se cargue "
+    "el universo guardado"
+)
 
 M = TypeVar("M", bound=BaseModel)
 
@@ -64,11 +75,26 @@ class FaltaEnEstadoError(LookupError):
     """Un tool necesita una clave que ninguna etapa anterior escribió."""
 
 
+class SinUniversoError(FaltaEnEstadoError):
+    """La sesión aún no tiene universo (mesa limpia): nada se puede calcular todavía."""
+
+
 def leer(estado: EstadoLegible, clave: str, modelo: type[M]) -> M:
     crudo = estado.get(clave)
+    if crudo is None and clave == CLAVE_UNIVERSO:
+        raise SinUniversoError(SIN_UNIVERSO)
     if crudo is None:
         raise FaltaEnEstadoError(f"falta '{clave}' en el estado: ejecuta antes la etapa previa")
     return modelo.model_validate(crudo)
+
+
+def hay_universo(estado: EstadoLegible) -> bool:
+    return bool(estado.get(CLAVE_UNIVERSO))
+
+
+def exigir_universo(estado: EstadoLegible) -> None:
+    if not hay_universo(estado):
+        raise SinUniversoError(SIN_UNIVERSO)
 
 
 def leer_lista(estado: EstadoLegible, clave: str, modelo: type[M]) -> tuple[M, ...]:

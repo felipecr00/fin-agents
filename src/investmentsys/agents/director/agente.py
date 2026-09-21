@@ -48,12 +48,21 @@ from investmentsys.tools import (
     CLAVE_VALIDACIONES,
     NucleoTools,
 )
-from investmentsys.tools.estado import volcar
+from investmentsys.tools.estado import (
+    CLAVE_ORIGEN_UNIVERSO,
+    ORIGEN_GUARDADO,
+    ORIGEN_SESION,
+    hay_universo,
+    volcar,
+)
+from investmentsys.tools.estado import SIN_UNIVERSO as SIN_UNIVERSO_SESION
 from investmentsys.tools.exploratorio import exploratorio
 from investmentsys.tools.ficha import ATIENDE
+from investmentsys.tools.fintual import NOMBRE_TOOL as TOOL_GESTOR
 from investmentsys.tools.mesa import NOMBRE_TOOL as TOOL_MESA
 from investmentsys.tools.mesa import MesaTools, componer_sala
 from investmentsys.tools.nucleo import ERRORES_DE_DOMINIO
+from investmentsys.tools.procedencia import tickers_que_no_escribio_el_usuario
 
 NOMBRE = "director"
 
@@ -66,11 +75,14 @@ Estado de la sesión: {estado_sesion}
 
 - MESA DE TRABAJO (tuya): `consultar_mesa_trabajo` muestra qué hay sobre la mesa (universo,
   vistas, estimaciones, carteras, diagnósticos, restricciones), quién lo puso y si sigue
-  vigente; con vista="sala", quién está en la sala. No calcula nada. Presentar el universo
-  aplica al INICIO de la sesión, no a cada consulta: llámala para esa presentación inicial y
-  cuando pregunten «¿qué tenemos?», «muestra la mesa» o «¿quién está en la sala?»; para lo
-  demás, ve directo a la herramienta que atiende la consulta. No describas la mesa ni el
-  equipo de memoria.
+  vigente; con vista="sala", quién está en la sala. No calcula nada. Abrir la sesión aplica
+  al INICIO, no a cada consulta: llámala para esa apertura y cuando pregunten «¿qué
+  tenemos?», «muestra la mesa» o «¿quién está en la sala?»; para lo demás, ve directo a la
+  herramienta que atiende la consulta. No describas la mesa ni el equipo de memoria.
+  Con la MESA LIMPIA (sin universo en la sesión) no hay nada que analizar: si el usuario pide
+  un análisis, una cartera o el comité, NO llames a esas herramientas (responderían con el
+  error «no hay universo configurado»): dile que primero hay que configurar el universo y
+  pregúntale con qué tickers, o si quiere el guardado. Jamás propongas tú los tickers.
 {cableado_gestor}\
 - PERSONAS (tienen voz propia: le responden ELLAS al usuario, que lee su respuesta completa
   antes que la tuya). Se consultan como una herramienta, con `pregunta`: lo que dijo el usuario,
@@ -124,14 +136,32 @@ Estado de la sesión: {estado_sesion}
 """
 
 SIN_UNIVERSO = "no hay universo cargado ({motivo}). Dilo antes de cualquier análisis."
+MESA_LIMPIA = (
+    "MESA LIMPIA: la sesión no tiene universo, cálculos ni restricciones. Nada se analiza hasta "
+    "que el usuario defina sus tickers o pida cargar el universo guardado."
+)
+# Herramientas que SÍ pueden usarse con la mesa limpia: abrir la mesa y configurar el universo.
+SIN_UNIVERSO_SE_PUEDE = ("resolver", "incorporar", "cargar_guardado")
+TICKER_SIN_PROCEDENCIA = (
+    "{ajenos}: el usuario no escribió ese ticker en esta sesión, así que no entra al universo. "
+    "El universo lo define el usuario: no completes su lista ni propongas activos. Si se refirió "
+    "a un activo por su nombre, pídele que confirme el símbolo; no se incorporó nada"
+)
 
 
 def _estado_sesion(estado: Any) -> str:
     universo = estado.get(CLAVE_UNIVERSO)
+    if not universo and estado.get(CLAVE_ORIGEN_UNIVERSO) == ORIGEN_SESION:
+        return MESA_LIMPIA
     if not universo:
         return SIN_UNIVERSO.format(motivo=estado.get(CLAVE_ERROR_UNIVERSO) or "sesión nueva")
     activos = ", ".join(d["ticker"] for d in universo["diagnosticos"])
-    return f"universo vigente `{universo['version'][:12]}` con {activos}."
+    origen = (
+        "construido en esta sesión (no es el guardado)"
+        if estado.get(CLAVE_ORIGEN_UNIVERSO) == ORIGEN_SESION
+        else "el guardado del Gestor"
+    )
+    return f"universo vigente `{universo['version'][:12]}` con {activos}; {origen}."
 
 
 CLAVE_ERROR_UNIVERSO = "director_error_universo"
@@ -149,8 +179,15 @@ def crear_director(
     gestor: GestorDatos,
     modelo: str | BaseLlm | None = None,
     directorio_runs: Path | None = None,
+    *,
+    mesa_limpia: bool = False,
 ) -> LlmAgent:
-    """``modelo`` permite inyectar un LLM falso en tests; por defecto, ``config.agentes``."""
+    """``modelo`` permite inyectar un LLM falso en tests; por defecto, ``config.agentes``.
+
+    ``mesa_limpia`` (ADR-023): ``True`` = la sesión arranca SIN universo —lienzo en blanco: es lo
+    que usa ``apps/equipo``—; ``False`` = adopta el universo guardado al primer turno, como en
+    S8-S11 (lo usan los tests de custodia, que no son sobre la apertura).
+    """
     nucleo = NucleoTools(config, provider)
     comite = ComiteTools(config, provider, modelo, directorio_runs)
     # Ruteo jerárquico (S10, ADR-020): personas, Gestor-Fintual, Constructor y comité.
@@ -215,14 +252,46 @@ def crear_director(
         return f"{INSTRUCCION}\n\n{cableado}"
 
     def cargar_universo(callback_context: CallbackContext) -> None:
-        """El universo es estado de la SESIÓN: al primer turno se adopta el vigente del Gestor."""
-        if callback_context.state.get(CLAVE_UNIVERSO) is not None:
+        """El universo es estado de la SESIÓN. Con ``mesa_limpia`` no se carga NADA: la sesión
+        queda marcada como efímera y el universo lo define el usuario (o pide el guardado).
+        Sin ``mesa_limpia``, al primer turno se adopta el guardado del Gestor."""
+        estado = callback_context.state
+        if estado.get(CLAVE_UNIVERSO) is not None or estado.get(CLAVE_ORIGEN_UNIVERSO):
+            return
+        if mesa_limpia:
+            estado[CLAVE_ORIGEN_UNIVERSO] = ORIGEN_SESION
             return
         try:
-            callback_context.state[CLAVE_UNIVERSO] = volcar(gestor.universo())
-            callback_context.state[CLAVE_ERROR_UNIVERSO] = None
+            estado[CLAVE_UNIVERSO] = volcar(gestor.universo())
+            estado[CLAVE_ORIGEN_UNIVERSO] = ORIGEN_GUARDADO
+            estado[CLAVE_ERROR_UNIVERSO] = None
         except GestorError as exc:
-            callback_context.state[CLAVE_ERROR_UNIVERSO] = str(exc)
+            estado[CLAVE_ERROR_UNIVERSO] = str(exc)
+
+    def antes_de_herramienta(
+        tool: BaseTool, args: dict[str, Any], tool_context: ToolContext
+    ) -> dict[str, Any] | None:
+        """Custodia de la mesa limpia (ADR-023): sin universo, NINGUNA herramienta de análisis
+        corre —tampoco los sub-agentes, que ADK expone como tools, ni el gate del comité—.
+        Responden un error de dominio claro; solo pasan la mesa y la configuración del universo.
+        """
+        if tool.name == TOOL_GESTOR and args.get("operacion") == "incorporar":
+            pedidos = [args.get("ticker") or "", *(args.get("tickers") or [])]
+            ajenos = tickers_que_no_escribio_el_usuario(pedidos, tool_context)
+            if ajenos:
+                return {
+                    "operacion": "incorporar",
+                    "status": "rechazado",
+                    "tipo": "TickerSinProcedencia",
+                    "motivo": TICKER_SIN_PROCEDENCIA.format(ajenos=", ".join(ajenos)),
+                }
+        configura = tool.name == TOOL_GESTOR and args.get("operacion") in SIN_UNIVERSO_SE_PUEDE
+        if not hay_universo(tool_context.state) and tool.name != TOOL_MESA and not configura:
+            error = {"status": "error", "tipo": "SinUniversoError", "mensaje": SIN_UNIVERSO_SESION}
+            return (
+                {"operacion": args.get("operacion"), **error} if tool.name == TOOL_GESTOR else error
+            )
+        return entregar_pesos(tool, args, tool_context)
 
     return LlmAgent(
         name=NOMBRE,
@@ -230,7 +299,7 @@ def crear_director(
         model=resolver_modelo(config, NOMBRE, modelo),
         instruction=instruccion,
         before_agent_callback=cargar_universo,
-        before_tool_callback=entregar_pesos,
+        before_tool_callback=antes_de_herramienta,
         after_tool_callback=despues_de_herramienta,
         after_model_callback=anexar_al_cierre,
         before_model_callback=ocultar_anexos_al_modelo,

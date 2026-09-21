@@ -51,7 +51,7 @@ def main() -> None:
     config = cargar_config()
     raiz = Path(tempfile.mkdtemp(prefix="demo_director_"))
     mundo = mundo_director(raiz, config)
-    turnos = asyncio.run(conversar(mundo, SESION))
+    turnos, _ = asyncio.run(conversar(mundo, SESION))
 
     lineas = ["# Demo del Director (S8)", ""]
     for turno in turnos:
