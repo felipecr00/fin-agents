@@ -7,6 +7,7 @@
 !data
 !src
 !apps
+!comando
 **/__pycache__/
 **/*.pyc
 **/.env

@@ -7,7 +7,6 @@ del Director los deja en el estado y la herramienta los lee de ahí (ADR-019).
 
 from __future__ import annotations
 
-import re
 from typing import Any
 
 from google.adk.agents.llm_agent import LlmAgent
@@ -22,6 +21,7 @@ from investmentsys.config import Config
 from investmentsys.tools import NucleoTools
 from investmentsys.tools.estado import CLAVE_PESOS_EN_CONSULTA, FaltaEnEstadoError
 from investmentsys.tools.objetivo import cartera_objetivo
+from investmentsys.tools.procedencia import DECIMALES, numeros_del_usuario
 
 TOLERANCIA_PESOS = 1e-6  # punto flotante al serializar argumentos; no es un parámetro
 
@@ -75,22 +75,7 @@ PESOS_SIN_PROCEDENCIA = (
     "escriba sus pesos en números y pásalos tal cual; si pregunta por la cartera de la mesa, "
     "consulta al Escéptico SIN `pesos`"
 )
-_NUMERO = re.compile(r"\d+(?:[.,]\d+)?")
-_DECIMALES = 6
-
-
-def _numeros_del_usuario(tool_context: ToolContext) -> set[float]:
-    """Todo número que el usuario escribió en la sesión (y en el mensaje de este turno)."""
-    contenidos = [e.content for e in tool_context.session.events if e.author == "user"]
-    textos = [
-        parte.text
-        for contenido in (*contenidos, tool_context.user_content)
-        for parte in ((contenido.parts or []) if contenido else [])
-        if parte.text
-    ]
-    return {
-        round(float(n.replace(",", ".")), _DECIMALES) for t in textos for n in _NUMERO.findall(t)
-    }
+_DECIMALES = DECIMALES
 
 
 def _los_dijo_el_usuario(pesos: dict[str, float], dichos: set[float]) -> bool:
@@ -131,7 +116,7 @@ def entregar_pesos(
     if tool.name != NOMBRE:
         return None
     pesos = args.get("pesos") or None
-    if pesos is not None and not _los_dijo_el_usuario(pesos, _numeros_del_usuario(tool_context)):
+    if pesos is not None and not _los_dijo_el_usuario(pesos, numeros_del_usuario(tool_context)):
         if not _son_los_de_la_mesa(pesos, tool_context):
             tool_context.state[CLAVE_PESOS_EN_CONSULTA] = None
             return {

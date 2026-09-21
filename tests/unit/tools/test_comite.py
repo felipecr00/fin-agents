@@ -17,6 +17,7 @@ from investmentsys.config import Config
 from investmentsys.contracts import (
     EstadoPrior,
     EtapaCorrida,
+    EventoComite,
     ResumenComite,
     RunState,
     Universe,
@@ -27,6 +28,13 @@ from investmentsys.orchestrator import (
     CLAVE_RUN_STATE,
     CLAVE_SOLICITUD,
     ComiteTools,
+)
+from investmentsys.orchestrator.bitacora import (
+    ARCHIVO_BITACORA,
+    TITULO_CRONOLOGIA,
+    leer_bitacora,
+    leer_hitos,
+    renderizar_cronologia,
 )
 from investmentsys.orchestrator.memorandum import renderizar_memorandum
 from investmentsys.tools import (
@@ -245,6 +253,32 @@ class TestEjecutar:
         for clave in (CLAVE_CANDIDATOS, CLAVE_VALIDACIONES, CLAVE_QUANT_ESTIMATES):
             assert ctx.state.get(clave) is None
         assert len(list(tmp_path.iterdir())) == 1
+
+        # S11: los hitos suben a la sesión del Director, la cronología viaja como bloque del
+        # código y la bitácora queda junto al acta con el mismo contenido.
+        hitos = leer_hitos(ctx.state)
+        assert hitos[0].evento is EventoComite.SESION_ABIERTA
+        assert hitos[-1].evento is EventoComite.ACTA_CONSOLIDADA
+        assert leer_bitacora(Path(salida["acta"]) / ARCHIVO_BITACORA) == hitos
+        assert salida[CLAVE_ANEXO] == renderizar_cronologia(hitos)
+        assert salida[CLAVE_ANEXO].startswith(TITULO_CRONOLOGIA)
+        # Y como dato: toda cifra del bloque anexado está también en la salida de la herramienta.
+        assert [d["detalle"] for d in salida["deliberacion"]] == [h.detalle for h in hitos]
+
+    def test_si_la_corrida_revienta_lo_deliberado_no_se_pierde(
+        self, config: Config, turnos: Turnos, tmp_path: Path
+    ) -> None:
+        """La sesión anidada muere con el error; los hitos ya habían subido a la del Director."""
+        llm = LlmPorAgente(
+            analista=["esto no es un borrador"] * config.agentes.max_intentos_analista
+        )
+        comite = _comite(config, tmp_path, llm)
+        token = _convocar(comite, turnos("inv-1"), "solicitar")["token"]
+        ctx = turnos("inv-2")
+        salida = _convocar(comite, ctx, "ejecutar", token=token)
+        assert salida["status"] == "error" and salida["tipo"] == "ViewsInvalidasError"
+        assert [h.evento for h in leer_hitos(ctx.state)] == [EventoComite.SESION_ABIERTA]
+        assert "sesión abierta" in salida[CLAVE_ANEXO]
 
     def test_cambiar_lo_resumido_tras_la_solicitud_invalida_el_token(
         self, config: Config, tools: NucleoTools, turnos: Turnos, tmp_path: Path

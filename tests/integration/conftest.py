@@ -76,11 +76,13 @@ class LlmPorAgente(BaseLlm):
     model: str = "llm-por-agente"
     _guiones: dict[str, list[Any]] = PrivateAttr(default_factory=dict)
     _instrucciones: dict[str, list[str]] = PrivateAttr(default_factory=dict)
+    _contenidos: dict[str, list[list[types.Content]]] = PrivateAttr(default_factory=dict)
 
     def __init__(self, **guiones: list[Any]) -> None:
         super().__init__()
         self._guiones = {k: list(v) for k, v in guiones.items()}
         self._instrucciones = {k: [] for k in guiones}
+        self._contenidos = {k: [] for k in guiones}
 
     MARCAS: ClassVar[dict[str, str]] = {
         "analista": "Eres el Analista de Mercados",
@@ -94,6 +96,12 @@ class LlmPorAgente(BaseLlm):
     def instrucciones(self, agente: str) -> list[str]:
         return self._instrucciones[agente]
 
+    def historiales(self, agente: str) -> list[list[types.Content]]:
+        """El historial que recibió cada llamada de ``agente``, ya pasado por sus callbacks.
+
+        Solo los contenidos, copiados: la petición entera arrastra las tools y sus datos."""
+        return self._contenidos[agente]
+
     def pendientes(self) -> dict[str, int]:
         return {k: len(v) for k, v in self._guiones.items() if v}
 
@@ -103,6 +111,8 @@ class LlmPorAgente(BaseLlm):
         sistema = str(llm_request.config.system_instruction)
         (agente,) = [a for a, marca in self.MARCAS.items() if marca in sistema]
         self._instrucciones[agente].append(sistema)
+        copia = [c.model_copy(deep=True) for c in llm_request.contents]
+        self._contenidos.setdefault(agente, []).append(copia)
         if not self._guiones.get(agente):
             raise AssertionError(f"{agente}: llamada al LLM no prevista en el guion")
         paso = self._guiones[agente].pop(0)

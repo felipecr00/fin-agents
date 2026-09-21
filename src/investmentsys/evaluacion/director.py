@@ -29,10 +29,12 @@ from investmentsys.data_manager import GestorDatos
 from investmentsys.evaluacion.criterios import ResultadoCriterio
 from investmentsys.evaluacion.criterios_director import Criterios, TurnoObservado, evaluar
 from investmentsys.evaluacion.informe import CasoEvaluado, CriterioEvaluado
+from investmentsys.tools.hitos_en_vivo import AUTOR_COMITE
 
 APP = "eval_director"
 USUARIO = "eval"
 PREPARACIONES = ("incorporar", "retirar")
+TOOL_COMITE = "convocar_comite"
 # Topes del arnés (no son parámetros financieros): un Director en bucle o una llamada colgada
 # hacen FALLAR el caso en vez de dejar la corrida esperando para siempre.
 MAX_LLAMADAS_LLM_POR_TURNO = 25
@@ -130,7 +132,10 @@ def observar(
     textos: list[str] = []
     voces: list[tuple[str, str]] = []
     nombres: dict[str | None, str] = {}
+    hitos, comite_respondio = 0, False
     for evento in eventos:
+        if evento.author == AUTOR_COMITE and not comite_respondio:
+            hitos += 1  # llegó mientras la herramienta del comité seguía corriendo (ADR-021)
         for parte in (evento.content.parts or []) if evento.content else []:
             if parte.function_call:
                 args = dict(parte.function_call.args or {})
@@ -140,6 +145,7 @@ def observar(
             elif parte.function_response:
                 respuesta = parte.function_response.response or {}
                 nombre = nombres.get(parte.function_response.id, parte.function_response.name or "")
+                comite_respondio = comite_respondio or nombre == TOOL_COMITE
                 # Lo que una persona le devuelve al Director es su TEXTO: no es la salida de una
                 # herramienta y no puede respaldar las cifras que ella misma dijo.
                 if parte.function_response.name not in personas:
@@ -156,6 +162,7 @@ def observar(
         texto="\n".join(textos),
         respaldo_previo=respaldo_previo,
         voces=tuple(voces),
+        hitos_en_vivo=hitos,
     )
 
 
@@ -199,7 +206,8 @@ def _efectos(caso: Caso, version_inicial: str, mundo: Mundo) -> list[ResultadoCr
             )
         )
     if caso.efectos.acta_creada is not None:
-        hay_acta = mundo.runs.is_dir() and any(mundo.runs.iterdir())
+        # Acta = RunState del comité. Un acta operativa (plan de compra, S11) no cuenta.
+        hay_acta = mundo.runs.is_dir() and any(mundo.runs.glob("*/run_state.json"))
         resultados.append(
             ResultadoCriterio(
                 criterio="efectos.acta_creada",

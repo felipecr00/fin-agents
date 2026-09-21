@@ -1,6 +1,6 @@
 """Resume el último `adk eval` de una app y falla si algún caso no pasó (lo usa `make eval`).
 
-    uv run --group eval python scripts/resumen_eval.py apps/market_analyst
+    uv run --group eval python scripts/resumen_eval.py tests/eval/agentes/market_analyst
 
 Imprime una fila por caso con los criterios incumplidos, guarda el mismo resumen en
 `runs/evals/<id del resultado>.md` y termina con código 1 si hay casos fallidos.

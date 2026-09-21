@@ -178,7 +178,7 @@ def crear_director(
         nucleo.construir_candidatos, antes=nueva_propuesta, anexo=aviso_estimaciones
     )
     especialistas = [
-        *crear_gestor_fintual(config, gestor),
+        *crear_gestor_fintual(config, gestor, directorio_runs),
         FunctionTool(construir),
         FunctionTool(nucleo.ajustar_restricciones),
         *comite.function_tools(),

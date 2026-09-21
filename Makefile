@@ -22,20 +22,24 @@ COMA := ,
 # Un caso suelto: make eval EVALSET=tests/eval/market_analyst.evalset.json:ambigua_bns
 EVALSET ?= tests/eval/market_analyst.evalset.json
 APP ?= pipeline
+# S11: apps/ es la ÚNICA interfaz (equipo). El modo comando vive en comando/: se despliega y se
+# corre con make, pero `adk web` no lo sirve.
+DIR_APP = $(if $(filter equipo,$(APP)),apps,comando)
+AGENTE_EVAL := tests/eval/agentes/market_analyst
 
-.PHONY: install lint type test nombres check universo update-prices run-local eval eval-analista eval-director evalset sensibilidad comparar clean deploy-dev url-dev corrida-dev logs-dev deploy-prod corrida-prod
+.PHONY: install lint type test nombres check universo update-prices run-local comando bitacora eval eval-analista eval-director evalset sensibilidad comparar clean deploy-dev url-dev corrida-dev logs-dev deploy-prod corrida-prod
 
 install:        ## dependencias con uv
 	$(UV) sync
 
 lint:
-	$(UV) run ruff check src tests apps scripts && $(UV) run ruff format --check src tests apps scripts
+	$(UV) run ruff check src tests apps comando scripts && $(UV) run ruff format --check src tests apps comando scripts
 
 type:
 	$(UV) run mypy src
 
 test:
-	$(UV) run pytest tests/unit tests/golden tests/integration tests/test_gate_security.py tests/test_atribucion.py -q
+	$(UV) run pytest tests/unit tests/golden tests/integration tests/test_gate_security.py tests/test_atribucion.py tests/test_hitos_en_vivo.py -q
 
 nombres:        ## DoD de S9: nombres comerciales de modelos fuera de config.yaml (debe salir vacío)
 	$(UV) run python -m tests.unit.test_nombres_de_modelos
@@ -51,17 +55,24 @@ update-prices:  ## paso 1 del ritual mensual: Tiingo → validar → data/series
 	$(UV) run python scripts/update_prices.py $(if $(SIMULAR),--dry-run,) \
 		$(if $(ACEPTAR_DISCREPANCIAS),--aceptar-discrepancias,)
 
-run-local:      ## UI de ADK: elige `equipo` (el Director, entrada por defecto); `pipeline` = modo comando
+run-local:      ## LA interfaz: el Director y su equipo (app `equipo`, la única que sirve `adk web`)
 	$(UV) run adk web apps
+
+comando:        ## modo comando: el comité completo SIN conversación (ritual mensual); hitos en vivo
+# make comando [CONTEXTO="material para el analista"]. Acta y bitácora en runs/<run_id>/.
+	$(UV) run python scripts/run_pipeline.py $(if $(CONTEXTO),"$(CONTEXTO)",)
+
+bitacora:       ## sigue EN VIVO la bitácora del comité desde otra terminal: make bitacora [RUN=<run_id>]
+	$(UV) run python scripts/ver_bitacora.py $(RUN)
 
 eval: eval-analista eval-director  ## los dos evalsets contra el modelo REAL; código 1 si algún caso falla
 
 eval-analista:  ## evalset del analista con `adk eval` y métrica propia (ADR-010)
 # `adk eval` siempre termina en 0 e imprime una tabla muy ancha: el resumen por caso y el código
 # de salida los pone scripts/resumen_eval.py a partir del resultado que ADK deja en disco.
-	$(UV) run --group eval adk eval apps/market_analyst $(EVALSET) \
+	$(UV) run --group eval adk eval $(AGENTE_EVAL) $(EVALSET) \
 		--config_file_path tests/eval/test_config.json
-	$(UV) run --group eval python scripts/resumen_eval.py apps/market_analyst
+	$(UV) run --group eval python scripts/resumen_eval.py $(AGENTE_EVAL)
 
 eval-director:  ## evalset del Director con el arnés propio, un mundo aislado por caso (ADR-015)
 # CASOS="saludo degradar_a_neutral" corre solo esos. Casos: tests/eval/casos_director.yaml
@@ -103,9 +114,9 @@ deploy-prod:    ## Agent Engine (prod): mismas versiones que uv.lock, sesiones a
 # Agent Engine despliega UNA app: APP=pipeline (modo comando, por defecto) o APP=equipo (el
 # Director). Promover `equipo` a prod es una decisión de operación (docs/operacion.md).
 	@test -n "$(PROYECTO)" || { echo "Falta PROYECTO"; exit 1; }
-	@test -f apps/$(APP)/.agent_engine_config.json || { echo "APP=$(APP) no es desplegable"; exit 1; }
+	@test -f $(DIR_APP)/$(APP)/.agent_engine_config.json || { echo "APP=$(APP) no es desplegable"; exit 1; }
 	rm -rf $(STAGING_PROD) && mkdir -p $(STAGING_PROD)/$(APP)
-	cp apps/$(APP)/__init__.py apps/$(APP)/agent.py apps/$(APP)/.agent_engine_config.json \
+	cp $(DIR_APP)/$(APP)/__init__.py $(DIR_APP)/$(APP)/agent.py $(DIR_APP)/$(APP)/.agent_engine_config.json \
 		$(STAGING_PROD)/$(APP)/
 	$(UV) export --locked --no-dev --group deploy --no-emit-project --no-hashes -q \
 		-o $(STAGING_PROD)/$(APP)/requirements.txt

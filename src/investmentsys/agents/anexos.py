@@ -33,6 +33,7 @@ from google.genai import types
 
 from investmentsys.tools import CLAVE_UNIVERSO
 from investmentsys.tools.ficha import ATIENDE, CLAVE_ANEXO, construir_ficha
+from investmentsys.tools.hitos_en_vivo import MARCA_HITO
 
 CLAVE_ANEXOS_TURNO = "director_anexos_turno"
 SEPARADOR = "\n\n---\n\n"
@@ -122,6 +123,13 @@ def anexar_al_cierre(
 def ocultar_anexos_al_modelo(
     callback_context: CallbackContext, llm_request: LlmRequest
 ) -> LlmResponse | None:
+    # S11 (ADR-021): los hitos del comité transmitidos en vivo son eventos de la sesión; ADK se
+    # los presentaría al modelo como «[comite] said: …». Se retira el contenido ENTERO.
+    llm_request.contents = [
+        c
+        for c in llm_request.contents
+        if not any(MARCA_HITO in (p.text or "") for p in c.parts or [])
+    ]
     for contenido in llm_request.contents:
         for i, parte in enumerate(contenido.parts or []):
             if parte.text and MARCA_ANEXO in parte.text:

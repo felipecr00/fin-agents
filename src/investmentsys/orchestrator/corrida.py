@@ -71,7 +71,10 @@ def armar_run_state(
 
 def persistir(corrida: RunState, directorio_runs: Path) -> Path:
     destino = directorio_runs / corrida.run_id
-    destino.mkdir(parents=True, exist_ok=False)
+    # S11: la bitácora crea la carpeta al abrir la sesión; lo que no puede existir es OTRA acta.
+    destino.mkdir(parents=True, exist_ok=True)
+    if (destino / ARCHIVO_RUN_STATE).exists():
+        raise FileExistsError(f"ya hay un acta en {destino}")
     (destino / ARCHIVO_RUN_STATE).write_text(corrida.model_dump_json(indent=2), encoding="utf-8")
     if corrida.reporte_markdown:
         (destino / ARCHIVO_REPORTE).write_text(corrida.reporte_markdown, encoding="utf-8")

@@ -169,6 +169,14 @@ fintual:
   bandas_por_activo: {}
   decimales_usd: 2               # Fintual compra fracciones: montos exactos al centavo
   dias_historia_dividendos: 400  # historia de ex-dividendos que se consulta a la fuente
+  tributario:
+    # Filtro tributario CONSULTIVO (fintual/tax_filter.py, ADR-022). Son SUPUESTOS TUYOS, no
+    # hechos ni asesoría: cada salida los declara. Edítalos con tu situación real.
+    tasa_marginal: 0.135   # tu tramo marginal supuesto sobre la ganancia realizada
+    usd_clp: 950.0         # tipo de cambio supuesto para expresar el costo en CLP (manual)
+    # Costo de adquisición TOTAL por activo, en US$. Sin declarar, el costo fiscal se reporta
+    # como COTA (se asume que toda la venta es ganancia) y no se detectan pérdidas latentes.
+    costo_base_usd: {}
 
 sensibilidad:
   # Rejilla del análisis de sensibilidad (risk/sensibilidad.py): cada magnitud se aplica con
@@ -180,6 +188,9 @@ sensibilidad:
 corridas:
   # RunState y reporte de cada corrida: <directorio>/<run_id>/ (relativo a la raíz del repo).
   directorio: runs
+  # ADR-021: los hitos del comité se muestran en el chat MIENTRAS corre (cola de eventos de la
+  # invocación de ADK, API privada con cercos). false = solo bitácora + cronología al cierre.
+  transmitir_hitos_en_vivo: true
 
 reproducibilidad:
   semilla: 42

@@ -284,6 +284,21 @@ class SensibilidadConfig(_Seccion):
         return self
 
 
+class TributarioConfig(_Seccion):
+    """SUPUESTOS del usuario para el filtro tributario consultivo (S11): no son hechos."""
+
+    tasa_marginal: float = Field(ge=0.0, le=1.0)
+    usd_clp: float = Field(gt=0.0)
+    costo_base_usd: dict[Ticker, float] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _costos(self) -> TributarioConfig:
+        negativos = sorted(a for a, c in self.costo_base_usd.items() if c < 0.0)
+        if negativos:
+            raise ValueError(f"costo_base_usd negativo: {negativos}")
+        return self
+
+
 class FintualConfig(_Seccion):
     """Gobernanza operativa en Fintual Acciones (``fintual/``, ADR-020)."""
 
@@ -293,6 +308,7 @@ class FintualConfig(_Seccion):
     bandas_por_activo: dict[Ticker, float] = Field(default_factory=dict)
     decimales_usd: int = Field(ge=0, le=4, description="Fintual compra fracciones: montos a 2.")
     dias_historia_dividendos: int = Field(gt=0)
+    tributario: TributarioConfig
 
     @model_validator(mode="after")
     def _bandas(self) -> FintualConfig:
@@ -304,6 +320,7 @@ class FintualConfig(_Seccion):
 
 class CorridasConfig(_Seccion):
     directorio: Path
+    transmitir_hitos_en_vivo: bool
 
 
 class ReproducibilidadConfig(_Seccion):

@@ -106,8 +106,26 @@ def _convocar_comite(s: Mapping[str, Any]) -> list[str]:
     return lineas
 
 
+def _plan_operativo(s: Mapping[str, Any]) -> list[str]:
+    compras = ", ".join(f"{a} US$ {m:.2f}" for a, m in s["compras_usd"].items())
+    if s.get("override_registrado"):
+        return [
+            f"OVERRIDE del usuario: {s['escenario']}, venta forzada US$ "
+            f"{s['venta_forzada_usd']:.2f} · {s['costo_fiscal']}",
+            f"reasignación del flujo US$ {s['flujo_usd']:.2f}: {compras}",
+        ]
+    return [
+        f"{s['cartera_objetivo']}: flujo US$ {s['flujo_usd']:.2f} → compras {compras}; ventas "
+        f"US$ {s['ventas_usd']:.2f}",
+        *(f"escenario {e['id']}: {e['etiqueta']}" for e in s["escenarios_fiscales"]),
+    ]
+
+
 def _montos(s: Mapping[str, Any]) -> list[str]:
-    """Solo ``montos`` trae ``validado``: las demás operaciones del Gestor no llevan ficha."""
+    """``montos`` y el plan operativo traen ``validado``: las demás operaciones del Gestor no
+    llevan ficha."""
+    if s.get("operacion") in ("plan_compra", "forzar_orden"):
+        return _plan_operativo(s)
     lineas = [
         f"{s['cartera_objetivo']} sobre US$ {s['valor_cartera_usd']:.2f}: orden global "
         f"{s['orden_global']}"

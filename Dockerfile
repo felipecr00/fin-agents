@@ -19,7 +19,10 @@ RUN uv sync --locked --no-dev --no-install-project
 COPY CLAUDE.md config.yaml ./
 COPY data ./data
 COPY src ./src
-COPY apps ./apps
+# S11: una sola interfaz (apps/equipo). El modo comando (comando/pipeline) se sirve a su lado
+# SOLO como API —`make corrida-dev` y el replay de ADR-009 lo usan—; aquí no hay UI.
+COPY apps ./servidos
+COPY comando/pipeline ./servidos/pipeline
 RUN uv sync --locked --no-dev
 
 RUN adduser --disabled-password --gecos "" agente
@@ -28,4 +31,4 @@ ENV PATH="/app/.venv/bin:$PATH"
 
 # api_server (sin UI ni endpoints de desarrollo). Sesiones en memoria: dev es desechable y el
 # RunState viaja en el estado de sesión (ADR-009). Cloud Run inyecta $PORT.
-CMD ["sh", "-c", "exec adk api_server --host 0.0.0.0 --port ${PORT:-8080} --session_service_uri memory:// apps"]
+CMD ["sh", "-c", "exec adk api_server --host 0.0.0.0 --port ${PORT:-8080} --session_service_uri memory:// servidos"]

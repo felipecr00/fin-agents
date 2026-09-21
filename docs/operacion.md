@@ -15,15 +15,47 @@ financiera.
 | Acceso | solo autenticado (identity token, `roles/run.invoker`) | IAM de Vertex AI (access token, `roles/aiplatform.user`) |
 | Se despliega | en cada merge a `main` | a mano: Actions → deploy → Run workflow → `prod` |
 
-## Dos puntos de entrada (S8)
+## Una sola interfaz (S11)
 
-| | `equipo` — el Director de Análisis | `pipeline` — modo comando |
+`apps/equipo` —el Director y su equipo— es la ÚNICA interfaz: `make run-local` →
+http://localhost:8000. Ahí se conversa, se consulta la mesa, se convoca al comité (que ahora se
+VE deliberar, ver abajo) y se pide el plan de compra de un aporte.
+
+El **modo comando** (el comité completo, de una vez, sin conversar) sobrevive como target de
+`make` y de despliegue, no como visor: `adk web` ya no lo sirve.
+
+| | `equipo` — la interfaz | modo comando |
 |---|---|---|
-| Qué es | conversación: entiende qué necesitas y convoca al especialista o al comité | la corrida formal completa, de una vez, sin conversar |
-| Cuándo | el día a día: consultas ("¿correlación VOOG-VB?"), mesa de trabajo, evaluar TU cartera, altas y bajas del universo, ajustar restricciones, y el comité cuando lo decidas | el ritual mensual, corridas remotas con replay (`make corrida-dev/prod`), scripts y CI |
-| Cómo | `make run-local` → http://localhost:8000 → app **equipo** | `uv run python scripts/run_pipeline.py`, o app **pipeline** en `adk web` |
+| Qué es | conversación: entiende qué necesitas y convoca al especialista o al comité | la corrida formal completa, sin conversación |
+| Cuándo | el día a día, y el comité cuando lo decidas | el ritual mensual sin conversación, corridas remotas con replay (`make corrida-dev/prod`), CI |
+| Cómo | `make run-local` | `make comando [CONTEXTO="…"]` en local; `comando/pipeline` es lo que despliega `make deploy-prod` y lo que dev sirve como API |
 | Qué produce | respuestas EXPLORATORIAS (`validado: false` en el dato) y, solo vía comité con tu confirmación, una RECOMENDACIÓN con acta | siempre un acta en `runs/<run_id>/` |
 | Acta | `aprobacion` registra el resumen que viste y tu confirmación ([ADR-014](adr/014-gate-del-comite-en-dos-fases-y-resultados-exploratorios.md)) | `aprobacion: null` |
+
+### El comité se ve (S11, [ADR-021](adr/021-hitos-del-comite-en-vivo-por-la-cola-de-eventos-de-la-invocacion.md))
+- **En el chat, en vivo**: mientras `convocar_comite` corre, cada hito aparece como un mensaje
+  del autor `comite` (`+00:41` **Escéptico (Validador)** · ronda 1: VETO emitido. Motivo: …).
+- **Al cierre**: la respuesta del Director trae anexada la *Cronología del comité* completa
+  (fases, rondas, vetos con su motivo, tiempos). Es lo que queda si el cliente no entrega eventos
+  en vivo o si `corridas.transmitir_hitos_en_vivo` está en `false`.
+- **Desde otra terminal**: `make bitacora` espera la próxima corrida y la sigue línea a línea
+  (`make bitacora RUN=<run_id>` para una concreta). Lee `runs/<run_id>/bitacora.jsonl`, que se
+  escribe hito a hito junto al acta; sirve igual para `make comando`.
+
+### Plan de compra de un aporte (S11, [ADR-022](adr/022-plan-de-compra-por-flujos-filtro-tributario-consultivo-y-acta-operativa.md))
+Dile al Director cuánto aportaste («aporté 500 dólares», «me acreditaron 12,37 de dividendos»):
+el Gestor devuelve el **Plan de Compra Neta** —el flujo va 100 % a los activos bajo su objetivo,
+en US$ fraccionados, CERO ventas, con las bandas de inercia antes y después— y el **filtro
+tributario consultivo**: escenarios etiquetados «Costo fiscal estimado: $X CLP», pérdidas
+latentes (tax-loss harvesting) y el disclaimer. El sistema no ejecuta: el plan lo ejecutas tú en
+la app.
+- Los supuestos son tuyos: `config.yaml: fintual.tributario` (tramo marginal, USD/CLP, costo de
+  adquisición por activo). Sin costo declarado, el costo fiscal es una COTA (toda la venta se
+  toma como ganancia) y la salida lo dice.
+- **Override**: si tras ver la advertencia de un escenario con venta pides forzarlo, queda en el
+  acta operativa (`runs/<run_id>/acta_operativa_<id>.json`, junto al acta del comité) con la
+  advertencia que cruzaste, literal, y los dos turnos. Solo vale en el turno siguiente al plan.
+- Sin conversación: `uv run python scripts/demo_plan_compra.py --aporte 500 --run <run_id>`.
 
 Custodias del Director que viven en las herramientas, no en el prompt:
 - **Comité**: `convocar_comite` en dos fases. Primero te presenta la **Orden Preparatoria de
@@ -84,8 +116,8 @@ esas líneas, correr `make eval` y mirar las conversaciones antes de concluir na
 verifica que ningún otro archivo los mencione
 ([ADR-018](adr/018-abstraccion-de-inferencia-por-niveles-en-config-yaml.md)).
 
-**En la nube.** dev (Cloud Run) sirve todas las apps: `equipo` está disponible allí desde el
-merge de S8. El almacén `data/` del contenedor es de solo lectura: consultar, diagnosticar y
+**En la nube.** dev (Cloud Run) sirve `equipo` y, solo como API, el modo comando (`pipeline`,
+para `make corrida-dev` y el replay). El almacén `data/` del contenedor es de solo lectura: consultar, diagnosticar y
 convocar al comité funcionan; altas, bajas y cambios de cap responden "este despliegue no admite
 cambios de universo: hazlos en local y redespliega". prod (Agent Engine) despliega UNA app y
 sigue siendo `pipeline`; promover el Director es `make deploy-prod APP=equipo …` y es una
@@ -102,8 +134,10 @@ Los primeros días de cada mes, con el mes anterior ya cerrado:
    **Lee el resumen antes de seguir**: meses nuevos por activo, continuidad y diff.
 2. `git diff data/`, commit (`chore: precios AAAA-MM`) y PR: las series y el universo versionados
    son lo que usan dev y prod, y su historial en git es el respaldo de verdad.
-3. `uv run python scripts/run_pipeline.py` (o `make corrida-dev` tras el despliegue) y
-   `make comparar A=<corrida anterior> B=<corrida nueva>`.
+3. `make comando` (con `make bitacora` en otra terminal si quieres verlo deliberar; o
+   `make corrida-dev` tras el despliegue) y `make comparar A=<corrida anterior> B=<corrida nueva>`.
+4. Si aportaste: en `make run-local`, «aporté N dólares» → Plan de Compra Neta sobre la cartera
+   recién aprobada.
 
 ### `make update-prices`
 
@@ -149,7 +183,7 @@ pantalla ni por el historial, y dev lo recibe al desplegar:
 
 `SECRETO_TIINGO` va vacío por defecto a propósito: un secreto inexistente tumbaría el despliegue
 automático de cada merge. En prod (Agent Engine) la variable se declararía en
-`apps/pipeline/.agent_engine_config.json`; no se ha hecho porque el disco del contenedor es de
+`comando/pipeline/.agent_engine_config.json`; no se ha hecho porque el disco del contenedor es de
 solo lectura y el CSV no podría reescribirse allí.
 
 ## Universo: altas, capitalizaciones y prior (S7)
@@ -233,7 +267,7 @@ Todo en local; nada de esto se despliega ni entra en CI salvo sus tests unitario
 
 | Comando | Qué hace | LLM | Salida |
 |---|---|---|---|
-| `make eval` | los dos evalsets contra el modelo real: `eval-analista` (11 casos, `adk eval`) y `eval-director` (27 casos, arnés propio con un almacén aislado por caso, [ADR-015](adr/015-evaluacion-del-director-con-arnes-propio-y-promocion-de-apps-equipo.md)); código 1 si alguno falla ([ADR-010](adr/010-evaluacion-del-analista-con-metrica-determinista-en-adk-eval.md)) | sí | `runs/evals/<id>.md` y `apps/market_analyst/.adk/eval_history/` |
+| `make eval` | los dos evalsets contra el modelo real: `eval-analista` (11 casos, `adk eval`) y `eval-director` (27 casos, arnés propio con un almacén aislado por caso, [ADR-015](adr/015-evaluacion-del-director-con-arnes-propio-y-promocion-de-apps-equipo.md)); código 1 si alguno falla ([ADR-010](adr/010-evaluacion-del-analista-con-metrica-determinista-en-adk-eval.md)) | sí | `runs/evals/<id>.md` y `tests/eval/agentes/market_analyst/.adk/eval_history/` |
 | `make eval EVALSET=tests/eval/market_analyst.evalset.json:ambigua_bns` | un solo caso | sí | ídem |
 | `make eval-director CASOS="saludo degradar_a_neutral"` | solo esos casos del Director (sin `CASOS`, los 27); cada caso en un almacén aislado, sin tocar `data/` ni Tiingo; un caso que no termina en 5 min cuenta como fallido | sí | `runs/evals/director_<marca>/` (`resumen.md` y `conversaciones.md`) |
 | `uv run python scripts/demo_director.py` | sesión completa de demostración (A → B → altas → comité) en un almacén aislado | sí | `runs/demos/director_<marca>/` (transcripción y acta) |
@@ -274,7 +308,7 @@ Todo en local; nada de esto se despliega ni entra en CI salvo sus tests unitario
 | Cloud Build | 2.500 min-build gratis/mes | Un build ≈ 2-3 min → **≈ US$0** con decenas de merges al mes |
 | Artifact Registry | 0,5 GB gratis; luego ≈ US$0,10/GB-mes | Cada imagen ≈ 0,4 GB y se acumulan: **limpia versiones viejas** de `cloud-run-source-deploy` o pon una política de limpieza |
 | Secret Manager | 6 versiones activas gratis | **≈ US$0** |
-| Agent Engine (prod) | ≈ US$0,085 / vCPU-h y US$0,009 / GiB-h; capa gratuita ≈ 50 vCPU-h y 100 GiB-h al mes | Por defecto Agent Engine deja **1 instancia siempre encendida** (hasta 100). `apps/pipeline/.agent_engine_config.json` lo cambia a 0-1 instancias de 1 vCPU / 2 GiB: escala a cero y el uso ocasional cabe en la capa gratuita → **≈ US$0**, a cambio de un arranque en frío en la primera petición. Con el valor por defecto serían ≈ 730 vCPU-h/mes ≈ US$60/mes |
+| Agent Engine (prod) | ≈ US$0,085 / vCPU-h y US$0,009 / GiB-h; capa gratuita ≈ 50 vCPU-h y 100 GiB-h al mes | Por defecto Agent Engine deja **1 instancia siempre encendida** (hasta 100). `comando/pipeline/.agent_engine_config.json` lo cambia a 0-1 instancias de 1 vCPU / 2 GiB: escala a cero y el uso ocasional cabe en la capa gratuita → **≈ US$0**, a cambio de un arranque en frío en la primera petición. Con el valor por defecto serían ≈ 730 vCPU-h/mes ≈ US$60/mes |
 | Sesiones administradas | ≈ US$0,25 / 1.000 eventos almacenados | Una corrida ≈ 19 eventos → **≈ US$0,005**; borra sesiones de prueba si se acumulan |
 
 Orden de magnitud: uso ocasional (unas decenas de corridas al mes) ≈ **US$2-5/mes de modelo**; el
