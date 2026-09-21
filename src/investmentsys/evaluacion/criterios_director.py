@@ -29,7 +29,18 @@ CIFRA_CON_MILES = re.compile(r"(?<![\w.,])-?\d{1,3}(?:,\d{3})+(?:\.\d+)?\s?%?|" 
 NUMERO = re.compile(r"-?\d+(?:\.\d+)?(?:[eE]-?\d+)?")
 PORCENTAJE = 100.0
 VINETA = re.compile(r"^(?:[*\-•]|\d+[.)])\s")
-NEGACIONES = ("no ", "ni ", "sin ", "fuera de", "tampoco", "nunca")
+# "en lugar de vender…" y "evitar ventas" también niegan (visto con el modelo real, 2026-09-21).
+NEGACIONES = (
+    "no ",
+    "ni ",
+    "sin ",
+    "fuera de",
+    "tampoco",
+    "nunca",
+    "en lugar de",
+    "en vez de",
+    "evita",
+)
 # S9 — atribución: una cifra de retorno, riesgo o correlación se dice con su fuente.
 TERMINOS_DE_CIFRA_ATRIBUIBLE = (
     "retorno",
@@ -342,6 +353,25 @@ def cifras_sin_atribuir(texto: str) -> list[str]:
     return huerfanas
 
 
+ENCABEZADO = re.compile(r"^#{1,6}\s", re.MULTILINE)
+MIN_FILAS_DE_BLOQUE = 2
+
+
+def bloques_con_contenido(texto: str) -> list[str]:
+    """Encabezados de bloque que REHACEN un bloque: el título y, debajo, contenido estructurado
+    (filas de tabla o viñetas). Un encabezado que solo anuncia los anexos («### Mesa de trabajo
+    y fichas», seguido de una frase) nombra el bloque, no lo rehace (visto con el modelo real)."""
+    rehechos = []
+    for m in ENCABEZADO_DE_BLOQUE.finditer(texto):
+        resto = texto[m.end() :]
+        siguiente = ENCABEZADO.search(resto)
+        seccion = resto[: siguiente.start()] if siguiente else resto
+        filas = [ln for ln in seccion.splitlines() if FILA_O_VINETA.match(ln.strip())]
+        if len(filas) >= MIN_FILAS_DE_BLOQUE:
+            rehechos.append(m.group(0))
+    return rehechos
+
+
 def coincide(real: Any, esperado: Any) -> bool:
     """Igualdad tolerante: números con holgura de punto flotante; de un dict, solo lo esperado."""
     if isinstance(esperado, dict):
@@ -476,7 +506,7 @@ def evaluar(criterios: Criterios, turno: TurnoObservado, prefijo: str) -> list[R
             )
         )
     if criterios.sin_bloques_imitados:
-        encabezados = [m.group(0) for m in ENCABEZADO_DE_BLOQUE.finditer(normalizar(turno.leido))]
+        encabezados = bloques_con_contenido(normalizar(turno.leido))
         anexados = sum(1 for _, r in turno.respuestas if "anexo" in r)
         resultados.append(
             _resultado(

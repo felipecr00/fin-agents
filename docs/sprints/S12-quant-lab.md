@@ -12,6 +12,10 @@
 > - Todo output operativo lleva el disclaimer: estimación algorítmica, no
 >   asesoría tributaria ni financiera.
 
+> Antes del PR 0: leer `docs/sprints/S11.5-lienzo-en-blanco.md` (ADR-023). La sesión ya no
+> arranca con un universo cargado y el universo de una sesión está separado del guardado: la
+> migración a datos diarios debe respetar esa regla.
+
 ## Prerrequisito innegociable (PR 0 del sprint)
 Migración a DATOS DIARIOS: extender el provider Tiingo a EOD diario,
 almacén `data/series_diarias/`, validaciones de S6 aplicadas, y decisión

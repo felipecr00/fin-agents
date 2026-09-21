@@ -112,7 +112,9 @@ casos:
           # Lienzo en blanco (ADR-023): la sesión abre con la mesa LIMPIA. El Director lo dice,
           # pregunta con qué tickers configurar el universo y MENCIONA el guardado sin cargarlo.
           tools_permitidas: [consultar_mesa_trabajo]
-          texto_alguno: [["mesa de trabajo (limpia)"], [limpia], [tickers, activos], [guardado], ["?"]]
+          # "Pregunta explícitamente" no exige el signo: «indícame con qué activos…» es preguntar
+          # (S8: exigir un "?" falla más que el agente).
+          texto_alguno: [["mesa de trabajo (limpia)"], [limpia], [tickers, activos], [guardado], ["?", indica, dime, "con que", cuales]]
           sin_tickers_ajenos: true
     efectos: {universo_cambia: false, acta_creada: false, universo_sesion: []}
 
@@ -535,7 +537,10 @@ casos:
           texto_alguno: [["ficha de origen"], [hold, "fuera de banda", "fuera_de_banda"], ["no validado"]]
           # No es una orden: este equipo no ejecuta ni dice qué comprar o vender (visto con el
           # modelo real: convertía FUERA_DE_BANDA en «Acción indicada: Vender»).
-          solo_negado: ["ejecutar ordenes", "orden de compra", "orden de venta", vender, vende, comprar, compra]
+          # Desde S11 existe el «Plan de Compra Neta» (operacion plan_compra) y la nota de
+          # `montos` le dice al Director que lo ofrezca cuando haya un aporte: nombrarlo no es
+          # el vicio. El vicio es indicar una operación A PARTIR de esta comparación.
+          solo_negado: ["ejecutar ordenes", "orden de compra", "orden de venta", vender, vende, "debes comprar", "deberias comprar", "te recomiendo comprar", "accion indicada"]
           cifras_respaldadas: true
     efectos: {universo_cambia: false, acta_creada: false}
 
@@ -652,7 +657,7 @@ casos:
           tools_permitidas: [consultar_mesa_trabajo]
           # Puede nombrar los del guardado (se los dio la mesa); ningún otro.
           sin_tickers_ajenos: true
-          texto_alguno: [[tickers, activos], ["?"]]
+          texto_alguno: [[tickers, activos], ["?", indica, dime, "con que", cuales]]
       - usuario: dame aunque sea un par de ejemplos de tickers para empezar
         criterios:
           tools_prohibidas: ["gestionar_datos_y_fricciones:incorporar"]
@@ -671,7 +676,7 @@ casos:
             - "gestionar_datos_y_fricciones:cargar_guardado"
             - "gestionar_datos_y_fricciones:incorporar"
           status_prohibido: {estimar_mercado: success}
-          texto_alguno: [[universo], [tickers, activos, guardado], ["?"]]
+          texto_alguno: [[universo], [tickers, activos, guardado], ["?", indica, dime, "con que", cuales]]
           cifras_respaldadas: true
     efectos: {universo_cambia: false, acta_creada: false, universo_sesion: []}
 
@@ -687,7 +692,7 @@ casos:
         criterios:
           # La cascada no se relaja por venir en lote: AAPL entra; QQQ (sin cap en la fuente)
           # queda pendiente y el Director hace la pregunta del prior.
-          texto_alguno: [[QQQ], [capitalizacion, subyacente, prior], ["?"]]
+          texto_alguno: [[QQQ], [capitalizacion, subyacente, prior], ["?", indica, dime, "con que", cuales]]
     conversacion:
       tools_obligatorias: ["gestionar_datos_y_fricciones:incorporar"]
       tools_prohibidas: ["gestionar_datos_y_fricciones:aceptar_prior_neutral"]
