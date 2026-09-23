@@ -103,6 +103,7 @@ def test_una_sola_declaracion_con_las_operaciones_enumeradas(
     assert set(esquema["properties"]) == {
         "operacion",
         "ticker",
+        "tickers",  # lienzo en blanco (ADR-023): alta por lista
         "prior_cap",
         "prior_metodologia",
         # S11: el flujo nuevo es del USUARIO y se verifica su procedencia (test_plan_operativo);

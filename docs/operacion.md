@@ -32,6 +32,20 @@ El **modo comando** (el comité completo, de una vez, sin conversar) sobrevive c
 | Qué produce | respuestas EXPLORATORIAS (`validado: false` en el dato) y, solo vía comité con tu confirmación, una RECOMENDACIÓN con acta | siempre un acta en `runs/<run_id>/` |
 | Acta | `aprobacion` registra el resumen que viste y tu confirmación ([ADR-014](adr/014-gate-del-comite-en-dos-fases-y-resultados-exploratorios.md)) | `aprobacion: null` |
 
+### La sesión abre con la mesa limpia ([ADR-023](adr/023-lienzo-en-blanco-universo-de-sesion-separado-del-guardado.md))
+Una sesión nueva de `equipo` no trae activos, cálculos ni restricciones. El Director lo dice,
+pregunta con qué tickers configurar el universo y menciona en una línea el universo GUARDADO
+(`data/universo.json`, el del modo comando), sin cargarlo.
+- **«usa el guardado» / «partamos de mi lista guardada»** → lo carga con sus diagnósticos. Desde
+  ahí las altas y bajas se persisten en él, como siempre.
+- **Una lista tuya («partamos con AAPL, MSFT y QQQ»)** → el Gestor diagnostica todos (ventana
+  común y quién la limita), incorpora los que no requieren una decisión y te pregunta, uno por
+  uno, por el prior de los que no tienen capitalización en la fuente (ETFs: subyacente / AUM /
+  neutral). Ese universo vive SOLO en la sesión: el guardado no se toca y el modo comando sigue
+  igual. Sus series quedan en `data/series/` como caché sin versionar: no las comitees.
+- Con la mesa limpia, cualquier análisis o el comité responden «no hay universo configurado en la
+  sesión». Y el Director no propone tickers: uno que tú no hayas escrito no entra.
+
 ### El comité se ve (S11, [ADR-021](adr/021-hitos-del-comite-en-vivo-por-la-cola-de-eventos-de-la-invocacion.md))
 - **En el chat, en vivo**: mientras `convocar_comite` corre, cada hito aparece como un mensaje
   del autor `comite` (`+00:41` **Escéptico (Validador)** · ronda 1: VETO emitido. Motivo: …).

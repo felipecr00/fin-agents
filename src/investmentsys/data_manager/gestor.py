@@ -4,6 +4,16 @@ Determinista y sin LLM. Regla dura: ningún número sobre un activo no validado 
 ``AssetDiagnostic`` y aquí se congelan las capitalizaciones del prior (ADR-013). Las caps solo
 cambian por ``refrescar_cap``; todo cambio de input queda en el historial con la versión del
 universo antes y después.
+
+Dos clases de universo (ADR-023, lienzo en blanco):
+- el GUARDADO (``data/universo.json``, versionado): el del modo comando, dev y prod. Toda
+  operación con ``base=GUARDADO`` (el valor por defecto) lo lee del disco y lo persiste, como
+  siempre;
+- el de una SESIÓN efímera: ``base`` es el universo que trae la sesión (``None`` = mesa limpia).
+  La operación devuelve el universo nuevo y NO toca ``universo.json`` ni su historial. Las series
+  descargadas quedan en ``data/series/`` como caché, salvo las de un activo del universo
+  guardado, que NUNCA se sobrescriben desde una sesión: se reutilizan con su diagnóstico y su
+  cap congelada (solo ``make update-prices`` las cambia, con sus barreras de ADR-011).
 """
 
 from __future__ import annotations
@@ -15,7 +25,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, Final
 
 import pandas as pd
 from pydantic import BaseModel, ConfigDict
@@ -35,6 +45,7 @@ from investmentsys.data.actualizacion import (
     escribir_series_atomico,
     validar_sanidad,
 )
+from investmentsys.data.series_provider import ruta_serie
 from investmentsys.data_manager.fuente import (
     CierreDiario,
     Dividendo,
@@ -46,6 +57,10 @@ from investmentsys.portfolio.prior import mensaje_estado_prior
 from investmentsys.risk.cobertura import Cobertura, advertencias_de_cobertura, cobertura_escenario
 
 MONEDA_SOPORTADA = "USD"
+SIN_UNIVERSO_EN_SESION = (
+    "no hay universo configurado en la sesión: primero define con qué activos trabajar (una "
+    "lista de tickers) o carga el universo guardado"
+)
 
 
 class GestorError(ValueError):
@@ -62,6 +77,18 @@ class ActivoNoAptoError(GestorError):
 
 class UniversoDesincronizadoError(GestorError):
     """Los diagnósticos del universo no corresponden a las series en disco."""
+
+
+class _Guardado:
+    """Centinela: la operación trabaja sobre el universo persistido y lo persiste."""
+
+    def __repr__(self) -> str:
+        return "GUARDADO"
+
+
+GUARDADO: Final = _Guardado()
+Base = Universe | None | _Guardado
+"""Sobre qué universo opera un cambio: ``GUARDADO``, el de una sesión, o ``None`` (mesa limpia)."""
 
 
 class _Informe(BaseModel):
@@ -90,6 +117,16 @@ class DiagnosticoUniverso(_Informe):
     sin_cap: tuple[str, ...]
     mensaje_prior: str
     advertencias: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class ResultadoLista:
+    """Alta por lista: qué entró, qué espera una decisión del usuario y qué se rechazó."""
+
+    universo: Universe | None
+    incorporados: tuple[str, ...]
+    pendientes_de_prior: tuple[AssetDiagnostic, ...]
+    rechazados: dict[str, str]
 
 
 @dataclass(frozen=True)
@@ -148,52 +185,117 @@ class GestorDatos:
         prior_metodologia: str | None = None,
         *,
         aceptar_neutral: bool = False,
+        base: Base = GUARDADO,
     ) -> Universe:
-        """Valida, descarga y persiste ``ticker``; devuelve el universo nuevo.
+        """Valida, descarga y (si ``base`` es el guardado) persiste ``ticker``; devuelve el
+        universo nuevo.
 
         Sin ``prior_cap`` y sin cap en la fuente, el activo entra con el prior PENDIENTE: BL
         queda no disponible hasta que llegue la cap (``refrescar_cap``) o se acepte degradar
         TODO el universo a prior neutral (``aceptar_neutral=True``).
         """
         ticker = ticker.strip().upper()
-        actual = self.universo()
-        if ticker in actual.activos:
+        actual = self._actual(base)
+        if actual is not None and ticker in actual.activos:
             raise GestorError(f"{ticker} ya está en el universo; para su cap usa refrescar_cap")
-        diagnostico, serie = self._resolver(ticker)
+        del_guardado = None if isinstance(base, _Guardado) else self._del_guardado(ticker)
+        if del_guardado is not None:
+            # Sesión efímera + activo del universo guardado: su serie y su cap congelada son
+            # las validadas; desde una sesión no se re-descargan ni se sobrescriben.
+            diagnostico, serie = del_guardado, self._serie_local(ticker)
+        else:
+            diagnostico, serie = self._resolver(ticker)
         if not diagnostico.apto:
             raise ActivoNoAptoError(f"{ticker} no es apto: {'; '.join(diagnostico.advertencias)}")
-        self._exigir_sanidad(ticker, serie)
-        vigente = self.provider().precios(list(actual.activos))
-        if serie.index[-1] != vigente.index[-1]:
-            raise GestorError(
-                f"{ticker} llega a {serie.index[-1]:%Y-%m} y el almacén a "
-                f"{vigente.index[-1]:%Y-%m}: ejecuta make update-prices antes de incorporar"
-            )
+        if del_guardado is None:
+            self._exigir_sanidad(ticker, serie)
+        if actual is not None:
+            vigente = self.provider().precios(list(actual.activos))
+            if serie.index[-1] != vigente.index[-1]:
+                raise GestorError(
+                    f"{ticker} llega a {serie.index[-1]:%Y-%m} y los datos del universo a "
+                    f"{vigente.index[-1]:%Y-%m}: ejecuta make update-prices antes de incorporar"
+                )
         if prior_cap is not None:
             diagnostico = self._con_cap_de_usuario(diagnostico, prior_cap, prior_metodologia)
         elif prior_metodologia is not None:
             raise GestorError("prior_metodologia sin prior_cap: falta el valor de la cap")
 
-        marca = self.reloj().strftime(FORMATO_MARCA)
-        escribir_series_atomico(
-            serie.to_frame(ticker), self.directorio_series, self.config.datos.actualizacion, marca
-        )
+        if del_guardado is None:
+            # Si ya hay un archivo de este ticker, es CACHÉ de un activo que no está en el
+            # universo guardado (un retiro, una sesión anterior): se reemplaza sin respaldo. Los
+            # respaldos protegen las series del guardado, y dos altas en el mismo segundo (un
+            # lote) chocarían en la carpeta de respaldo.
+            ruta_serie(self.directorio_series, ticker).unlink(missing_ok=True)
+            marca = self.reloj().strftime(FORMATO_MARCA)
+            escribir_series_atomico(
+                serie.to_frame(ticker),
+                self.directorio_series,
+                self.config.datos.actualizacion,
+                marca,
+            )
+        previos = actual.diagnosticos if actual is not None else ()
+        origenes = dict(actual.origenes) if actual is not None else {}
         nuevo = self._armar(
-            (*actual.diagnosticos, diagnostico),
-            {**actual.origenes, ticker: OrigenActivo.AGREGADO_EN_SESION},
-            actual.prior_neutral_aceptado or aceptar_neutral,
+            (*previos, diagnostico),
+            {**origenes, ticker: OrigenActivo.AGREGADO_EN_SESION},
+            (actual is not None and actual.prior_neutral_aceptado) or aceptar_neutral,
         )
-        self._persistir(nuevo, actual, "incorporar", ticker, None, diagnostico)
+        self._persistir_si(base, nuevo, actual, "incorporar", ticker, None, diagnostico)
         return nuevo
+
+    def resolver_lista(
+        self, tickers: list[str]
+    ) -> tuple[tuple[AssetDiagnostic, ...], dict[str, str], DiagnosticoUniverso | None]:
+        """Diagnóstico de cada ticker (sin modificar nada), por qué no se resolvió el que falle,
+        y el informe agregado —ventana común, quién la limita— si entraran TODOS los aptos."""
+        diagnosticos, rechazados = [], {}
+        for ticker in _sin_repetir(tickers):
+            try:
+                diagnosticos.append(self.resolver(ticker))
+            except GestorError as exc:
+                rechazados[ticker] = str(exc)
+        aptos = tuple(d for d in diagnosticos if d.apto)
+        informe = None
+        if aptos:
+            origenes = {d.ticker: OrigenActivo.AGREGADO_EN_SESION for d in aptos}
+            informe = self.diagnosticar(Universe.crear(aptos, origenes, False))
+        return tuple(diagnosticos), rechazados, informe
+
+    def incorporar_lista(self, tickers: list[str], *, base: Base = GUARDADO) -> ResultadoLista:
+        """Alta por lista con la MISMA cascada por activo (ADR-013): entra lo que no necesita
+        una decisión del usuario; un activo sin cap en la fuente NO entra aquí: queda pendiente
+        de que el usuario resuelva su prior (cap del subyacente, AUM como proxy, o neutral)."""
+        actual = self._actual(base)
+        incorporados: list[str] = []
+        pendientes: list[AssetDiagnostic] = []
+        rechazados: dict[str, str] = {}
+        for ticker in _sin_repetir(tickers):
+            sesion: Base = GUARDADO if isinstance(base, _Guardado) else actual
+            try:
+                if actual is not None and ticker in actual.activos:
+                    raise GestorError(f"{ticker} ya está en el universo")
+                previo = None if isinstance(base, _Guardado) else self._del_guardado(ticker)
+                diagnostico = previo or self.resolver(ticker)
+                if diagnostico.apto and not diagnostico.tiene_cap:
+                    pendientes.append(diagnostico)
+                    continue
+                actual = self.incorporar(ticker, base=sesion)
+                incorporados.append(ticker)
+            except GestorError as exc:
+                rechazados[ticker] = str(exc)
+        return ResultadoLista(actual, tuple(incorporados), tuple(pendientes), rechazados)
 
     def refrescar_cap(
         self,
         ticker: str,
         prior_cap: float | None = None,
         prior_metodologia: str | None = None,
+        *,
+        base: Base = GUARDADO,
     ) -> Universe:
         """ÚNICA vía para cambiar una cap congelada: de la fuente, o la que aporte el usuario."""
-        actual = self.universo()
+        actual = self._exigir_actual(base)
         if ticker not in actual.activos:
             raise GestorError(f"{ticker} no está en el universo {list(actual.activos)}")
         antes = actual.diagnostico(ticker)
@@ -221,13 +323,13 @@ class GestorDatos:
             actual.origenes,
             actual.prior_neutral_aceptado,
         )
-        self._persistir(nuevo, actual, "refrescar_cap", ticker, antes, despues)
+        self._persistir_si(base, nuevo, actual, "refrescar_cap", ticker, antes, despues)
         return nuevo
 
-    def retirar(self, ticker: str) -> Universe:
+    def retirar(self, ticker: str, *, base: Base = GUARDADO) -> Universe:
         """Saca ``ticker`` del universo. Su serie se queda en disco como caché: no se borra."""
         ticker = ticker.strip().upper()
-        actual = self.universo()
+        actual = self._exigir_actual(base)
         if ticker not in actual.activos:
             raise GestorError(f"{ticker} no está en el universo {list(actual.activos)}")
         if len(actual.activos) == 1:
@@ -238,16 +340,16 @@ class GestorDatos:
             {a: o for a, o in actual.origenes.items() if a != ticker},
             actual.prior_neutral_aceptado,
         )
-        self._persistir(nuevo, actual, "retirar", ticker, antes, None)
+        self._persistir_si(base, nuevo, actual, "retirar", ticker, antes, None)
         return nuevo
 
-    def aceptar_prior_neutral(self) -> Universe:
+    def aceptar_prior_neutral(self, *, base: Base = GUARDADO) -> Universe:
         """Confirmación explícita de degradar TODO el prior a equal-weight (ADR-013)."""
-        actual = self.universo()
+        actual = self._exigir_actual(base)
         if not actual.sin_cap:
             raise GestorError("todas las caps están presentes: no hay nada que degradar")
         nuevo = self._armar(actual.diagnosticos, actual.origenes, True)
-        self._persistir(nuevo, actual, "aceptar_prior_neutral", None, None, None)
+        self._persistir_si(base, nuevo, actual, "aceptar_prior_neutral", None, None, None)
         return nuevo
 
     def sincronizar(self) -> Universe:
@@ -352,6 +454,36 @@ class GestorDatos:
         return pedidos
 
     # ---------------------------------------------------------------- interno
+    def _actual(self, base: Base) -> Universe | None:
+        return self.universo() if isinstance(base, _Guardado) else base
+
+    def _exigir_actual(self, base: Base) -> Universe:
+        actual = self._actual(base)
+        if actual is None:
+            raise GestorError(SIN_UNIVERSO_EN_SESION)
+        return actual
+
+    def _del_guardado(self, ticker: str) -> AssetDiagnostic | None:
+        """El diagnóstico de ``ticker`` en el universo guardado, si está allí (y hay guardado)."""
+        try:
+            guardado = self.universo()
+        except GestorError:
+            return None
+        return guardado.diagnostico(ticker) if ticker in guardado.activos else None
+
+    def _persistir_si(
+        self,
+        base: Base,
+        nuevo: Universe,
+        anterior: Universe | None,
+        accion: str,
+        ticker: str | None,
+        antes: AssetDiagnostic | None,
+        despues: AssetDiagnostic | None,
+    ) -> None:
+        if isinstance(base, _Guardado):
+            self._persistir(nuevo, anterior, accion, ticker, antes, despues)
+
     def _fuente(self) -> FuenteActivos:
         if self.fuente is None:
             raise GestorError("esta operación necesita una fuente de mercado (Tiingo)")
@@ -493,6 +625,10 @@ class GestorDatos:
         self.ruta_historial.parent.mkdir(parents=True, exist_ok=True)
         with self.ruta_historial.open("a", encoding="utf-8") as f:
             f.write(json.dumps(entrada, ensure_ascii=False, sort_keys=True) + "\n")
+
+
+def _sin_repetir(tickers: list[str]) -> list[str]:
+    return list(dict.fromkeys(t.strip().upper() for t in tickers if t and t.strip()))
 
 
 def _bloque_prior(d: AssetDiagnostic | None) -> dict[str, Any] | None:

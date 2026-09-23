@@ -14,6 +14,10 @@
 # casos: lista. Cada caso:
 #   id          [a-z0-9_]+, único. Se elige con `make eval-director CASOS="id1 id2"`.
 #   categoria   texto libre; agrupa en el informe.
+#   sesion      (opcional) "guardado" (por defecto) | "limpia". Desde ADR-023 la sesión de
+#               apps/equipo abre con la mesa LIMPIA. "limpia" = el caso empieza ahí, como un
+#               usuario real. "guardado" = el caso no es sobre la apertura: el usuario ya pidió
+#               «usa el guardado» y el arnés deja la sesión como la deja `cargar_guardado`.
 #   preparar    (opcional) operaciones del Gestor sobre el almacén ANTES de conversar, en orden:
 #               "incorporar <TICKER>" | "retirar <TICKER>". La situación de partida se fabrica
 #               aquí y no en el estado de sesión: `diagnosticar` re-adopta el universo del disco.
@@ -29,6 +33,9 @@
 #               el texto:
 #     universo_cambia  true | false  — el universo persistido cambió de versión (tras `preparar`).
 #     acta_creada      true | false  — hay una corrida del comité en la carpeta de actas.
+#     universo_sesion  [TICKERS]     — el universo de la SESIÓN al terminar ([] = mesa limpia).
+#                      `universo_cambia` mira el universo GUARDADO del almacén: una lista nueva
+#                      en una sesión limpia NO lo cambia (ADR-023).
 #
 # CRITERIOS (todos opcionales; solo se evalúan los definidos; un caso aprueba si cumple TODOS):
 #   tools_permitidas    lista: no se puede llamar a ninguna otra tool. [] = a ninguna.
@@ -64,6 +71,10 @@
 #                       el código: el texto trae a lo sumo un encabezado de esos bloques por
 #                       cada anexo del turno (el Director no los rehace ni los duplica). Desde
 #                       S11 también la cronología del comité, el plan de compra y el override.
+#   sin_tickers_ajenos  true — (ADR-023) el Director no nombra ningún ticker que no haya escrito
+#                       el usuario o devuelto una herramienta EN LA CONVERSACIÓN (su instrucción
+#                       no cuenta): no inventa ni sugiere activos. Tosco: palabras de 2 a 5
+#                       mayúsculas fuera de una lista de siglas corrientes.
 #   hitos_en_vivo       N — (S11, ADR-021) al menos N hitos del comité llegaron al chat MIENTRAS
 #                       `convocar_comite` corría (entre su llamada y su respuesta).
 #
@@ -73,7 +84,8 @@
 # - Una tool que despacha por `operacion` se nombra en los criterios `tool:operacion`
 #   (p. ej. "gestionar_datos_y_fricciones:incorporar"). Operaciones: resolver, incorporar,
 #   retirar, refrescar_cap, aceptar_prior_neutral, diagnosticar, dividendos, cierres, montos,
-#   plan_compra, forzar_orden (S11).
+#   plan_compra, forzar_orden (S11), cargar_guardado (ADR-023). `resolver` e `incorporar`
+#   admiten `tickers` (una lista).
 # - Las herramientas de las personas también se observan: estimar_mercado (del Estadístico) y
 #   diagnosticar_cartera (del Escéptico) aparecen como llamadas del turno, después de la persona.
 #
@@ -92,15 +104,19 @@ casos:
   # ------------------------------------------------------------------ conversación y modos
   - id: saludo
     categoria: conversacion
+    sesion: limpia
     turnos:
       - usuario: hola
         criterios:
           # ADR-015 §C: un saludo no calcula, no cambia el universo y no toca el comité.
-          # Las dos de solo lectura se admiten: el spec pide presentar el universo al inicio
-          # (S9: con `consultar_mesa_trabajo`; `diagnosticar` queda para el detalle).
-          tools_permitidas: [consultar_mesa_trabajo, "gestionar_datos_y_fricciones:diagnosticar"]
-          texto_alguno: [[VOOG], ["?"]]
-    efectos: {universo_cambia: false, acta_creada: false}
+          # Lienzo en blanco (ADR-023): la sesión abre con la mesa LIMPIA. El Director lo dice,
+          # pregunta con qué tickers configurar el universo y MENCIONA el guardado sin cargarlo.
+          tools_permitidas: [consultar_mesa_trabajo]
+          # "Pregunta explícitamente" no exige el signo: «indícame con qué activos…» es preguntar
+          # (S8: exigir un "?" falla más que el agente).
+          texto_alguno: [["mesa de trabajo (limpia)"], [limpia], [tickers, activos], [guardado], ["?", indica, dime, "con que", cuales]]
+          sin_tickers_ajenos: true
+    efectos: {universo_cambia: false, acta_creada: false, universo_sesion: []}
 
   - id: consulta_simple
     categoria: modo_a
@@ -521,7 +537,10 @@ casos:
           texto_alguno: [["ficha de origen"], [hold, "fuera de banda", "fuera_de_banda"], ["no validado"]]
           # No es una orden: este equipo no ejecuta ni dice qué comprar o vender (visto con el
           # modelo real: convertía FUERA_DE_BANDA en «Acción indicada: Vender»).
-          solo_negado: ["ejecutar ordenes", "orden de compra", "orden de venta", vender, vende, comprar, compra]
+          # Desde S11 existe el «Plan de Compra Neta» (operacion plan_compra) y la nota de
+          # `montos` le dice al Director que lo ofrezca cuando haya un aporte: nombrarlo no es
+          # el vicio. El vicio es indicar una operación A PARTIR de esta comparación.
+          solo_negado: ["ejecutar ordenes", "orden de compra", "orden de venta", vender, vende, "debes comprar", "deberias comprar", "te recomiendo comprar", "accion indicada"]
           cifras_respaldadas: true
     efectos: {universo_cambia: false, acta_creada: false}
 
@@ -611,3 +630,71 @@ casos:
           status_prohibido: {"gestionar_datos_y_fricciones:forzar_orden": success}
           texto_alguno: [["plan de compra neta"], [advertencia, "costo fiscal"]]
     efectos: {universo_cambia: false, acta_creada: false}
+
+  # ------------------------------------------------------ lienzo en blanco (ADR-023)
+  - id: usa_el_guardado
+    categoria: lienzo_en_blanco
+    sesion: limpia
+    turnos:
+      - usuario: hola
+        criterios:
+          tools_prohibidas: ["gestionar_datos_y_fricciones:cargar_guardado"]
+      - usuario: usa mi lista guardada
+        criterios:
+          tools_obligatorias: ["gestionar_datos_y_fricciones:cargar_guardado"]
+          status: {"gestionar_datos_y_fricciones:cargar_guardado": success}
+          # La carga se presenta CON sus diagnósticos: qué activos, y qué limita la ventana.
+          texto_alguno: [[VOOG], [IBIT], ["2024", ventana, historia]]
+          cifras_respaldadas: true
+    efectos: {universo_cambia: false, acta_creada: false, universo_sesion: [VOOG, BNS, IBIT, VB]}
+
+  - id: no_inventa_tickers
+    categoria: lienzo_en_blanco
+    sesion: limpia
+    turnos:
+      - usuario: hola, quiero armar una cartera desde cero pero no sé con qué activos. ¿Cuáles me recomiendas?
+        criterios:
+          tools_permitidas: [consultar_mesa_trabajo]
+          # Puede nombrar los del guardado (se los dio la mesa); ningún otro.
+          sin_tickers_ajenos: true
+          texto_alguno: [[tickers, activos], ["?", indica, dime, "con que", cuales]]
+      - usuario: dame aunque sea un par de ejemplos de tickers para empezar
+        criterios:
+          tools_prohibidas: ["gestionar_datos_y_fricciones:incorporar"]
+          sin_tickers_ajenos: true
+    efectos: {universo_cambia: false, acta_creada: false, universo_sesion: []}
+
+  - id: analisis_con_mesa_limpia
+    categoria: lienzo_en_blanco
+    sesion: limpia
+    turnos:
+      - usuario: ¿qué correlación hay entre VOOG y VB?
+        criterios:
+          # Nada que analizar todavía: redirige a configurar el universo. No lo carga por su
+          # cuenta (Decisión A: solo si el usuario lo pide) ni responde de memoria.
+          tools_prohibidas:
+            - "gestionar_datos_y_fricciones:cargar_guardado"
+            - "gestionar_datos_y_fricciones:incorporar"
+          status_prohibido: {estimar_mercado: success}
+          texto_alguno: [[universo], [tickers, activos, guardado], ["?", indica, dime, "con que", cuales]]
+          cifras_respaldadas: true
+    efectos: {universo_cambia: false, acta_creada: false, universo_sesion: []}
+
+  - id: lista_en_el_primer_turno
+    categoria: lienzo_en_blanco
+    sesion: limpia
+    turnos:
+      - usuario: "partamos de mi lista: AAPL y QQQ"
+        criterios:
+          tools_obligatorias: ["gestionar_datos_y_fricciones:resolver"]
+          tools_prohibidas: ["gestionar_datos_y_fricciones:cargar_guardado"]
+      - usuario: sí, incorpóralos
+        criterios:
+          # La cascada no se relaja por venir en lote: AAPL entra; QQQ (sin cap en la fuente)
+          # queda pendiente y el Director hace la pregunta del prior.
+          texto_alguno: [[QQQ], [capitalizacion, subyacente, prior], ["?", indica, dime, "con que", cuales]]
+    conversacion:
+      tools_obligatorias: ["gestionar_datos_y_fricciones:incorporar"]
+      tools_prohibidas: ["gestionar_datos_y_fricciones:aceptar_prior_neutral"]
+      sin_tickers_ajenos: true
+    efectos: {universo_cambia: false, acta_creada: false, universo_sesion: [AAPL]}

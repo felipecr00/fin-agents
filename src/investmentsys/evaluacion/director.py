@@ -14,7 +14,7 @@ import json
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import yaml
 from google.adk.agents.base_agent import BaseAgent
@@ -29,6 +29,7 @@ from investmentsys.data_manager import GestorDatos
 from investmentsys.evaluacion.criterios import ResultadoCriterio
 from investmentsys.evaluacion.criterios_director import Criterios, TurnoObservado, evaluar
 from investmentsys.evaluacion.informe import CasoEvaluado, CriterioEvaluado
+from investmentsys.tools.estado import CLAVE_ORIGEN_UNIVERSO, CLAVE_UNIVERSO, ORIGEN_GUARDADO
 from investmentsys.tools.hitos_en_vivo import AUTOR_COMITE
 
 APP = "eval_director"
@@ -55,6 +56,13 @@ class Efectos(_Modelo):
 
     universo_cambia: bool | None = None
     acta_creada: bool | None = None
+    universo_sesion: tuple[str, ...] | None = Field(
+        default=None,
+        description=(
+            "Tickers del universo de la SESIÓN al terminar ([] = la mesa sigue limpia). Distinto "
+            "de `universo_cambia`, que mira el universo GUARDADO del almacén (ADR-023)."
+        ),
+    )
 
 
 class Caso(_Modelo):
@@ -62,6 +70,14 @@ class Caso(_Modelo):
     categoria: str = Field(min_length=1)
     preparar: tuple[str, ...] = Field(
         default=(), description='Operaciones del Gestor antes de conversar: "incorporar QQQ".'
+    )
+    sesion: Literal["guardado", "limpia"] = Field(
+        default="guardado",
+        description=(
+            "Cómo está la sesión al primer mensaje. 'limpia': como abre apps/equipo (ADR-023), "
+            "sin universo. 'guardado': el usuario YA pidió cargar el universo guardado (el caso "
+            "no es sobre la apertura): el arnés lo deja cargado, como lo deja `cargar_guardado`."
+        ),
     )
     turnos: tuple[Turno, ...] = Field(min_length=1)
     conversacion: Criterios = Criterios()
@@ -121,6 +137,7 @@ def observar(
     respaldo_previo: tuple[str, ...],
     autor: str,
     personas: tuple[str, ...] = (),
+    conversado: tuple[str, ...] = (),
 ) -> TurnoObservado:
     """``autor`` es el Director; ``personas``, los sub-agentes con voz propia (ADR-019).
 
@@ -163,13 +180,27 @@ def observar(
         respaldo_previo=respaldo_previo,
         voces=tuple(voces),
         hitos_en_vivo=hitos,
+        conversado=conversado,
     )
 
 
-async def conversar(mundo: Mundo, mensajes: tuple[str, ...]) -> list[TurnoObservado]:
+def estado_inicial(mundo: Mundo, sesion: str) -> dict[str, Any]:
+    """'guardado' = lo que deja ``cargar_guardado``; 'limpia' = nada (lo marca el Director)."""
+    if sesion == "limpia":
+        return {}
+    return {
+        CLAVE_UNIVERSO: mundo.gestor.universo().model_dump(mode="json"),
+        CLAVE_ORIGEN_UNIVERSO: ORIGEN_GUARDADO,
+    }
+
+
+async def conversar(
+    mundo: Mundo, mensajes: tuple[str, ...], inicial: dict[str, Any] | None = None
+) -> tuple[list[TurnoObservado], dict[str, Any]]:
+    """Los turnos observados y el estado FINAL de la sesión."""
     sesiones = InMemorySessionService()
     runner = Runner(agent=mundo.director, app_name=APP, session_service=sesiones)
-    sesion = await sesiones.create_session(app_name=APP, user_id=USUARIO)
+    sesion = await sesiones.create_session(app_name=APP, user_id=USUARIO, state=inicial or {})
     turnos: list[TurnoObservado] = []
     respaldo = mundo.respaldo_fijo
     for mensaje in mensajes:
@@ -183,7 +214,10 @@ async def conversar(mundo: Mundo, mensajes: tuple[str, ...]) -> list[TurnoObserv
                 run_config=RunConfig(max_llm_calls=MAX_LLAMADAS_LLM_POR_TURNO),
             )
         ]
-        turno = observar(mensaje, eventos, respaldo, mundo.director.name, mundo.personas)
+        conversado = respaldo[len(mundo.respaldo_fijo) :]
+        turno = observar(
+            mensaje, eventos, respaldo, mundo.director.name, mundo.personas, conversado
+        )
         turnos.append(turno)
         respaldo = (
             *respaldo,
@@ -191,11 +225,24 @@ async def conversar(mundo: Mundo, mensajes: tuple[str, ...]) -> list[TurnoObserv
             *(json.dumps(r, ensure_ascii=False) for _, r in turno.respuestas),
         )
     await runner.close()
-    return turnos
+    final = await sesiones.get_session(app_name=APP, user_id=USUARIO, session_id=sesion.id)
+    return turnos, dict(final.state) if final is not None else {}
 
 
-def _efectos(caso: Caso, version_inicial: str, mundo: Mundo) -> list[ResultadoCriterio]:
+def _efectos(
+    caso: Caso, version_inicial: str, mundo: Mundo, estado_final: dict[str, Any]
+) -> list[ResultadoCriterio]:
     resultados = []
+    if caso.efectos.universo_sesion is not None:
+        universo = estado_final.get(CLAVE_UNIVERSO) or {}
+        tickers = tuple(d["ticker"] for d in universo.get("diagnosticos", ()))
+        resultados.append(
+            ResultadoCriterio(
+                criterio="efectos.universo_sesion",
+                cumple=tickers == caso.efectos.universo_sesion,
+                detalle=f"universo de la sesión al terminar: {list(tickers) or 'mesa limpia'}",
+            )
+        )
     if caso.efectos.universo_cambia is not None:
         cambio = mundo.gestor.universo().version != version_inicial
         resultados.append(
@@ -219,7 +266,11 @@ def _efectos(caso: Caso, version_inicial: str, mundo: Mundo) -> list[ResultadoCr
 
 
 def juzgar(
-    caso: Caso, turnos: list[TurnoObservado], version_inicial: str, mundo: Mundo
+    caso: Caso,
+    turnos: list[TurnoObservado],
+    version_inicial: str,
+    mundo: Mundo,
+    estado_final: dict[str, Any] | None = None,
 ) -> list[ResultadoCriterio]:
     resultados: list[ResultadoCriterio] = []
     for i, (esperado, observado) in enumerate(zip(caso.turnos, turnos, strict=True), start=1):
@@ -233,7 +284,7 @@ def juzgar(
         voces=tuple(v for t in turnos for v in t.voces),
     )
     resultados += evaluar(caso.conversacion, todo, "conversacion")
-    return [*resultados, *_efectos(caso, version_inicial, mundo)]
+    return [*resultados, *_efectos(caso, version_inicial, mundo, estado_final or {})]
 
 
 async def correr_caso(
@@ -243,8 +294,10 @@ async def correr_caso(
     mundo = crear_mundo()
     preparar(mundo.gestor, caso.preparar)
     version_inicial = mundo.gestor.universo().version
-    turnos = await conversar(mundo, tuple(t.usuario for t in caso.turnos))
-    resultados = juzgar(caso, turnos, version_inicial, mundo)
+    turnos, estado_final = await conversar(
+        mundo, tuple(t.usuario for t in caso.turnos), estado_inicial(mundo, caso.sesion)
+    )
+    resultados = juzgar(caso, turnos, version_inicial, mundo, estado_final)
     cumplidos = sum(r.cumple for r in resultados)
     evaluado = CasoEvaluado(
         eval_id=caso.id,

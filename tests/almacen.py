@@ -209,7 +209,9 @@ def mundo_director(raiz: Path, config: Config, modelo: Any = None) -> Any:
 
     gestor = sembrar_gestor(raiz / "almacen", config, fuente_de_eval())
     runs = raiz / "runs"
-    director = crear_director(config, gestor.provider(), gestor, modelo, runs)
+    # El MISMO Director que sirve apps/equipo: lienzo en blanco (ADR-023). Los casos que no son
+    # sobre la apertura declaran `sesion: guardado` (por defecto) y el arnés lo deja cargado.
+    director = crear_director(config, gestor.provider(), gestor, modelo, runs, mesa_limpia=True)
     return Mundo(
         director=director,
         gestor=gestor,

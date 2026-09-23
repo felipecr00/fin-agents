@@ -25,14 +25,29 @@ def _lecturas(numero: str) -> set[float]:
 
 def numeros_del_usuario(tool_context: ToolContext) -> set[float]:
     """Todo número que el usuario escribió en la sesión (y en el mensaje de este turno)."""
+    textos = _textos_del_usuario(tool_context)
+    return {x for t in textos for n in _NUMERO.findall(t) for x in _lecturas(n)}
+
+
+def _textos_del_usuario(tool_context: ToolContext) -> list[str]:
     contenidos = [e.content for e in tool_context.session.events if e.author == "user"]
-    textos = [
+    return [
         parte.text
         for contenido in (*contenidos, tool_context.user_content)
         for parte in ((contenido.parts or []) if contenido else [])
         if parte.text
     ]
-    return {x for t in textos for n in _NUMERO.findall(t) for x in _lecturas(n)}
+
+
+def tickers_que_no_escribio_el_usuario(tickers: list[str], tool_context: ToolContext) -> list[str]:
+    """ADR-023: el universo lo define el usuario. Un ticker que él no escribió en la sesión
+    (sin distinguir mayúsculas) no puede entrar por un argumento del LLM."""
+    escrito = " ".join(_textos_del_usuario(tool_context)).upper()
+    return [
+        t
+        for t in dict.fromkeys(x.strip().upper() for x in tickers if x and x.strip())
+        if not re.search(rf"(?<![A-Z0-9]){re.escape(t)}(?![A-Z0-9])", escrito)
+    ]
 
 
 def lo_escribio_el_usuario(valor: float, tool_context: ToolContext) -> bool:

@@ -7,6 +7,11 @@ Misma regla que ``nucleo.py``: aquí no hay lógica de datos. Cada tool llama al
 universo vigente en el estado de sesión y, si el universo cambió, DECLARA qué resultados de la
 sesión quedaron obsoletos — detectado por ``universe_version`` (ADR-012), no de memoria. Un
 error de dominio no lanza: devuelve ``{"status": "error", ...}`` con el mensaje del Gestor.
+
+ADR-023 (lienzo en blanco): el universo de la sesión puede ser el GUARDADO (sus cambios se
+persisten, como siempre) o uno EFÍMERO construido en la conversación, que vive solo en el estado
+de sesión. ``base_de`` decide sobre cuál opera cada cambio; con la mesa limpia, la primera alta
+crea un universo efímero y ``cargar_guardado`` es la única vía para trabajar sobre el guardado.
 """
 
 from __future__ import annotations
@@ -18,17 +23,22 @@ from google.adk.tools.tool_context import ToolContext
 
 from investmentsys.contracts import AssetDiagnostic, Universe
 from investmentsys.data import DatosInvalidosError, TiingoError
-from investmentsys.data_manager import GestorDatos, GestorError
+from investmentsys.data_manager import GUARDADO, Base, GestorDatos, GestorError
 from investmentsys.tools.estado import (
     CLAVE_CANDIDATOS,
     CLAVE_DIAGNOSTICOS_CARTERA,
     CLAVE_MARKET_VIEWS,
+    CLAVE_ORIGEN_UNIVERSO,
     CLAVE_QUANT_ESTIMATES,
     CLAVE_RESTRICCIONES_SESION,
     CLAVE_SOLICITUD_COMITE,
     CLAVE_SOLICITUD_NEUTRAL,
     CLAVE_UNIVERSO,
+    ORIGEN_GUARDADO,
+    ORIGEN_SESION,
+    SIN_UNIVERSO,
     Estado,
+    EstadoLegible,
     volcar,
 )
 
@@ -58,6 +68,29 @@ NEUTRAL_EXIGE_OTRO_TURNO = (
     "equiponderado, con el sesgo documentado en ADR-013. Si el usuario confirma en su "
     "siguiente mensaje, repite la operación aceptar_prior_neutral"
 )
+
+
+PREGUNTA_PRIOR = (
+    "sin capitalización en la fuente (ETF o similar): NO entró al universo todavía. Pregunta al "
+    "usuario, por este activo, en este orden: (a) [recomendada] aporta la capitalización del "
+    "subyacente o índice que replica → incorporar con ticker, prior_cap y prior_metodologia; "
+    "(b) AUM como proxy débil → lo mismo con prior_metodologia 'AUM: proxy débil'; (c) degradar "
+    "TODO el universo a prior neutral → incorporar solo con el ticker y luego "
+    "aceptar_prior_neutral (todo-o-nada, confirmación en un turno posterior). Nunca propongas tú "
+    "el valor de una capitalización"
+)
+
+
+def es_efimera(estado: EstadoLegible) -> bool:
+    return bool(estado.get(CLAVE_ORIGEN_UNIVERSO) == ORIGEN_SESION)
+
+
+def base_de(estado: EstadoLegible) -> Base:
+    """Sobre qué universo opera un cambio pedido en esta sesión (ADR-023)."""
+    if not es_efimera(estado):
+        return GUARDADO
+    crudo = estado.get(CLAVE_UNIVERSO)
+    return Universe.model_validate(crudo) if crudo else None
 
 
 def _error(exc: Exception) -> dict[str, Any]:
@@ -178,9 +211,77 @@ class GestorTools:
             prior_metodologia: obligatoria con prior_cap: de dónde sale, en palabras del
                 usuario (p. ej. "capitalización del índice subyacente" o "AUM: proxy débil").
         """
+        base = base_de(tool_context.state)
         return self._cambiar(
-            tool_context, lambda: self.gestor.incorporar(ticker, prior_cap, prior_metodologia)
+            tool_context,
+            lambda: self.gestor.incorporar(ticker, prior_cap, prior_metodologia, base=base),
         )
+
+    def resolver_lista(self, tickers: list[str]) -> dict[str, Any]:
+        """``resolver`` para una lista: diagnóstico por activo, los que no se resolvieron y por
+        qué, y la ventana común que tendría el universo SI ENTRAN TODOS los aptos (quién la
+        limita, qué stress no cubre cada uno). No modifica nada."""
+        try:
+            diagnosticos, rechazados, informe = self.gestor.resolver_lista(tickers)
+        except ERRORES_DEL_GESTOR as exc:
+            return _error(exc)
+        return {
+            "status": "success",
+            "activos": [_activo(d) for d in diagnosticos],
+            "no_resueltos": rechazados,
+            "no_aptos": [d.ticker for d in diagnosticos if not d.apto],
+            "sin_cap_en_la_fuente": [d.ticker for d in diagnosticos if d.apto and not d.tiene_cap],
+            "si_entran_todos": None if informe is None else informe.model_dump(mode="json"),
+        }
+
+    def incorporar_lista(self, tickers: list[str], tool_context: ToolContext) -> dict[str, Any]:
+        """Alta por lista, con la misma cascada por activo: entra lo que no requiere una decisión
+        del usuario; lo que no tiene cap en la fuente queda pendiente, con su pregunta."""
+        try:
+            resultado = self.gestor.incorporar_lista(tickers, base=base_de(tool_context.state))
+        except ERRORES_DEL_GESTOR as exc:
+            return _error(exc)
+        except OSError as exc:
+            return _error(GestorError(SOLO_LECTURA.format(detalle=exc)))
+        extra = {
+            "incorporados": list(resultado.incorporados),
+            "rechazados": resultado.rechazados,
+            "pendientes_de_prior": [
+                {"activo": _activo(d), "que_preguntar": PREGUNTA_PRIOR}
+                for d in resultado.pendientes_de_prior
+            ],
+            "universo_completo": not resultado.pendientes_de_prior,
+        }
+        if resultado.universo is None or not resultado.incorporados:
+            return {
+                "status": "success",
+                "universe_version": (tool_context.state.get(CLAVE_UNIVERSO) or {}).get("version"),
+                **extra,
+                "nota": "ningún activo entró todavía: resuelve lo pendiente o lo rechazado",
+            }
+        nuevo = resultado.universo
+        return {**self._cambiar(tool_context, lambda: nuevo), **extra}
+
+    def cargar_guardado(self, tool_context: ToolContext) -> dict[str, Any]:
+        """Carga en la sesión el universo GUARDADO del Gestor (el del modo comando), con sus
+        diagnósticos. Desde aquí, las altas y bajas de la sesión se persisten en él."""
+        try:
+            universo = self.gestor.universo()
+            tool_context.state[CLAVE_ORIGEN_UNIVERSO] = ORIGEN_GUARDADO
+            obsoletos = adoptar_universo(tool_context.state, universo)
+            informe = self.gestor.diagnosticar(universo)
+        except ERRORES_DEL_GESTOR as exc:
+            return _error(exc)
+        return {
+            "status": "success",
+            "universe_version": universo.version,
+            "origen": "universo guardado del Gestor; los cambios de esta sesión se persisten en él",
+            "universo": informe.model_dump(mode="json"),
+            "activos": [_activo(d) for d in universo.diagnosticos],
+            "estado_prior": informe.estado_prior.value,
+            "mensaje_prior": informe.mensaje_prior,
+            "resultados_obsoletos": obsoletos,
+        }
 
     def refrescar_cap(
         self,
@@ -199,9 +300,12 @@ class GestorTools:
             prior_cap: capitalización aportada por el usuario, en US$ billones (10^12).
             prior_metodologia: obligatoria con prior_cap.
         """
+        base = base_de(tool_context.state)
         return self._cambiar(
             tool_context,
-            lambda: self.gestor.refrescar_cap(ticker.strip().upper(), prior_cap, prior_metodologia),
+            lambda: self.gestor.refrescar_cap(
+                ticker.strip().upper(), prior_cap, prior_metodologia, base=base
+            ),
         )
 
     def retirar(self, ticker: str, tool_context: ToolContext) -> dict[str, Any]:
@@ -212,7 +316,8 @@ class GestorTools:
         Args:
             ticker: activo que está en el universo, p. ej. "BNS".
         """
-        return self._cambiar(tool_context, lambda: self.gestor.retirar(ticker))
+        base = base_de(tool_context.state)
+        return self._cambiar(tool_context, lambda: self.gestor.retirar(ticker, base=base))
 
     def aceptar_prior_neutral(self, tool_context: ToolContext) -> dict[str, Any]:
         """Degrada el prior de TODO el universo a equal-weight (ADR-013). Todo o nada.
@@ -222,7 +327,7 @@ class GestorTools:
         ejecuta. Cambia el universo: ver ``resultados_obsoletos``.
         """
         try:
-            universo = self.gestor.universo()
+            universo = self._vigente(tool_context.state)
         except ERRORES_DEL_GESTOR as exc:
             return _error(exc)
         estado = tool_context.state
@@ -242,7 +347,8 @@ class GestorTools:
                     activos=", ".join(universo.activos), con_cap=", ".join(con_cap) or "ninguna"
                 ),
             }
-        salida = self._cambiar(tool_context, self.gestor.aceptar_prior_neutral)
+        base = base_de(estado)
+        salida = self._cambiar(tool_context, lambda: self.gestor.aceptar_prior_neutral(base=base))
         if salida["status"] == "success":
             estado[CLAVE_SOLICITUD_NEUTRAL] = None
         return salida
@@ -253,7 +359,7 @@ class GestorTools:
         advertencias. No modifica nada.
         """
         try:
-            universo = self.gestor.universo()
+            universo = self._vigente(tool_context.state)
             obsoletos = adoptar_universo(tool_context.state, universo)
             informe = self.gestor.diagnosticar(universo)
         except ERRORES_DEL_GESTOR as exc:
@@ -264,6 +370,16 @@ class GestorTools:
             "activos": [_activo(d) for d in universo.diagnosticos],
             "resultados_obsoletos": obsoletos,
         }
+
+    def _vigente(self, estado: EstadoLegible) -> Universe:
+        """El universo de la sesión: el guardado se re-lee del disco (puede haber cambiado por
+        ``make update-prices``); el efímero es el del estado. Mesa limpia = error de dominio."""
+        base = base_de(estado)
+        if isinstance(base, Universe):
+            return base
+        if base is None:
+            raise GestorError(SIN_UNIVERSO)
+        return self.gestor.universo()
 
     def _cambiar(self, ctx: ToolContext, operacion: Any) -> dict[str, Any]:
         try:

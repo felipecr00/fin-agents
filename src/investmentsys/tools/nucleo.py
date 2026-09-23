@@ -70,6 +70,7 @@ from investmentsys.tools.estado import (
     FaltaEnEstadoError,
     agregar,
     exigir_sello,
+    exigir_universo,
     leer,
     leer_fecha,
     leer_lista,
@@ -293,6 +294,7 @@ class NucleoTools:
             return _error(exc)
 
     def _validar_candidato(self, estado: Estado) -> dict[str, Any]:
+        exigir_universo(estado)  # mesa limpia: lo primero que falta es el universo (ADR-023)
         rondas = leer_lista(estado, CLAVE_CANDIDATOS, CandidatePortfolios)
         validadas = leer_lista(estado, CLAVE_VALIDACIONES, ValidationReport)
         if not rondas:

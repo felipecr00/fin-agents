@@ -18,6 +18,7 @@ from typing import Any
 
 from google.adk.tools.function_tool import FunctionTool
 from google.adk.tools.tool_context import ToolContext
+from pydantic import ValidationError
 
 from investmentsys.config import Config
 from investmentsys.contracts import (
@@ -49,7 +50,12 @@ from investmentsys.tools.estado import (
     volcar,
 )
 from investmentsys.tools.ficha import ATIENDE, CLAVE_ANEXO, PREFIJO_NO_VALIDADO
-from investmentsys.tools.gestor import ERRORES_DEL_GESTOR, adoptar_universo
+from investmentsys.tools.gestor import (
+    ERRORES_DEL_GESTOR,
+    adoptar_universo,
+    base_de,
+    es_efimera,
+)
 
 NOMBRE_TOOL = "consultar_mesa_trabajo"
 
@@ -255,18 +261,24 @@ def construir_mesa(
             )
         )
     cruda = estado.get(CLAVE_RESTRICCIONES_SESION)
-    sesion = (
-        SessionConstraints.model_validate(cruda)
-        if cruda
-        else sesion_por_defecto(universo, config.optimizacion)
-    )
-    items.append(
-        sellado(
-            CategoriaPizarra.RESTRICCION,
-            describir_restricciones(sesion),
-            Especialista.CONSTRUCTOR,
-            sesion.universe_version,
+    try:
+        sesion = (
+            SessionConstraints.model_validate(cruda)
+            if cruda
+            else sesion_por_defecto(universo, config.optimizacion)
         )
+        restricciones, sello = describir_restricciones(sesion), sesion.universe_version
+    except ValidationError as exc:
+        # Un universo muy chico (lienzo en blanco: el usuario empieza por uno o dos activos)
+        # puede hacer INFACTIBLES los límites por defecto. La mesa lo dice; no revienta.
+        motivo = "; ".join(str(e["msg"]).removeprefix("Value error, ") for e in exc.errors())
+        restricciones = (
+            f"los límites por defecto de config.yaml no son factibles para este universo: "
+            f"{motivo}. Hasta que lo sean no se pueden construir carteras"
+        )
+        sello = vigente
+    items.append(
+        sellado(CategoriaPizarra.RESTRICCION, restricciones, Especialista.CONSTRUCTOR, sello)
     )
     return MesaDeTrabajoState(
         universe_version=vigente, activos=universo.activos, items=tuple(items)
@@ -313,6 +325,32 @@ def renderizar_sala(sala: Iterable[Silla]) -> str:
     return "\n".join(filas)
 
 
+TITULO_MESA_LIMPIA = "### Mesa de trabajo (limpia)"
+COMO_PRESENTAR_LIMPIA = (
+    "La mesa está LIMPIA: no hay universo, cálculos ni restricciones cargados. El bloque se anexa "
+    "solo. Dile al usuario que la mesa está limpia y pregúntale explícitamente con qué activos o "
+    "tickers quiere configurar el universo de esta sesión. Si hay un universo guardado, "
+    "menciónalo en UNA línea con sus tickers, tal como vienen aquí, y no lo cargues salvo que el "
+    "usuario lo pida. PROHIBIDO inventar, sugerir o dar como ejemplo activos o tickers que el "
+    "usuario no haya escrito."
+)
+
+
+def renderizar_mesa_limpia(guardado: Universe | None) -> str:
+    lineas = [
+        TITULO_MESA_LIMPIA,
+        "",
+        "Sin universo, sin cálculos y sin restricciones cargadas. Nada se calcula hasta que "
+        "definas con qué activos trabajar en esta sesión.",
+    ]
+    if guardado is not None:
+        lineas.append(
+            f"Hay un universo guardado, NO cargado: {', '.join(guardado.activos)} (sello "
+            f"`{guardado.version[:12]}`). Se carga solo si lo pides («usa el guardado»)."
+        )
+    return "\n".join(lineas)
+
+
 # ----------------------------------------------------------------------- tool
 @dataclass(frozen=True)
 class MesaTools:
@@ -340,9 +378,25 @@ class MesaTools:
                 "tipo": "ValueError",
                 "mensaje": f"vista desconocida '{vista}': usa '{VISTA_MESA}' o '{VISTA_SALA}'",
             }
+        base = base_de(tool_context.state)
+        if base is None and vista == VISTA_MESA:
+            return self._mesa_limpia()
         try:
-            universo = self.gestor.universo()
-            obsoletos = adoptar_universo(tool_context.state, universo)
+            if es_efimera(tool_context.state):
+                # Universo construido en la sesión: es el del estado; no hay disco que re-leer.
+                universo = base if isinstance(base, Universe) else None
+                obsoletos: list[dict[str, str]] = []
+            else:
+                universo = self.gestor.universo()
+                obsoletos = adoptar_universo(tool_context.state, universo)
+            if universo is None:  # vista="sala" con la mesa limpia: el roster no necesita universo
+                return {
+                    "status": "success",
+                    "universe_version": None,
+                    "sala": [volcar(s) for s in self.sala],
+                    CLAVE_ANEXO: renderizar_sala(self.sala),
+                    "como_presentar": COMO_PRESENTAR.format(vista=vista),
+                }
             informe = self.gestor.diagnosticar(universo)
         except ERRORES_DEL_GESTOR as exc:
             return {"status": "error", "tipo": type(exc).__name__, "mensaje": str(exc)}
@@ -357,6 +411,26 @@ class MesaTools:
             "resultados_obsoletos": obsoletos,
             CLAVE_ANEXO: tabla,
             "como_presentar": COMO_PRESENTAR.format(vista=vista),
+        }
+
+    def _mesa_limpia(self) -> dict[str, Any]:
+        """Sin universo en la sesión (ADR-023): nada prefabricado. El guardado se MENCIONA."""
+        try:
+            guardado: Universe | None = self.gestor.universo()
+        except ERRORES_DEL_GESTOR:
+            guardado = None
+        return {
+            "status": "success",
+            "mesa_limpia": True,
+            "universe_version": None,
+            "activos": [],
+            "items": [],
+            "universo_guardado_no_cargado": None
+            if guardado is None
+            else {"activos": list(guardado.activos), "universe_version": guardado.version},
+            "sala": [volcar(s) for s in self.sala],
+            CLAVE_ANEXO: renderizar_mesa_limpia(guardado),
+            "como_presentar": COMO_PRESENTAR_LIMPIA,
         }
 
     def function_tools(self) -> list[FunctionTool]:

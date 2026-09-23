@@ -69,6 +69,9 @@ def test_montos_con_separador_de_miles_son_una_sola_cifra() -> None:
 def test_fuera_de_banda_no_es_una_negacion() -> None:
     assert lineas_no_negadas("VOOG está fuera de banda: vender.") != []
     assert lineas_no_negadas("No indica vender nada.") == []
+    # Visto con el modelo real: negar sin decir "no".
+    assert lineas_no_negadas("En lugar de vender lo sobreponderado, se usan flujos nuevos.") == []
+    assert lineas_no_negadas("Así evitamos vender con ganancia.") == []
 
 
 def test_una_tool_que_despacha_por_operacion_se_observa_como_tool_operacion() -> None:
@@ -86,3 +89,17 @@ def test_truncar_no_es_redondear_el_detector_no_se_afloja() -> None:
         "28.81 %",
         "0.75",
     ]
+
+
+def test_anunciar_los_anexos_no_es_rehacer_un_bloque() -> None:
+    """Visto con el modelo real (2026-09-21): «### Mesa de Trabajo y Fichas Técnicas» seguido de
+    una frase contaba como bloque imitado. Rehacerlo es el título MÁS contenido estructurado."""
+    from investmentsys.evaluacion.criterios_director import bloques_con_contenido, normalizar
+
+    anuncia = "### Mesa de Trabajo y Fichas Técnicas\nA continuación van los anexos del plan.\n"
+    rehace = "### Plan de Compra Neta (por defecto)\n* VB: US$ 500\n* VOOG: nada\n"
+    tabla = "### En la sala\n\n| Silla | Atiende |\n| Escéptico | todo |\n"
+    assert bloques_con_contenido(normalizar(anuncia)) == []
+    assert len(bloques_con_contenido(normalizar(rehace))) == 1
+    assert len(bloques_con_contenido(normalizar(tabla))) == 1
+    assert len(bloques_con_contenido(normalizar(anuncia + rehace + tabla))) == 2

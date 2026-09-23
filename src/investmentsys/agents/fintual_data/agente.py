@@ -51,6 +51,18 @@ CABLEADO = f"""\
   Cambian el universo: "incorporar", "retirar" (ticker), "refrescar_cap" (cambia una
   capitalización congelada) y "aceptar_prior_neutral" (degrada el prior de TODO el universo).
   Un argumento que no corresponde a la operación se rechaza: manda solo los que la operación usa.
+  "cargar_guardado" trae a la sesión el universo GUARDADO del Gestor con sus diagnósticos:
+  SOLO si el usuario lo pide («usa el guardado», «partamos de mi lista guardada»); preséntale
+  lo que devuelve (activos, desde cuándo hay datos, ventana común y quién la limita, prior).
+  Con la mesa limpia, la primera alta crea el universo de ESTA sesión solo con los activos que
+  nombró el usuario; el guardado no se toca.
+  Alta de VARIOS activos a la vez (el usuario da una lista): operacion="resolver" con `tickers`
+  (todos los que escribió, ninguno más) → presenta el diagnóstico agregado: por activo, desde
+  cuándo hay datos y sus advertencias, y de `si_entran_todos` la ventana común y quién la
+  limita → tras confirmar, operacion="incorporar" con `tickers`: entran los que no requieren
+  una decisión; por cada uno de `pendientes_de_prior` haz la pregunta del paso 2 (uno por
+  uno, con su ticker) y da de alta ese activo con lo que responda. El universo NO está
+  completo mientras `universo_completo` sea false: dilo. Los `rechazados` van con su motivo.
   Alta de un activo, siempre en este orden:
   1. operacion="resolver" con el ticker, y presenta el diagnóstico (desde cuándo hay datos y
      qué limita eso).

@@ -29,7 +29,18 @@ CIFRA_CON_MILES = re.compile(r"(?<![\w.,])-?\d{1,3}(?:,\d{3})+(?:\.\d+)?\s?%?|" 
 NUMERO = re.compile(r"-?\d+(?:\.\d+)?(?:[eE]-?\d+)?")
 PORCENTAJE = 100.0
 VINETA = re.compile(r"^(?:[*\-•]|\d+[.)])\s")
-NEGACIONES = ("no ", "ni ", "sin ", "fuera de", "tampoco", "nunca")
+# "en lugar de vender…" y "evitar ventas" también niegan (visto con el modelo real, 2026-09-21).
+NEGACIONES = (
+    "no ",
+    "ni ",
+    "sin ",
+    "fuera de",
+    "tampoco",
+    "nunca",
+    "en lugar de",
+    "en vez de",
+    "evita",
+)
 # S9 — atribución: una cifra de retorno, riesgo o correlación se dice con su fuente.
 TERMINOS_DE_CIFRA_ATRIBUIBLE = (
     "retorno",
@@ -56,6 +67,77 @@ FILA_O_VINETA = re.compile(r"^(?:[*\-•|>]|\d+[.)])\s?")
 # La marca invisible con la que ``agents/anexos.py`` abre lo que anexa el código (un test fija
 # que sean la misma): lo que va antes es lo que redactó el Director.
 MARCA_ANEXO = "\u2063\u2063"
+# S-lienzo: palabras en mayúsculas que NO son tickers (siglas del dominio y énfasis corrientes).
+POSIBLE_TICKER = re.compile(r"(?<![\w$])[A-Z]{2,5}(?![\w])")
+NO_SON_TICKERS = frozenset(
+    [
+        "NO",
+        "SI",
+        "ETF",
+        "ETFS",
+        "USD",
+        "US",
+        "EE",
+        "UU",
+        "AUM",
+        "HRP",
+        "OOS",
+        "CLP",
+        "IA",
+        "LLM",
+        "MESA",
+        "SOLO",
+        "TODO",
+        "NADA",
+        "SIN",
+        "CON",
+        "QUE",
+        "LOS",
+        "LAS",
+        "UNA",
+        "UN",
+        "NI",
+        "YA",
+        "ID",
+        "OK",
+        "PR",
+        "BL",
+        "VAR",
+        "CVAR",
+        "HHI",
+        "ADR",
+        "SII",
+        "FX",
+        "NYSE",
+        "SEC",
+        "CEO",
+        "PIB",
+        "FED",
+        "IPC",
+        "TU",
+        "TUS",
+        "MI",
+        "MIS",
+        "EL",
+        "LA",
+        "DE",
+        "DEL",
+        "AL",
+        "EN",
+        "ES",
+        "SE",
+        "LO",
+        "POR",
+        "PARA",
+        "MUY",
+        "MAS",
+        "HOLD",
+        "NUNCA",
+        "TUYO",
+        "AQUI",
+        "HOY",
+    ]
+)
 TOLERANCIA_ARGUMENTOS = 1e-9  # punto flotante al serializar argumentos, no un parámetro
 
 
@@ -121,6 +203,14 @@ class Criterios(_Modelo):
         default=(),
         description="Personas (sub-agentes) que le hablaron al usuario en el turno (S10).",
     )
+    sin_tickers_ajenos: bool = Field(
+        default=False,
+        description=(
+            "El Director no nombra ningún ticker que no haya escrito el usuario o devuelto una "
+            "herramienta en la conversación: no inventa ni sugiere activos (ADR-023). Tosco: "
+            "mira palabras de 2 a 5 MAYÚSCULAS fuera de una lista de siglas corrientes."
+        ),
+    )
     hitos_en_vivo: int = Field(
         default=0,
         ge=0,
@@ -151,6 +241,9 @@ class TurnoObservado:
     """(persona, texto): lo que dijeron al usuario los sub-agentes con voz propia (S10)."""
     hitos_en_vivo: int = 0
     """Eventos del comité recibidos ANTES de que su herramienta respondiera (S11)."""
+    conversado: tuple[str, ...] = ()
+    """Lo dicho por el usuario y devuelto por las tools en turnos ANTERIORES, SIN la instrucción
+    del Director (que nombra tickers de ejemplo): de ahí salen los tickers que sí puede nombrar."""
 
     @property
     def leido(self) -> str:
@@ -258,6 +351,25 @@ def cifras_sin_atribuir(texto: str) -> list[str]:
         if not es_lista:
             encabezado_atribuye = atribuye
     return huerfanas
+
+
+ENCABEZADO = re.compile(r"^#{1,6}\s", re.MULTILINE)
+MIN_FILAS_DE_BLOQUE = 2
+
+
+def bloques_con_contenido(texto: str) -> list[str]:
+    """Encabezados de bloque que REHACEN un bloque: el título y, debajo, contenido estructurado
+    (filas de tabla o viñetas). Un encabezado que solo anuncia los anexos («### Mesa de trabajo
+    y fichas», seguido de una frase) nombra el bloque, no lo rehace (visto con el modelo real)."""
+    rehechos = []
+    for m in ENCABEZADO_DE_BLOQUE.finditer(texto):
+        resto = texto[m.end() :]
+        siguiente = ENCABEZADO.search(resto)
+        seccion = resto[: siguiente.start()] if siguiente else resto
+        filas = [ln for ln in seccion.splitlines() if FILA_O_VINETA.match(ln.strip())]
+        if len(filas) >= MIN_FILAS_DE_BLOQUE:
+            rehechos.append(m.group(0))
+    return rehechos
 
 
 def coincide(real: Any, esperado: Any) -> bool:
@@ -394,7 +506,7 @@ def evaluar(criterios: Criterios, turno: TurnoObservado, prefijo: str) -> list[R
             )
         )
     if criterios.sin_bloques_imitados:
-        encabezados = [m.group(0) for m in ENCABEZADO_DE_BLOQUE.finditer(normalizar(turno.leido))]
+        encabezados = bloques_con_contenido(normalizar(turno.leido))
         anexados = sum(1 for _, r in turno.respuestas if "anexo" in r)
         resultados.append(
             _resultado(
@@ -412,6 +524,36 @@ def evaluar(criterios: Criterios, turno: TurnoObservado, prefijo: str) -> list[R
                 f"{prefijo}.cifras_atribuidas",
                 [f"cifras sin especialista fuente: {sin_fuente}"] if sin_fuente else [],
                 "toda cifra de retorno, riesgo o correlación nombra a su fuente",
+            )
+        )
+    if criterios.sin_tickers_ajenos:
+        conocidos = " ".join(
+            [
+                turno.usuario,
+                *turno.conversado,
+                *(json.dumps(r, ensure_ascii=False) for _, r in turno.respuestas),
+            ]
+        )
+        dichos = set(POSIBLE_TICKER.findall(turno.texto.split(MARCA_ANEXO)[0])) - NO_SON_TICKERS
+        ajenos = sorted(t for t in dichos if not re.search(rf"(?<!\w){t}(?!\w)", conocidos))
+        # Un ticker inventado que viaja como ARGUMENTO vuelve en la respuesta de la tool y
+        # parecería "conocido": los de `ticker`/`tickers` deben estar en lo que escribió el
+        # usuario (o en lo conversado antes), no en la respuesta de esa misma llamada.
+        escrito = " ".join([turno.usuario, *turno.conversado]).upper()
+        pedidos = {
+            str(t).strip().upper()
+            for _, args in turno.llamadas
+            for t in [args.get("ticker"), *(args.get("tickers") or [])]
+            if t
+        }
+        ajenos += sorted(
+            t for t in pedidos if not re.search(rf"(?<!\w){re.escape(t)}(?!\w)", escrito)
+        )
+        resultados.append(
+            _resultado(
+                f"{prefijo}.sin_tickers_ajenos",
+                [f"tickers que nadie le dio al Director: {ajenos}"] if ajenos else [],
+                "no nombra activos que el usuario no proveyó",
             )
         )
     if criterios.hitos_en_vivo:
